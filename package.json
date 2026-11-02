@@ -19,7 +19,8 @@
     "db:generate": "pnpm --filter @ai-triage/db generate",
     "db:migrate": "pnpm --filter @ai-triage/db migrate",
     "db:seed": "pnpm --filter @ai-triage/db seed",
-    "api-key:create": "pnpm --filter @ai-triage/db api-key:create"
+    "api-key:create": "pnpm --filter @ai-triage/db api-key:create",
+    "ingest": "pnpm --filter @ai-triage/api ingest"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",

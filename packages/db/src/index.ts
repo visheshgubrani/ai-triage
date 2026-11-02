@@ -17,8 +17,11 @@ export * from "./resolvers";
 export * from "./roles";
 export * from "./tenant-tx";
 export * from "./tenants";
+export * from "./uploads";
 export * from "./users";
 export { schema };
+
+export type Pool = pg.Pool;
 
 export function createPool(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is not set");

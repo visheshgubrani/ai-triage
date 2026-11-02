@@ -1,37 +1,13 @@
 import { MeResponse } from "@ai-triage/contracts";
-import { createAuth, createDb, createPool, ensurePasswordUser } from "@ai-triage/db";
+import { ensurePasswordUser } from "@ai-triage/db";
 import { DEMO_PASSWORD } from "@ai-triage/db/seed";
-import { testDbUrls } from "@ai-triage/db/testing";
 import { afterAll, describe, expect, it } from "vitest";
-import { createApp } from "./app";
+import { createTestApp, WEB_ORIGIN } from "./test-app";
 
 // Sign-in → session → tenant resolution, against the seeded demo tenant in the test database.
 
-const WEB_ORIGIN = "http://localhost:3000";
-const pool = createPool(testDbUrls().appUrl);
-const db = createDb(pool);
-const auth = createAuth({
-  db,
-  secret: "test-only-secret-0123456789abcdef0123456789",
-  baseURL: "http://localhost:8787",
-  trustedOrigins: [WEB_ORIGIN],
-});
-const app = createApp({ db, auth, webOrigin: WEB_ORIGIN });
-afterAll(() => pool.end());
-
-/** Signs in and returns the session cookie header, or the failed response's status. */
-async function signIn(email: string, password: string): Promise<{ status: number; cookie: string }> {
-  const res = await app.request("/api/auth/sign-in/email", {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: WEB_ORIGIN },
-    body: JSON.stringify({ email, password }),
-  });
-  const cookie = res.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
-  return { status: res.status, cookie };
-}
+const { app, db, signIn, close } = await createTestApp();
+afterAll(close);
 
 describe("GET /me", () => {
   it("returns the user's tenant and role after sign-in", async () => {

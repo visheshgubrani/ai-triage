@@ -10,7 +10,8 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "build": "tsup",
     "start": "node --env-file-if-exists=../../.env dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "ingest": "tsx --env-file-if-exists=../../.env src/bin/ingest.ts"
   },
   "dependencies": {
     "@ai-triage/contracts": "workspace:*",
