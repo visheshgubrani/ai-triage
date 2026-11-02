@@ -1,0 +1,13 @@
+{
+  "name": "@ai-triage/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pure pipeline: parse, classify, extract, verify evidence, gates, route",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

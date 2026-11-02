@@ -1,0 +1,24 @@
+{
+  "name": "@ai-triage/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./client": "./src/client.ts"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "tsup",
+    "start": "node --env-file-if-exists=../../.env dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-triage/contracts": "workspace:*",
+    "@ai-triage/db": "workspace:*",
+    "@hono/node-server": "^2.1.5",
+    "hono": "^4.13.16"
+  },
+  "devDependencies": {
+    "tsup": "^9.0.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@ai-triage/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
+    "build": "tsup",
+    "start": "node --env-file-if-exists=../../.env dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-triage/core": "workspace:*",
+    "@ai-triage/db": "workspace:*",
+    "@ai-triage/llm": "workspace:*",
+    "pg-boss": "^12.38.0"
+  },
+  "devDependencies": {
+    "tsup": "^9.0.0"
+  }
+}

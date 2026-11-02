@@ -1,0 +1,30 @@
+{
+  "name": "ai-triage",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "vitest run",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "infra:up": "docker compose up -d --wait postgres storage && docker compose run --rm storage-init",
+    "infra:down": "docker compose down",
+    "db:generate": "pnpm --filter @ai-triage/db generate",
+    "db:migrate": "pnpm --filter @ai-triage/db migrate"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.4",
+    "@types/node": "^24.19.2",
+    "tsx": "^4.23.15",
+    "turbo": "^2.11.10",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "license": "MIT"
+}

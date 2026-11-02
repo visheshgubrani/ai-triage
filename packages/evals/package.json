@@ -1,0 +1,13 @@
+{
+  "name": "@ai-triage/evals",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Comparators, metrics, Wilson interval, threshold sweep, run diff",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

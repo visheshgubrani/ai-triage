@@ -1,0 +1,106 @@
+# AGENTS.md
+
+Context for coding agents (and humans) working in this repo. Read this first, then `docs/architecture.md` for the full design.
+
+## What this is
+
+**ai-triage** is an open-source, multi-tenant AI triage inbox:
+
+1. Emails (Postmark inbound forwarding) and documents (uploads, REST API) come in.
+2. An LLM (Claude) **classifies** each one and **extracts structured fields** against a versioned JSON Schema, which is validated with Ajv.
+3. Deterministic **gates** plus a confidence **threshold** decide the route: auto-approve (only for categories where the tenant opted in) or a **human approval queue**.
+4. Approved items produce a frozen action (a signed webhook) through a transactional outbox.
+5. An **evals page** runs the same pipeline over a labeled dataset (dev/calib/test splits) and reports per-category accuracy, auto-approve precision (with n and a Wilson lower bound), and cost and latency per request.
+
+It's an MVP and a portfolio project. Be correct where correctness is cheap, keep it runnable by a stranger with no API key, and keep it readable. Enterprise hardening goes under "Later" in the architecture doc.
+
+## Current status
+
+**Scaffold only.** Here is what exists and works:
+- pnpm + Turborepo monorepo, TypeScript, Biome, Vitest.
+- `apps/api`: Hono on Node with `GET /health` (checks the DB), exporting a typed RPC client (`@ai-triage/api/client`).
+- `apps/worker`: pg-boss starts, plus a `system.ping` smoke-test queue.
+- `apps/web`: Next.js 16 App Router with Tailwind 4. The home page shows API health through the typed client.
+- `packages/db`: Drizzle with a starter `tenants` table, migration `0000_init`, and `pingDb`.
+- `packages/core`: stage, status and task-kind types, plus the `ACTIONS_BY_TASK_KIND` table.
+- `packages/llm`: `getLlmMode()` (replay by default).
+- `packages/schemas`: an Ajv 2020 factory.
+- `packages/evals`: `wilsonLowerBound()` with tests.
+- `packages/contracts`: the `HealthResponse` Zod schema.
+- Docker: Postgres 17 and RustFS (S3-compatible), with a bucket created by a one-shot container.
+
+Not built yet: everything in the build phases (§9 of `docs/architecture.md`). **Next up is phase 1:** the full Drizzle schema, the RLS and tenant-scoped composite-FK migration, `withTenantTx()` with the pg-boss `db` adapter, Better Auth with orgs, immutable `pipeline_configs`, the `model_prices` seed and the demo seed skeleton.
+
+## Repo map
+
+```
+apps/api        Hono API (UI REST, public API, webhooks). Exports ./client for web.
+apps/worker     pg-boss handlers + cron
+apps/web        Next.js UI only (no business logic, no DB access)
+packages/db         Drizzle schema + migrations. The ONLY package that imports drizzle-orm / pg.
+packages/core       Pure pipeline logic. No I/O; ports are injected.
+packages/llm        Claude wrapper + llm_calls recording + replay/record/live
+packages/schemas    Category templates, toApiSchema(), Ajv
+packages/evals      Comparators + metrics
+packages/contracts  Zod API contracts shared by api and web
+docs/architecture.md   Agreed design (source of truth)
+fixtures/              Synthetic docs + LLM cassettes (to come)
+compose.yaml           Local infra
+```
+
+## Commands
+
+```bash
+pnpm install                 # Node >= 24, pnpm 12
+cp .env.example .env         # already done in a fresh scaffold
+pnpm infra:up                # Postgres :5440, RustFS :9020 (console :9021), creates bucket
+pnpm db:migrate              # apply migrations
+pnpm dev                     # api :8787, web :3000, worker
+pnpm typecheck && pnpm lint && pnpm test && pnpm build   # must all pass before you're done
+pnpm db:generate             # after editing packages/db/src/schema.ts
+pnpm format                  # Biome autofix
+pnpm infra:down
+```
+
+Ports are deliberately non-default (5440, 9020/9021, 8787) to avoid clashing with other local projects. They're configurable in `.env`.
+
+## Conventions
+
+- **Workspace packages ship TypeScript source** (`"exports": "./src/index.ts"`), so they have no build step. The api and worker bundle them with tsup (`noExternal: [/^@ai-triage\//]`), and Next uses `transpilePackages`. Add any new package that web imports to `transpilePackages` in `apps/web/next.config.ts`.
+- Internal deps use `"workspace:*"`. Add deps with `pnpm --filter <pkg> add <dep>`.
+- **Only `packages/db` imports `drizzle-orm` or `pg`.** A second import site installed a duplicate drizzle-orm (different peer resolution) and broke types. Expose helpers from `@ai-triage/db` instead.
+- Env: one root `.env`, loaded with `--env-file-if-exists=../../.env` (tsx/node) or `process.loadEnvFile` (drizzle config). `NEXT_PUBLIC_API_URL` falls back to `http://localhost:8787`.
+- API contracts are Zod schemas in `packages/contracts`. The web app calls the API only through the Hono RPC client.
+- Biome: 2-space indent, double quotes, 120 columns. Tests sit next to source as `*.test.ts` (Vitest, root config).
+- Migrations are generated by drizzle-kit. RLS policies and other raw SQL go in hand-written migration files. Never edit an applied migration.
+- pnpm 12 blocks dependency build scripts by default. Approve one with `pnpm approve-builds <pkg>`, which writes `allowBuilds` in `pnpm-workspace.yaml`.
+
+## Invariants (don't break these; details in docs/architecture.md)
+
+1. **Tenant isolation.** Every tenant table has `tenant_id`, RLS (`current_setting('app.tenant_id')`), and **composite FKs** `(tenant_id, x_id) → parent(tenant_id, id)`. All tenant access goes through `withTenantTx()`. Storage keys are generated by the server, never accepted from clients.
+2. **Short transactions.** Never hold a transaction open across a Claude call. The order is read and commit, then call, then commit with revision checks.
+3. **Atomic stage commit.** A stage's result, its status advance (`WHERE current_run_id = $run AND processing_status = $expected`) and the next job's enqueue happen in **one transaction**, with pg-boss given that transaction's client (`boss.send(…, { db })`).
+4. **LLM attempts.** Each attempt is saved as soon as the response arrives, reused on retry, and exactly one is marked `canonical` per context and stage. Repeat calls are still possible (a crash before the save), so downstream rows must stay deduplicated. `llm_calls` has exactly one execution context: a processing run, or an eval run + item.
+5. **Approvals** bind to an exact `extraction_id` revision plus a `claim_token`, and the action payload is frozen at approval. Allowed actions per task kind follow `ACTIONS_BY_TASK_KIND`, enforced by the API. Reclassify invalidates the claim and always returns the item to a human.
+6. **Webhooks** are delivered at least once with a stable `Idempotency-Key` (the action id).
+7. **Evals can't act.** The eval runner is built without the actions or delivery ports. Eval items never create `documents` rows, and `actions` requires one.
+8. **No surprise spend.** `LLM_MODE` defaults to `replay`. A missing cassette is a hard error, never a fallback to a live call. Live mode is opt-in. Budget is reserved atomically. Replayed figures are labeled as recorded, not actual.
+9. **Correct auto-approval** means the right category **and** every required field correct. Thresholds are chosen on `calib`, the config is frozen, and only then is `test` run. Always show n and the Wilson bound.
+
+## Claude API notes (checked Nov 2026)
+
+- SDK: `@anthropic-ai/sdk`. Default model is `claude-opus-5-5` at `effort: "low"` (set in `output_config.effort`), configurable per stage in `pipeline_configs`. Alternatives the evals page compares: `claude-sonnet-5-5`, `claude-haiku-5-5`. Use only these exact IDs, with no date suffixes.
+- Structured output: `output_config: { format: { type: "json_schema", schema } }`. The raw API can 400 on unsupported keywords (`minimum`/`maximum`/`minLength`/`maxLength`, recursive schemas), so strip them in `toApiSchema()` and enforce the full schema with Ajv. Citations are incompatible with structured outputs.
+- Things that changed recently:
+  - Thinking can't be disabled on Opus 5.5; effort is the control.
+  - `temperature`/`top_p`/`top_k` now return a 400.
+  - Assistant prefill isn't allowed.
+  - Forced `tool_choice` returns a 400 on Opus/Sonnet 5.5.
+- Refusals: always check `stop_reason` before reading content. Use `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`. It isn't available on Batches or Haiku.
+- Usage fields for cost: `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`. Prices per MTok (input/output): Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50. Store prices in `model_prices` and re-verify them before seeding.
+
+## Gotchas found while scaffolding
+
+- MinIO no longer publishes community Docker images, so local S3 is **RustFS** (`rustfs/rustfs`). The bucket is created with `curl --aws-sigv4`.
+- `docker compose up --wait` treats an exited one-shot service as a failure, so `infra:up` waits only on the long-running services and then runs `storage-init` with `run --rm`.
+- TypeScript 7 (native compiler) is in use, and Next 16 builds and typechecks fine with it.

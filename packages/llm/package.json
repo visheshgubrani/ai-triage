@@ -1,0 +1,16 @@
+{
+  "name": "@ai-triage/llm",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Claude wrapper: records llm_calls; live | record | replay modes",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0"
+  }
+}

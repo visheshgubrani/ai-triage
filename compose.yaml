@@ -1,0 +1,57 @@
+name: ai-triage
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: triage
+      POSTGRES_PASSWORD: triage
+      POSTGRES_DB: triage
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5440}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triage -d triage"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # S3-compatible object storage (RustFS; MinIO no longer publishes community images).
+  storage:
+    image: rustfs/rustfs:latest
+    environment:
+      RUSTFS_ACCESS_KEY: triage
+      RUSTFS_SECRET_KEY: triage-secret
+      RUSTFS_CONSOLE_ENABLE: "true"
+    ports:
+      - "127.0.0.1:${S3_PORT:-9020}:9000"
+      - "127.0.0.1:${S3_CONSOLE_PORT:-9021}:9001"
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/health >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # One-shot: create the bucket (409 = already exists). Later this grows into the
+  # `init` service (migrations + demo seed) described in docs/architecture.md.
+  storage-init:
+    image: rustfs/rustfs:latest
+    depends_on:
+      storage:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        code=$$(curl -s -o /dev/null -w "%{http_code}" -X PUT
+        --aws-sigv4 "aws:amz:us-east-1:s3" --user "triage:triage-secret"
+        http://storage:9000/triage);
+        echo "create bucket: HTTP $$code";
+        [ "$$code" = 200 ] || [ "$$code" = 409 ]
+    restart: "no"
+
+volumes:
+  postgres-data:
+  storage-data:
