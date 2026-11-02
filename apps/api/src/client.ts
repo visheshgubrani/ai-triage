@@ -2,5 +2,5 @@
 import { hc } from "hono/client";
 import type { AppType } from "./app";
 
-export const createApiClient = (baseUrl: string) => hc<AppType>(baseUrl);
+export const createApiClient = (baseUrl: string, options?: Parameters<typeof hc>[1]) => hc<AppType>(baseUrl, options);
 export type { AppType };

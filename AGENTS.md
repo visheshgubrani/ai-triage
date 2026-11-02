@@ -35,7 +35,19 @@ It's an MVP and a portfolio project. Be correct where correctness is cheap, keep
 - `packages/contracts`: `HealthResponse`, `MeResponse`, `ErrorResponse`.
 - Docker: Postgres 17 and RustFS (S3-compatible), with a bucket created by a one-shot container.
 
-Not built yet: phases 2–4 (§9 of `docs/architecture.md`), plus the Dockerfile and the compose `init` service. **Next up is phase 2:** the pipeline (ingestion, parse, classify, extract, route), the `llm` wrapper with cassettes, the built-in categories and fixtures, and `seedPipelineConfig` / `seedDocuments`.
+**Phase 2 (pipeline) is done**, except recording the cassettes (see below):
+- Ingestion (`packages/ingest`): two-step upload (`POST /uploads`, `POST /uploads/:id/complete`), the Postmark webhook (`POST /webhooks/postmark`, basic auth), the REST API (`POST /v1/documents`, tenant API key) and `pnpm ingest <file>`. Emails are normalized to `email.json` with attachments as separate objects (`packages/storage`, server-issued keys).
+- Tenant lookups before a tenant context (inbound address, API key) go through `SECURITY DEFINER` functions owned by `app_resolver` (migration `0003_resolvers`).
+- The pure pipeline in `@ai-triage/core/pipeline`: parsers (email, DOCX, PDF text detection, images), request builders, output parsing, evidence check, gates, `route()` and `evaluateExtraction()` (the single entry point the phase 4 eval runner reuses).
+- `packages/llm`: the gateway (attempt reuse, budget reservation, cost, fallback detection) and live / record / replay transports with cassettes in `fixtures/cassettes`.
+- `apps/worker`: parse → classify → extract → route handlers, the `doc.failed` dead-letter handler, and `drainTenantJobs()` for tests and the recorder.
+- Built-in categories (`invoice`, `support_request`, `contract`) and v1 prompts in `packages/schemas`; `buildPipelineConfig()` / `seedPipelineConfig`.
+- 60 labeled synthetic fixtures (`fixtures/manifest.json`, with dev/calib/test splits), seeded into the demo tenant by `pnpm db:seed`.
+- `apps/web`: a read-only `/documents` page (upload, statuses, and a detail view with parts, extraction and gate results).
+
+**Cassettes are not recorded yet.** Until someone runs `LLM_MODE=record pnpm cassettes:record --yes` (needs `ANTHROPIC_API_KEY`, costs a few dollars), every document fails at classify with `cassette_missing`, and the replay e2e test (`apps/worker/src/pipeline/e2e.db.test.ts`, gated on `fixtures/cassettes/recorded.json`) is skipped.
+
+Not built yet: phases 3–4 (§9 of `docs/architecture.md`), plus the Dockerfile and the compose `init` service. `action.deliver` jobs are enqueued by route but wait for the phase 3 delivery handler.
 
 ## Repo map
 
@@ -44,13 +56,15 @@ apps/api        Hono API (UI REST, public API, webhooks). Exports ./client for w
 apps/worker     pg-boss handlers + cron
 apps/web        Next.js UI only (no business logic, no DB access)
 packages/db         Drizzle schema + migrations. The ONLY package that imports drizzle-orm / pg.
-packages/core       Pure pipeline logic. No I/O; ports are injected.
+packages/core       Closed sets (`.`, web-safe) and the pure pipeline (`./pipeline`, Node-only). No I/O.
 packages/llm        Claude wrapper + llm_calls recording + replay/record/live
-packages/schemas    Category templates, toApiSchema(), Ajv
+packages/schemas    Category templates, prompts, toApiSchema(), Ajv, rules (a leaf: no workspace deps)
+packages/storage    S3 client, presigned URLs, server-issued storage keys
+packages/ingest     Ingestion paths: store the source, then create document + run + parse job
 packages/evals      Comparators + metrics
 packages/contracts  Zod API contracts shared by api and web
 docs/architecture.md   Agreed design (source of truth)
-fixtures/              Synthetic docs + LLM cassettes (to come)
+fixtures/              Synthetic labeled docs (generated, committed) + LLM cassettes
 compose.yaml           Local infra
 ```
 
@@ -61,7 +75,11 @@ pnpm install                 # Node >= 24, pnpm 12
 cp .env.example .env         # already done in a fresh scaffold
 pnpm infra:up                # Postgres :5440, RustFS :9020 (console :9021), creates bucket
 pnpm db:migrate              # create the app role, apply migrations, install pg-boss + queues
-pnpm db:seed                 # model prices + demo tenant (admin@demo.test / reviewer@demo.test, password demo-password)
+pnpm db:seed                 # prices, demo tenant (admin@demo.test / reviewer@demo.test, password demo-password), config, 60 fixture docs
+pnpm ingest <file>           # .pdf/.docx/.eml/.png/.txt via the REST API (TRIAGE_API_KEY), .json as a Postmark payload
+pnpm api-key:create --tenant demo   # prints a tenant API key once
+pnpm fixtures:generate       # regenerate fixtures/manifest.json (files are kept unless --force, which invalidates cassettes)
+LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY: records missing cassettes (--all re-records)
 pnpm dev                     # api :8787, web :3000, worker
 pnpm typecheck && pnpm lint && pnpm test && pnpm build   # must all pass before you're done (pnpm test needs infra:up)
 pnpm test:unit               # unit tests only, no Postgres needed
@@ -111,6 +129,12 @@ Ports are deliberately non-default (5440, 9020/9021, 8787) to avoid clashing wit
   - Forced `tool_choice` returns a 400 on Opus/Sonnet 5.5.
 - Refusals: always check `stop_reason` before reading content. Use `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`. It isn't available on Batches or Haiku.
 - Usage fields for cost: `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`. Prices per MTok (input/output): Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50 (prompts ≤100K tokens; $0.50/$2.50 above). Cache reads are 0.05x input on Opus/Sonnet 5.5 ($0.20/$0.10) and 0.1x on Haiku. Writes are 1.25x (5m) or 2x (1h). Batch is 0.5x. These are seeded in `packages/db/src/seed/prices.ts` (verified 2026-11-03); re-verify before changing them.
+
+- **Core subpaths.** `@ai-triage/core` stays constants-only so web can import it; parsers and pipeline logic live in `@ai-triage/core/pipeline`.
+- **Stage commit order:** guarded status advance first (it locks the document row and detects stale or duplicate jobs), then the stage result, then pointers (`current_extraction_id` after the extraction insert: the FK isn't deferrable), then `markCanonical`, then enqueue. Stage jobs get deterministic ids (`stageJobId`), so a duplicate send is a no-op.
+- **Failures:** a `PipelineError` (bad file, refusal, `max_tokens`, missing cassette, budget...) fails the run at once; anything else is retried by pg-boss per `QUEUE_OPTIONS`, then dead-lettered to `doc.failed`. `failRun` is guarded on the failing stage's input status.
+- **Cassette hashes must not depend on the tenant:** request builders take content and config only (no ids, keys or recipient addresses). A test checks this.
+- **Fixtures are generated once and committed;** cassettes are keyed by their exact bytes. Random draws in the generator must happen outside the file-writing callbacks.
 
 ## Gotchas found while scaffolding
 

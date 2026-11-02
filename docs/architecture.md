@@ -134,19 +134,20 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 **Each stage handler (parse → classify → extract → route) follows the same three steps:**
 1. **Read.** In a short transaction, load the run and its inputs. Stop if the run is superseded or the stage is already done.
 2. **Call.** If a successful attempt already exists for `(context, stage)`, reuse it. Otherwise reserve budget (live mode only; see below), call Claude, and **insert the attempt row, response included, in its own small transaction right away**. This narrows repeat calls but can't remove them: if the worker crashes between Claude returning and that insert, the retry calls Claude again. The README says so plainly: *repeated model calls are possible, and saved responses are reused whenever available.* Every attempt is kept for cost accounting.
-3. **Commit.** In one transaction: mark the attempt used as `canonical`, write the stage result and advance status with `WHERE current_run_id = $run AND processing_status = $expected`, then enqueue the next job through the same client. If the guard matches nothing, the run is stale and the handler exits. Stage results are unique per run and stage, and actions are unique per approved revision, so a repeated model call can never produce a second extraction or a second action.
+3. **Commit.** In one transaction: advance status with `WHERE current_run_id = $run AND processing_status = $expected` (first: it locks the document row), write the stage result, update pointers such as `current_extraction_id` (after the insert, since that FK isn't deferrable), mark the attempt used as `canonical`, then enqueue the next job through the same client. If the guard matches nothing, the run is stale and the handler exits. Stage results are unique per run and stage, and actions are unique per approved revision, so a repeated model call can never produce a second extraction or a second action.
 
 **Parse.**
 - Email bodies become plain text with offsets. DOCX goes through `mammoth`.
 - PDFs go through `unpdf` to get per-page text. If the text layer is substantial, `evidence_mode = pdf_text`; otherwise it's a scan and `evidence_mode = unverifiable`. Images are always `unverifiable`.
 - The PDF or image itself is still sent to Claude as a document or image block, so the model sees the layout.
-- App limits: `MAX_FILE_MB=32`, `MAX_PDF_PAGES=100` (configurable, and below the API's own limits).
+- App limits: `MAX_FILE_MB=20`, `MAX_PDF_PAGES=100` (configurable). Inline PDFs and images are base64-encoded (4/3 larger) and a request may not exceed 32 MB, so the request builder also refuses documents over 30 MB once encoded (`request_too_large`).
+- A PDF counts as text (`pdf_text`) when it averages at least 40 non-whitespace characters per page; otherwise every page is `unverifiable`.
 
 **Classify** returns `{ category: enum(tenant categories + "other"), self_confidence: 0..1, rationale }`.
 
 **Extract** returns, for each field, `{ value, evidence: { quote, page? } | null }`, plus `uncertain_fields: string[]`. The schema comes from `toApiSchema()`.
 
-**Route** is pure: gates, then score, then a decision and a proposed action (§6). Production persists the decision. If the result is auto and the item isn't picked for audit, it creates the `actions` row and enqueues `action.deliver` in the same transaction. Otherwise it creates a `review_tasks` row.
+**Route** is pure: gates, then score, then a decision and a proposed action (§6). Extract stores the field values and Ajv errors; route recomputes validation, rules and evidence from the canonical extract response and writes `gate_results`, `score`, `decision` and `decision_reasons` onto that extraction. Production persists the decision. If the result is auto and the item isn't picked for audit, it creates the `actions` row and enqueues `action.deliver` in the same transaction. Otherwise it creates a `review_tasks` row.
 
 **Exceptional transitions:**
 | Situation | Result |
