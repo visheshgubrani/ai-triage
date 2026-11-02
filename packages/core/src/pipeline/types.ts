@@ -30,7 +30,8 @@ export interface LlmRequest {
 
 export type LlmContent =
   | { type: "text"; text: string }
-  | { type: "document"; mime: "application/pdf"; data: string; title: string | null }
+  /** `pages` feeds the budget estimate only; it isn't sent. */
+  | { type: "document"; mime: "application/pdf"; data: string; title: string | null; pages: number }
   | { type: "image"; mime: "image/png" | "image/jpeg"; data: string };
 
 export interface StageModel {

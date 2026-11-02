@@ -1,4 +1,4 @@
-import type { LlmCallMode, LlmStage } from "@ai-triage/core";
+import type { LlmCallContext, LlmCallMode, LlmStage } from "@ai-triage/core";
 import { and, desc, eq, isNotNull, isNull, max, type SQL } from "drizzle-orm";
 import type pg from "pg";
 import { PG, pgCode } from "./errors";
@@ -9,7 +9,7 @@ import { type TenantTx, withTenantTx } from "./tenant-tx";
 // transaction as soon as the response arrives, reused on retry, and marked canonical when its
 // stage commits. Each row has exactly one execution context: a processing run, or an eval run + item.
 
-export type LlmCallContext = { runId: string } | { evalRunId: string; evalItemId: string };
+export type { LlmCallContext };
 
 export type LlmCallRow = typeof llmCalls.$inferSelect;
 

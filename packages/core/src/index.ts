@@ -77,6 +77,9 @@ export type EvalItemOrigin = (typeof EVAL_ITEM_ORIGINS)[number];
 export const EVAL_RUN_STATUSES = ["queued", "running", "done", "failed"] as const;
 export type EvalRunStatus = (typeof EVAL_RUN_STATUSES)[number];
 
+/** Execution context of an llm_calls row: a processing run, or an eval run + item (never both). */
+export type LlmCallContext = { runId: string } | { evalRunId: string; evalItemId: string };
+
 /** How an llm_calls row was produced. `record` mode calls the live API, so it stores `live`. */
 export const LLM_CALL_MODES = ["live", "replay"] as const;
 export type LlmCallMode = (typeof LLM_CALL_MODES)[number];

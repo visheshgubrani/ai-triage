@@ -51,7 +51,8 @@ export function documentContent(parts: readonly DocumentPart[], blobs: ReadonlyM
       const data = Buffer.from(blob).toString("base64");
       bytes += data.length;
       if (part.mime === DOCUMENT_MIMES.pdf) {
-        content.push({ type: "document", mime: DOCUMENT_MIMES.pdf, data, title: part.label });
+        const pages = parts.filter((p) => p.storageKey === part.storageKey).length;
+        content.push({ type: "document", mime: DOCUMENT_MIMES.pdf, data, title: part.label, pages });
       } else {
         content.push({ type: "text", text: `${partTag(part)}(image follows)</part>` });
         content.push({ type: "image", mime: part.mime as "image/png" | "image/jpeg", data });
