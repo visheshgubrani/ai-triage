@@ -6,17 +6,24 @@
   "description": "Drizzle schema, migrations, RLS, withTenantTx()",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema/index.ts",
+    "./seed": "./src/seed/index.ts",
+    "./migrate": "./src/migrate.ts",
+    "./testing": "./src/testing.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "generate": "drizzle-kit generate",
-    "migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts",
-    "studio": "drizzle-kit studio"
+    "migrate": "tsx --env-file-if-exists=../../.env src/bin/migrate.ts",
+    "studio": "drizzle-kit studio",
+    "seed": "tsx --env-file-if-exists=../../.env src/bin/seed.ts"
   },
   "dependencies": {
+    "@ai-triage/core": "workspace:*",
+    "better-auth": "1.7.15",
     "drizzle-orm": "^0.45.4",
-    "pg": "^8.23.1"
+    "pg": "^8.23.1",
+    "pg-boss": "^12.38.0"
   },
   "devDependencies": {
     "@types/pg": "^8.23.1",

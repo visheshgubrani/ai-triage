@@ -1,5 +1,8 @@
-import { HealthResponse } from "@ai-triage/contracts";
+import { HealthResponse, MeResponse } from "@ai-triage/contracts";
+import { cookies } from "next/headers";
+import Link from "next/link";
 import { api } from "@/lib/api";
+import { SignOutButton } from "./sign-out-button";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +15,18 @@ async function getHealth(): Promise<HealthResponse | null> {
   }
 }
 
+/** Server-side call to the API, forwarding the browser's session cookie. */
+async function getMe(): Promise<MeResponse | null> {
+  const cookie = (await cookies()).toString();
+  try {
+    const res = await api.me.$get(undefined, { headers: { cookie } });
+    if (!res.ok) return null;
+    return MeResponse.parse(await res.json());
+  } catch {
+    return null;
+  }
+}
+
 const sections = [
   { name: "Inbox", detail: "Incoming documents and their routing decisions" },
   { name: "Review queue", detail: "Low-confidence items awaiting a human" },
@@ -19,15 +34,35 @@ const sections = [
 ];
 
 export default async function Home() {
-  const health = await getHealth();
+  const [health, me] = await Promise.all([getHealth(), getMe()]);
   return (
     <main className="mx-auto max-w-3xl px-4 py-16">
       <h1 className="text-3xl font-semibold tracking-tight">AI Triage</h1>
       <p className="mt-2 text-neutral-600 dark:text-neutral-400">
-        Scaffold is running. Pipeline, review queue and evals are not built yet.
+        Foundation is in place. Pipeline, review queue and evals are not built yet.
       </p>
 
       <section className="mt-8 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
+        <h2 className="text-sm font-medium text-neutral-500">Session</h2>
+        {me ? (
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm">
+              Signed in as <span className="font-medium">{me.user.email}</span> · tenant{" "}
+              <span className="font-medium">{me.tenant.name}</span> · {me.role}
+            </p>
+            <SignOutButton />
+          </div>
+        ) : (
+          <p className="mt-1 text-sm">
+            <Link href="/sign-in" className="underline underline-offset-2">
+              Sign in
+            </Link>{" "}
+            to see your tenant.
+          </p>
+        )}
+      </section>
+
+      <section className="mt-4 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
         <h2 className="text-sm font-medium text-neutral-500">API health</h2>
         {health ? (
           <p className="mt-1 font-mono text-sm">

@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Workspace packages ship TypeScript source.
-  transpilePackages: ["@ai-triage/contracts", "@ai-triage/api"],
+  transpilePackages: ["@ai-triage/contracts", "@ai-triage/core", "@ai-triage/api"],
 };
 
 export default nextConfig;
