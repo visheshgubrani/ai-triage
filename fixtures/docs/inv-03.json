@@ -1,0 +1,33 @@
+{
+  "FromName": "Northgate Cloud Services Inc. Billing",
+  "MessageStream": "inbound",
+  "From": "billing@northgate-cloud.example",
+  "FromFull": {
+    "Email": "billing@northgate-cloud.example",
+    "Name": "Northgate Cloud Services Inc. Billing",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Invoice NCS-6233 from Northgate Cloud Services Inc.",
+  "MessageID": "fixture-inv-03",
+  "Date": "Wed, 14 Jan 2026 12:15:00 +0000",
+  "TextBody": "Hello Elin,\n\nHere is our invoice for this month.\n\nNorthgate Cloud Services Inc.\n500 Mission Street, San Francisco, CA 94105, USA\nbilling@northgate-cloud.example\n\nINVOICE\nInvoice number: NCS-6233\nInvoice date: 2026-01-14\nDue date: 2026-01-28\n\nBill to: Lindqvist Robotics AB\nKungsgatan 12, 111 43 Stockholm, Sweden\n\nDescription | Qty | Unit price | Amount\nManaged Kubernetes cluster (monthly) | 10 | 177.59 | 1,775.90\nObject storage, 10 TB | 6 | 870.93 | 5,225.58\n24/7 support plan | 10 | 720.56 | 7,205.60\nData egress overage | 3 | 64.80 | 194.40\n\nSubtotal: 14,401.48 USD\nTax (20%): 2,880.30 USD\nTotal due: 17,281.78 USD\n\nPayment terms: bank transfer within 14 days, quoting NCS-6233.\n\nKind regards,\nNorthgate Cloud Services Inc. Billing",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<inv-03@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

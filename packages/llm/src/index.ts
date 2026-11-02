@@ -7,3 +7,20 @@ export function getLlmMode(value = process.env.LLM_MODE): LlmMode {
   if ((LLM_MODES as readonly string[]).includes(value)) return value as LlmMode;
   throw new Error(`Invalid LLM_MODE "${value}". Expected one of: ${LLM_MODES.join(", ")}`);
 }
+
+export * from "./cost";
+export * from "./errors";
+export * from "./gateway";
+export * from "./hash";
+export * from "./output";
+export * from "./params";
+export * from "./transports";
+
+import { liveTransport, recordTransport, replayTransport, type Transport } from "./transports";
+
+/** The transport for a mode. Only record and live construct an API client (and need a key). */
+export function createTransport(mode: LlmMode, cassetteDir: string): Transport {
+  if (mode === "replay") return replayTransport(cassetteDir);
+  if (mode === "record") return recordTransport(liveTransport(), cassetteDir);
+  return liveTransport();
+}

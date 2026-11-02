@@ -1,0 +1,33 @@
+{
+  "FromName": "Mateo Mehta",
+  "MessageStream": "inbound",
+  "From": "mateo.mehta@example.com",
+  "FromFull": {
+    "Email": "mateo.mehta@example.com",
+    "Name": "Mateo Mehta",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Support request",
+  "MessageID": "fixture-sup-01",
+  "Date": "Fri, 04 Sep 2026 09:15:00 +0000",
+  "TextBody": "Hello,\n\nMy Nimbus air purifier arrived with a cracked lid and it leaks when I fill it. The order number is ORD-685393. Could you send me a replacement?\n\nThanks,\nMateo Mehta",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-01@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

@@ -1,0 +1,22 @@
+{
+  "name": "@ai-triage/fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Synthetic labeled documents and recorded LLM cassettes",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "generate": "tsx src/generate.ts"
+  },
+  "dependencies": {
+    "@ai-triage/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@ai-triage/schemas": "workspace:*",
+    "docx": "^9.15.1",
+    "pdf-lib": "^1.17.1"
+  }
+}

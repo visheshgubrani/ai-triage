@@ -1,0 +1,40 @@
+{
+  "FromName": "Brightline Office Supply Ltd Billing",
+  "MessageStream": "inbound",
+  "From": "billing@brightline-office.example",
+  "FromFull": {
+    "Email": "billing@brightline-office.example",
+    "Name": "Brightline Office Supply Ltd Billing",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Invoice BOS-3080",
+  "MessageID": "fixture-inv-09",
+  "Date": "Tue, 30 Jun 2026 10:15:00 +0000",
+  "TextBody": "Hi Maya,\n\nPlease find attached invoice BOS-3080 for 9,204.46 USD, due 2026-07-30.\n\nThanks,\nBrightline Office Supply Ltd Billing",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<inv-09@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": [
+    {
+      "Name": "BOS-3080.pdf",
+      "Content": "JVBERi0xLjcKJYGBgYEKCjEgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFsgNiAwIFIgXQovQ291bnQgMQo+PgplbmRvYmoKCjIgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDEgMCBSCj4+CmVuZG9iagoKMyAwIG9iago8PAovUHJvZHVjZXIgPEZFRkYwMDYxMDA2OTAwMkQwMDc0MDA3MjAwNjkwMDYxMDA2NzAwNjUwMDIwMDA2NjAwNjkwMDc4MDA3NDAwNzUwMDcyMDA2NTAwNzM+Ci9DcmVhdGlvbkRhdGUgKEQ6MjAyNjEwMDEwMDAwMDBaKQovTW9kRGF0ZSAoRDoyMDI2MTAwMTAwMDAwMFopCj4+CmVuZG9iagoKNCAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTEKL0Jhc2VGb250IC9IZWx2ZXRpY2EKL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcKPj4KZW5kb2JqCgo1IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYS1Cb2xkCi9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nCj4+CmVuZG9iagoKNiAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDEgMCBSCi9SZXNvdXJjZXMgPDwKL0ZvbnQgPDwKL0hlbHZldGljYS1Cb2xkLTcwOTg0ODA3ODkgNSAwIFIKL0hlbHZldGljYS05NzQyNjgyNTY4IDQgMCBSCi9IZWx2ZXRpY2EtMjAwMDgwNTk4NiA0IDAgUgovSGVsdmV0aWNhLUJvbGQtOTc1MDQ2OTIwNyA1IDAgUgovSGVsdmV0aWNhLTc1NzI1MzM2ODYgNCAwIFIKL0hlbHZldGljYS04NDUwMTgwMTA3IDQgMCBSCi9IZWx2ZXRpY2EtODY1OTg3MTg3OCA0IDAgUgovSGVsdmV0aWNhLTU4MjQ2NjIzMzggNCAwIFIKL0hlbHZldGljYS0xODQ4NTI0MTc1IDQgMCBSCi9IZWx2ZXRpY2EtNzg4ODkxMTA2MyA0IDAgUgovSGVsdmV0aWNhLTk3OTM0NDkyOSA0IDAgUgovSGVsdmV0aWNhLTI3MDgxOTk5NTYg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",
+      "ContentType": "application/pdf",
+      "ContentLength": 2398
+    }
+  ]
+}

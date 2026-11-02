@@ -1,0 +1,33 @@
+{
+  "FromName": "Felix Haddad",
+  "MessageStream": "inbound",
+  "From": "felix.haddad@example.com",
+  "FromFull": {
+    "Email": "felix.haddad@example.com",
+    "Name": "Felix Haddad",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Autumn webinar series: cloud cost management",
+  "MessageID": "fixture-oth-newsletter",
+  "Date": "Thu, 01 Oct 2026 12:15:00 +0000",
+  "TextBody": "",
+  "HtmlBody": "<h1>Join our autumn webinar series</h1><p>Three free sessions on cutting cloud costs, every Tuesday in November.</p><p><a href='https://events.example'>Register now</a></p><p>You receive this because you subscribed to our newsletter. Unsubscribe any time.</p>",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<oth-newsletter@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

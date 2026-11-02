@@ -28,9 +28,9 @@ async function getMe(): Promise<MeResponse | null> {
 }
 
 const sections = [
-  { name: "Inbox", detail: "Incoming documents and their routing decisions" },
-  { name: "Review queue", detail: "Low-confidence items awaiting a human" },
-  { name: "Evals", detail: "Accuracy per category, cost and latency per request" },
+  { name: "Documents", detail: "Incoming documents and their routing decisions", href: "/documents" },
+  { name: "Review queue", detail: "Low-confidence items awaiting a human (phase 3)" },
+  { name: "Evals", detail: "Accuracy per category, cost and latency per request (phase 4)" },
 ];
 
 export default async function Home() {
@@ -39,7 +39,7 @@ export default async function Home() {
     <main className="mx-auto max-w-3xl px-4 py-16">
       <h1 className="text-3xl font-semibold tracking-tight">AI Triage</h1>
       <p className="mt-2 text-neutral-600 dark:text-neutral-400">
-        Foundation is in place. Pipeline, review queue and evals are not built yet.
+        The pipeline runs: ingest, parse, classify, extract and route. The review queue and evals come next.
       </p>
 
       <section className="mt-8 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
@@ -76,7 +76,13 @@ export default async function Home() {
       <ul className="mt-8 grid gap-3 sm:grid-cols-3">
         {sections.map((s) => (
           <li key={s.name} className="rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-            <p className="font-medium">{s.name}</p>
+            {s.href ? (
+              <Link href={s.href} className="font-medium underline underline-offset-2">
+                {s.name}
+              </Link>
+            ) : (
+              <p className="font-medium">{s.name}</p>
+            )}
             <p className="mt-1 text-sm text-neutral-500">{s.detail}</p>
           </li>
         ))}

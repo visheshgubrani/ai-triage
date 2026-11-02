@@ -1,0 +1,33 @@
+{
+  "FromName": "Sofia Alvarez",
+  "MessageStream": "inbound",
+  "From": "sofia.alvarez@example.com",
+  "FromFull": {
+    "Email": "sofia.alvarez@example.com",
+    "Name": "Sofia Alvarez",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "MSA redlines - open points",
+  "MessageID": "fixture-amb-con-redlines",
+  "Date": "Thu, 08 Oct 2026 13:15:00 +0000",
+  "TextBody": "Hi team,\n\nI've reviewed the latest MSA redlines from Kestrel Logistics. Two open points:\n\n- They want the liability cap at 12 months of fees; we proposed 24.\n- They removed the auto-renewal clause.\n\nCan we discuss on Thursday before I send our comments back?\n\nSofia Alvarez",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<amb-con-redlines@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

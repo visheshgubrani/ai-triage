@@ -1,0 +1,17 @@
+{
+  "name": "@ai-triage/storage",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "S3-compatible object storage: server-issued keys, presigned URLs",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1161.0",
+    "@aws-sdk/s3-request-presigner": "^3.1161.0"
+  }
+}

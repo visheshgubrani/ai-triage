@@ -1,0 +1,40 @@
+{
+  "FromName": "Northgate Cloud Services Inc. Billing",
+  "MessageStream": "inbound",
+  "From": "billing@northgate-cloud.example",
+  "FromFull": {
+    "Email": "billing@northgate-cloud.example",
+    "Name": "Northgate Cloud Services Inc. Billing",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Invoice NCS-6966",
+  "MessageID": "fixture-inv-05",
+  "Date": "Tue, 21 Apr 2026 14:15:00 +0000",
+  "TextBody": "Hi Jonah,\n\nPlease find attached invoice NCS-6966 for 1,865.02 USD, due 5 May 2026.\n\nThanks,\nNorthgate Cloud Services Inc. Billing",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<inv-05@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": [
+    {
+      "Name": "NCS-6966.pdf",
+      "Content": "JVBERi0xLjcKJYGBgYEKCjEgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFsgNiAwIFIgXQovQ291bnQgMQo+PgplbmRvYmoKCjIgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDEgMCBSCj4+CmVuZG9iagoKMyAwIG9iago8PAovUHJvZHVjZXIgPEZFRkYwMDYxMDA2OTAwMkQwMDc0MDA3MjAwNjkwMDYxMDA2NzAwNjUwMDIwMDA2NjAwNjkwMDc4MDA3NDAwNzUwMDcyMDA2NTAwNzM+Ci9DcmVhdGlvbkRhdGUgKEQ6MjAyNjEwMDEwMDAwMDBaKQovTW9kRGF0ZSAoRDoyMDI2MTAwMTAwMDAwMFopCj4+CmVuZG9iagoKNCAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTEKL0Jhc2VGb250IC9IZWx2ZXRpY2EKL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcKPj4KZW5kb2JqCgo1IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYS1Cb2xkCi9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nCj4+CmVuZG9iagoKNiAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDEgMCBSCi9SZXNvdXJjZXMgPDwKL0ZvbnQgPDwKL0hlbHZldGljYS1Cb2xkLTcwOTg0ODA3ODkgNSAwIFIKL0hlbHZldGljYS05NzQyNjgyNTY4IDQgMCBSCi9IZWx2ZXRpY2EtMjAwMDgwNTk4NiA0IDAgUgovSGVsdmV0aWNhLUJvbGQtOTc1MDQ2OTIwNyA1IDAgUgovSGVsdmV0aWNhLTc1NzI1MzM2ODYgNCAwIFIKL0hlbHZldGljYS04NDUwMTgwMTA3IDQgMCBSCi9IZWx2ZXRpY2EtODY1OTg3MTg3OCA0IDAgUgovSGVsdmV0aWNhLTU4MjQ2NjIzMzggNCAwIFIKL0hlbHZldGljYS0xODQ4NTI0MTc1IDQgMCBSCi9IZWx2ZXRpY2EtNzg4ODkxMTA2MyA0IDAgUgovSGVsdmV0aWNhLTk3OTM0NDkyOSA0IDAgUgovSGVsdmV0aWNhLTI3MDgxOTk5NTYgNCAwIFIKL0hlbHZldGljYS02NzAzNjgyNjY0IDQgMCBSCi9IZWx2ZXRpY2EtNzM1NTY5NDg3IDQgMCBSCi9IZWx2ZXRpY2EtODc4NDAxNTcxMSA0IDAgUgo+PgovWE9iamVjdCA8PAo+PgovRXh0R1N0YXRlIDw8Cj4+Cj4+Ci9NZWRpYUJveCBbIDAgMCA1OTUgODQyIF0KL0Fubm90cyBbIF0KL0NvbnRlbnRzIFsgNyAwIFIgXQo+PgplbmRvYmoKCjcgMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL0xlbmd0aCA3MjkKPj4Kc3RyZWFtCniclVZdixNBEHzfX7HPwulMf86ACJfdDT74IuQPiN6JciIn4u+3emZzSjTLHiG7Sc9murq6uiaPw+E0pDFePz4Pr97ePfy6+/nl44ebw/eHTzeeapGSvNQxy3i6HwjXd0Nuz+dR0+jFxtO34bUsdnRysWJuGXelJGwTompCSdkU62bV4hNjtdpiTMub8fR1OL0YltPwfni8Bqe6kBVSK2NOL/X/WIwbFlZOnJBhtursjJxHWwKDi5Mp8gtNDVOOuBiiOdDE87geY1VYMiWuLJyxn7ZfqCK6DzGllErSCoKuIxaPFWA2AsoJr2DFJdm/fM72h88FNRRgnj0hpvsQtZZWVxRcKfnVllLqLa2yINcRd5adKRxNVmbbKhokr/vbAkEcuyQoEfMtaF8E/aMZfajRi315i2jKJeWo6mrekleyLzObdIojPxOj7ZI9eWtJi8R7LxJDyz0X3xCq2To0gmZe5tcm3Oz1uZm1kJiBxa3MQmcOVsFBCGLHxjzZFHgshjTGJUFgbAdcvcsSz0x4WvbhybAOJTCpG3ioa0EV+8eMJ26jKcAUufEJZuErP+vQYgTaYDT5B/o+3HLEoMYOrCK3fVz7rtYsSA69CotfzDv1XEqpOSc4y/UaEp85lbA241BOQ7YajwcWVBA99b9w4VtXWVNhrAhqaiO++E6Wq8OhpFK9DlBL6fDm5nLRzpUQJKLwZQs/ke7L4TLeSccKxrIEpAAEyieUsBbBvN4VtBdaIFVbI5kmRNERRLG20y89lVxr1Q3rAOyVang5sEfzQxw2tdG5yLv69U4izVFAITPZyC+1Zw9BluAmRpSUasvPcVIgdwkZPie3MyRRpWy4F1z1XPpT0eEcMbFPxReIT1sr6HkAYFeSsnrOGwhyPxfCF7xCFE2lzT9CQrM3/7Z+lB4i3o9VTIR1Kbm3aSzdX/q0Nu/DsRvz6vCKVtvZbS7Ogos/C78BY/fl1QplbmRzdHJlYW0KZW5kb2JqCgp4cmVmCjAgOAowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTYgMDAwMDAgbiAKMDAwMDAwMDA3NiAwMDAwMCBuIAowMDAwMDAwMTI2IDAwMDAwIG4gCjAwMDAwMDAzMDAgMDAwMDAgbiAKMDAwMDAwMDM5OCAwMDAwMCBuIAowMDAwMDAwNTAxIDAwMDAwIG4gCjAwMDAwMDEwOTYgMDAwMDAgbiAKCnRyYWlsZXIKPDwKL1NpemUgOAovUm9vdCAyIDAgUgovSW5mbyAzIDAgUgo+PgoKc3RhcnR4cmVmCjE4OTgKJSVFT0Y=",
+      "ContentType": "application/pdf",
+      "ContentLength": 2135
+    }
+  ]
+}

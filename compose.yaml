@@ -18,8 +18,9 @@ services:
       retries: 30
 
   # S3-compatible object storage (RustFS; MinIO no longer publishes community images).
+  # Pinned by digest (v1.0.4) so CI and local runs use the same build.
   storage:
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
     environment:
       RUSTFS_ACCESS_KEY: triage
       RUSTFS_SECRET_KEY: triage-secret
@@ -38,7 +39,7 @@ services:
   # One-shot: create the bucket (409 = already exists). Later this grows into the
   # `init` service (migrations + demo seed) described in docs/architecture.md.
   storage-init:
-    image: rustfs/rustfs:latest
+    image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
     depends_on:
       storage:
         condition: service_healthy

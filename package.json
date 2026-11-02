@@ -18,7 +18,11 @@
     "infra:down": "docker compose down",
     "db:generate": "pnpm --filter @ai-triage/db generate",
     "db:migrate": "pnpm --filter @ai-triage/db migrate",
-    "db:seed": "pnpm --filter @ai-triage/db seed"
+    "db:seed": "pnpm --filter @ai-triage/db seed && pnpm --filter @ai-triage/worker seed:documents",
+    "api-key:create": "pnpm --filter @ai-triage/db api-key:create",
+    "ingest": "pnpm --filter @ai-triage/api ingest",
+    "fixtures:generate": "pnpm --filter @ai-triage/fixtures generate",
+    "cassettes:record": "pnpm --filter @ai-triage/worker cassettes:record"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",

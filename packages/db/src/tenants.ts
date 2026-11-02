@@ -55,3 +55,12 @@ export async function getTenant(db: NodePgDatabase<typeof schema>, tenantId: str
     .limit(1);
   return row ?? null;
 }
+
+export async function findTenantBySlug(db: NodePgDatabase<typeof schema>, slug: string) {
+  const [row] = await db
+    .select({ id: tenants.id, name: tenants.name })
+    .from(tenants)
+    .where(eq(tenants.slug, slug))
+    .limit(1);
+  return row ?? null;
+}

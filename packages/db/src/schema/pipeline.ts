@@ -6,6 +6,7 @@ import {
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
   LLM_STAGES,
+  PART_KINDS,
   PROCESSING_STATUSES,
   REVIEW_STATUSES,
   RUN_STATUSES,
@@ -192,7 +193,11 @@ export const documents = pgTable(
   ],
 );
 
-/** Parsed text of a document: the email body, an attachment, or one PDF page. */
+/**
+ * Parsed text of a document: the email body, an attachment, or one PDF page. `storage_key` points
+ * at the part's binary (a PDF or image is sent to Claude as a document or image block); `label` is
+ * the attachment or file name.
+ */
 export const documentParts = pgTable(
   "document_parts",
   {
@@ -200,6 +205,9 @@ export const documentParts = pgTable(
     tenantId: tenantId(),
     documentId: uuid("document_id").notNull(),
     partIndex: integer("part_index").notNull(),
+    kind: text("kind", { enum: PART_KINDS }).notNull(),
+    mime: text("mime").notNull(),
+    label: text("label"),
     page: integer("page"),
     text: text("text").notNull(),
     evidenceMode: text("evidence_mode", { enum: EVIDENCE_MODES }).notNull(),
@@ -209,6 +217,7 @@ export const documentParts = pgTable(
   (t) => [
     tenantKey("document_parts", t),
     unique("document_parts_document_id_part_index_key").on(t.documentId, t.partIndex),
+    oneOf("document_parts_kind_check", t.kind, PART_KINDS),
     oneOf("document_parts_evidence_mode_check", t.evidenceMode, EVIDENCE_MODES),
     foreignKey({
       name: "document_parts_document_fk",

@@ -1,0 +1,33 @@
+{
+  "FromName": "Sofia Costa",
+  "MessageStream": "inbound",
+  "From": "sofia.costa@example.com",
+  "FromFull": {
+    "Email": "sofia.costa@example.com",
+    "Name": "Sofia Costa",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Invitation: Q4 planning sync @ Thu 10:00",
+  "MessageID": "fixture-oth-meeting",
+  "Date": "Mon, 05 Oct 2026 12:15:00 +0000",
+  "TextBody": "You have been invited to Q4 planning sync.\nWhen: Thursday 10:00-11:00\nWhere: Room 3B / video link\nAgenda: budget review, hiring plan, offsite.",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<oth-meeting@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

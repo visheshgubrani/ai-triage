@@ -1,0 +1,33 @@
+{
+  "FromName": "Nadia Walsh",
+  "MessageStream": "inbound",
+  "From": "nadia.walsh@example.com",
+  "FromFull": {
+    "Email": "nadia.walsh@example.com",
+    "Name": "Nadia Walsh",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Termination of services agreement",
+  "MessageID": "fixture-amb-sup-termination",
+  "Date": "Tue, 20 Oct 2026 10:15:00 +0000",
+  "TextBody": "Hi,\n\nWe'd like to terminate our consulting services agreement with you effective 31 December 2026, in line with clause 6. Please confirm receipt and let us know the final invoicing steps.\n\nBest,\nNadia Walsh\nOperations, Saltmarsh Coffee Roasters",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<amb-sup-termination@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

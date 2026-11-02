@@ -1,0 +1,33 @@
+{
+  "FromName": "Mateo Mehta",
+  "MessageStream": "inbound",
+  "From": "mateo.mehta@example.com",
+  "FromFull": {
+    "Email": "mateo.mehta@example.com",
+    "Name": "Mateo Mehta",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Need help",
+  "MessageID": "fixture-sup-02",
+  "Date": "Mon, 07 Sep 2026 10:15:00 +0000",
+  "TextBody": "Hello,\n\nI was charged twice for order SO-629404 - both payments show on my card statement. Please refund the duplicate charge.\n\nThanks,\nMateo Mehta",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-02@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

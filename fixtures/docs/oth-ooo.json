@@ -1,0 +1,33 @@
+{
+  "FromName": "Kenji Mensah",
+  "MessageStream": "inbound",
+  "From": "kenji.mensah@example.com",
+  "FromFull": {
+    "Email": "kenji.mensah@example.com",
+    "Name": "Kenji Mensah",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Automatic reply: Invoice NCS-4410",
+  "MessageID": "fixture-oth-ooo",
+  "Date": "Sat, 03 Oct 2026 12:15:00 +0000",
+  "TextBody": "Thank you for your email. I am out of the office until 3 November with limited access to email. For urgent matters please contact accounts@example.com.",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<oth-ooo@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

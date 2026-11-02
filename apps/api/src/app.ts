@@ -1,21 +1,33 @@
 import type { HealthResponse, MeResponse } from "@ai-triage/contracts";
-import { type Auth, type Db, getTenant, pingDb } from "@ai-triage/db";
+import { PipelineError } from "@ai-triage/core/pipeline";
+import { getTenant, pingDb } from "@ai-triage/db";
+import { IngestRejected } from "@ai-triage/ingest";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
+import type { AppDeps } from "./deps";
+import { documentRoutes } from "./routes/documents";
+import { publicApiRoutes, webhookRoutes } from "./routes/ingest";
+import { uploadRoutes } from "./routes/uploads";
 import { requireTenant } from "./tenant";
 
-export interface AppDeps {
-  db: Db;
-  auth: Auth;
-  /** The web app's origin: allowed by CORS with credentials, and trusted by Better Auth. */
-  webOrigin: string;
-}
+export type { AppDeps } from "./deps";
 
 /** Builds the API. Dependencies are injected so tests can run it against a scratch database. */
-export function createApp({ db, auth, webOrigin }: AppDeps) {
+export function createApp(deps: AppDeps) {
+  const { db, auth, webOrigin } = deps;
   const app = new Hono();
   if (process.env.NODE_ENV !== "test") app.use(logger());
+
+  app.onError((err, c) => {
+    if (err instanceof IngestRejected) return c.json({ error: err.message }, err.status);
+    // A file that can't be read as what it claims to be (for example, a malformed .eml).
+    if (err instanceof PipelineError) return c.json({ error: err.message }, 422);
+    if (err instanceof HTTPException) return err.getResponse();
+    console.error(err);
+    return c.json({ error: "Internal error" }, 500);
+  });
 
   return (
     app
@@ -38,6 +50,10 @@ export function createApp({ db, auth, webOrigin }: AppDeps) {
         const body: MeResponse = { user, tenant, role };
         return c.json(body, 200);
       })
+      .route("/uploads", uploadRoutes(deps))
+      .route("/documents", documentRoutes(deps))
+      .route("/webhooks", webhookRoutes(deps))
+      .route("/v1", publicApiRoutes(deps))
   );
 }
 

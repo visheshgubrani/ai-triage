@@ -1,0 +1,33 @@
+{
+  "FromName": "Theo Romero",
+  "MessageStream": "inbound",
+  "From": "theo.romero@example.com",
+  "FromFull": {
+    "Email": "theo.romero@example.com",
+    "Name": "Theo Romero",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Wrong charge on invoice NCS-4410 (Northgate Cloud Services Inc.)",
+  "MessageID": "fixture-amb-sup-dispute",
+  "Date": "Mon, 12 Oct 2026 11:15:00 +0000",
+  "TextBody": "Hello,\n\nYour invoice NCS-4410 charges us for the 24/7 support plan twice (2 x 1,200.00 USD), but we only have one plan. Please correct the invoice and refund the duplicate 1,200.00 USD to our card.\n\nRegards,\nTheo Romero\nOrchard Lane IT Consulting",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<amb-sup-dispute@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

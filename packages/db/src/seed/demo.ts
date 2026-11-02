@@ -1,8 +1,11 @@
 import type { MemberRole } from "@ai-triage/core";
 import { eq } from "drizzle-orm";
 import type pg from "pg";
+import { getActiveConfig } from "../configs";
 import { createDb } from "../index";
+import { buildPipelineConfig, DEMO_CATEGORY_SETTINGS } from "../pipeline-config";
 import { tenants } from "../schema";
+import { withTenantTx } from "../tenant-tx";
 import { createTenant } from "../tenants";
 import { addMembership, ensurePasswordUser } from "../users";
 
@@ -40,13 +43,10 @@ export async function seedDemo(appPool: pg.Pool): Promise<DemoSeed> {
   return { tenantId, userIds };
 }
 
-// Filled in by later phases. Kept as named steps so the seed's shape is visible now.
-
-/** Phase 2: category schema versions, prompt versions and the active pipeline config. */
-export async function seedPipelineConfig(_demo: DemoSeed): Promise<void> {}
-
-/** Phase 2: ~60 synthetic documents ingested through the real pipeline in replay mode. */
-export async function seedDocuments(_demo: DemoSeed): Promise<void> {}
-
-/** Phase 4: the labeled eval dataset with dev / calib / test splits. */
-export async function seedEvalDataset(_demo: DemoSeed): Promise<void> {}
+/** The demo tenant's active pipeline config: built-in categories, v1 prompts, Opus 5.5 at low effort. */
+export async function seedPipelineConfig(appPool: pg.Pool, demo: DemoSeed): Promise<void> {
+  await withTenantTx(appPool, demo.tenantId, async (tx) => {
+    if (await getActiveConfig(tx)) return;
+    await buildPipelineConfig(tx, { name: "Demo config", categories: DEMO_CATEGORY_SETTINGS });
+  });
+}

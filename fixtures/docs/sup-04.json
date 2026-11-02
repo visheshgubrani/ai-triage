@@ -1,0 +1,33 @@
+{
+  "FromName": "Omar Alvarez",
+  "MessageStream": "inbound",
+  "From": "omar.alvarez@example.com",
+  "FromFull": {
+    "Email": "omar.alvarez@example.com",
+    "Name": "Omar Alvarez",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Problem with my order",
+  "MessageID": "fixture-sup-04",
+  "Date": "Sun, 13 Sep 2026 12:15:00 +0000",
+  "TextBody": "Hello,\n\nThe Ledgerline accounting app I bought (order ORD-308093) stopped turning on after two weeks. I believe it's still under warranty - can you repair it?\n\nThanks,\nOmar Alvarez",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-04@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

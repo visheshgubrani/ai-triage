@@ -7,15 +7,22 @@
     "dev": "tsx watch --env-file-if-exists=../../.env src/index.ts",
     "build": "tsup",
     "start": "node --env-file-if-exists=../../.env dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "seed:documents": "tsx --env-file-if-exists=../../.env src/bin/seed-documents.ts",
+    "cassettes:record": "tsx --env-file-if-exists=../../.env src/bin/record-cassettes.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",
     "@ai-triage/db": "workspace:*",
+    "@ai-triage/fixtures": "workspace:*",
+    "@ai-triage/ingest": "workspace:*",
     "@ai-triage/llm": "workspace:*",
+    "@ai-triage/schemas": "workspace:*",
+    "@ai-triage/storage": "workspace:*",
     "pg-boss": "^12.38.0"
   },
   "devDependencies": {
+    "pdf-lib": "^1.17.1",
     "tsup": "^9.0.0"
   }
 }

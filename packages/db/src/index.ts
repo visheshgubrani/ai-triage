@@ -5,12 +5,23 @@ import * as schema from "./schema";
 
 export * from "./auth";
 export * from "./boss";
+export * from "./budget";
 export * from "./configs";
+export * from "./documents";
+export * from "./errors";
+export * from "./llm-calls";
+export * from "./pipeline";
+export * from "./pipeline-config";
+export * from "./prices";
+export * from "./resolvers";
 export * from "./roles";
 export * from "./tenant-tx";
 export * from "./tenants";
+export * from "./uploads";
 export * from "./users";
 export { schema };
+
+export type Pool = pg.Pool;
 
 export function createPool(connectionString = process.env.DATABASE_URL) {
   if (!connectionString) throw new Error("DATABASE_URL is not set");

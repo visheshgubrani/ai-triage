@@ -17,7 +17,7 @@ pnpm install
 cp .env.example .env
 pnpm infra:up      # Postgres on :5440, RustFS on :9020
 pnpm db:migrate    # creates the app's database role, applies migrations, installs the job queue
-pnpm db:seed       # model prices and a demo tenant
+pnpm db:seed       # model prices, a demo tenant and 60 synthetic documents
 pnpm dev           # web http://localhost:3000 · api http://localhost:8787
 ```
 
@@ -38,3 +38,10 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ## License
 
 MIT
+
+## Known limits
+
+- **Repeated model calls are possible.** Each response is saved as soon as it arrives and reused on retry, but a worker that crashes between Claude answering and that save pays for the call again on retry. Every attempt is kept for cost accounting, and only one is canonical.
+- **Evidence matching proves a quote exists, not that it supports the value.** A verbatim quote must appear in the source (or on the cited PDF page); scans and images can't be checked, so they always go to review.
+- **The prompt-injection fixtures are regression tests, not proof of resistance.** Triage calls have no tools, the only action is a webhook to a tenant-configured target, and automation is opt-in per category, which keeps the damage of a confidently wrong answer small.
+- **Replay figures are recorded figures.** In replay mode, tokens, cost and latency come from the cassette, and are labeled as such (`llm_calls.mode = 'replay'`).

@@ -1,0 +1,33 @@
+{
+  "FromName": "Rahul Romero",
+  "MessageStream": "inbound",
+  "From": "rahul.romero@example.com",
+  "FromFull": {
+    "Email": "rahul.romero@example.com",
+    "Name": "Rahul Romero",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Support request",
+  "MessageID": "fixture-sup-08",
+  "Date": "Fri, 25 Sep 2026 16:15:00 +0000",
+  "TextBody": "Hello,\n\nMy Tempo fitness tracker arrived with a cracked lid and it leaks when I fill it. The order number is ORD-472764. Could you send me a replacement?\n\nThanks,\nRahul Romero",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-08@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

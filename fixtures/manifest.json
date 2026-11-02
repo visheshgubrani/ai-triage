@@ -1,0 +1,1603 @@
+{
+  "version": 1,
+  "inboundAddress": "demo@inbound.localhost",
+  "items": [
+    {
+      "id": "inv-01",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Kestrel Logistics GmbH",
+        "invoice_number": "KL-8330",
+        "invoice_date": "2026-06-07",
+        "due_date": "2026-06-21",
+        "currency": "GBP",
+        "subtotal": 11918.51,
+        "tax": 0,
+        "total": 11918.51,
+        "po_number": "PO-98051",
+        "line_items": [
+          {
+            "description": "Pallet freight Hamburg to Rotterdam",
+            "quantity": 6,
+            "unit_price": 436.76,
+            "amount": 2620.56
+          },
+          {
+            "description": "Warehouse storage (per pallet, monthly)",
+            "quantity": 11,
+            "unit_price": 69.79,
+            "amount": 767.69
+          },
+          {
+            "description": "Customs clearance fee",
+            "quantity": 9,
+            "unit_price": 404.98,
+            "amount": 3644.82
+          },
+          {
+            "description": "Express courier surcharge",
+            "quantity": 6,
+            "unit_price": 814.24,
+            "amount": 4885.44
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-01.json",
+      "note": "invoice in the email body",
+      "file": "docs/inv-01.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "inv-02",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Quillmark Printing Co.",
+        "invoice_number": "QP-4844",
+        "invoice_date": "2026-06-27",
+        "due_date": "2026-08-11",
+        "currency": "GBP",
+        "subtotal": 2714.03,
+        "tax": 0,
+        "total": 2714.03,
+        "po_number": "PO-12123",
+        "line_items": [
+          {
+            "description": "Business cards (500)",
+            "quantity": 4,
+            "unit_price": 617.52,
+            "amount": 2470.08
+          },
+          {
+            "description": "A1 posters, full colour",
+            "quantity": 1,
+            "unit_price": 243.95,
+            "amount": 243.95
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-02.json",
+      "note": "invoice in the email body",
+      "file": "docs/inv-02.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "inv-03",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Northgate Cloud Services Inc.",
+        "invoice_number": "NCS-6233",
+        "invoice_date": "2026-01-14",
+        "due_date": "2026-01-28",
+        "currency": "USD",
+        "subtotal": 14401.48,
+        "tax": 2880.3,
+        "total": 17281.78,
+        "line_items": [
+          {
+            "description": "Managed Kubernetes cluster (monthly)",
+            "quantity": 10,
+            "unit_price": 177.59,
+            "amount": 1775.9
+          },
+          {
+            "description": "Object storage, 10 TB",
+            "quantity": 6,
+            "unit_price": 870.93,
+            "amount": 5225.58
+          },
+          {
+            "description": "24/7 support plan",
+            "quantity": 10,
+            "unit_price": 720.56,
+            "amount": 7205.6
+          },
+          {
+            "description": "Data egress overage",
+            "quantity": 3,
+            "unit_price": 64.8,
+            "amount": 194.4
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-03.json",
+      "note": "invoice in the email body",
+      "file": "docs/inv-03.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "inv-04",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Harbor & Pine Catering",
+        "invoice_number": "HPC-3408",
+        "invoice_date": "2026-08-03",
+        "due_date": "2026-09-17",
+        "currency": "USD",
+        "subtotal": 8754.13,
+        "tax": 1750.83,
+        "total": 10504.96,
+        "po_number": "PO-57937",
+        "line_items": [
+          {
+            "description": "Lunch buffet (per person)",
+            "quantity": 10,
+            "unit_price": 514.18,
+            "amount": 5141.8
+          },
+          {
+            "description": "Coffee and pastries service",
+            "quantity": 3,
+            "unit_price": 570.75,
+            "amount": 1712.25
+          },
+          {
+            "description": "Event staff (per hour)",
+            "quantity": 6,
+            "unit_price": 316.68,
+            "amount": 1900.08
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-04.json",
+      "note": "invoice in the email body",
+      "file": "docs/inv-04.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "inv-05",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Northgate Cloud Services Inc.",
+        "invoice_number": "NCS-6966",
+        "invoice_date": "2026-04-21",
+        "due_date": "2026-05-05",
+        "currency": "USD",
+        "subtotal": 1554.18,
+        "tax": 310.84,
+        "total": 1865.02,
+        "line_items": [
+          {
+            "description": "Managed Kubernetes cluster (monthly)",
+            "quantity": 3,
+            "unit_price": 518.06,
+            "amount": 1554.18
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-05.json",
+      "note": "short email with the invoice as a PDF attachment",
+      "file": "docs/inv-05.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "inv-06",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Ironbark Industrial Parts Pty Ltd",
+        "invoice_number": "IIP-7073",
+        "invoice_date": "2026-09-09",
+        "due_date": "2026-09-23",
+        "currency": "EUR",
+        "subtotal": 7250.32,
+        "tax": 0,
+        "total": 7250.32,
+        "line_items": [
+          {
+            "description": "Hydraulic pump seal kit",
+            "quantity": 8,
+            "unit_price": 633.41,
+            "amount": 5067.28
+          },
+          {
+            "description": "Stainless steel fasteners (bulk)",
+            "quantity": 4,
+            "unit_price": 545.76,
+            "amount": 2183.04
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-06.json",
+      "note": "short email with the invoice as a PDF attachment",
+      "file": "docs/inv-06.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "inv-07",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Ironbark Industrial Parts Pty Ltd",
+        "invoice_number": "IIP-1248",
+        "invoice_date": "2026-05-20",
+        "due_date": "2026-06-19",
+        "currency": "GBP",
+        "subtotal": 609.73,
+        "tax": 60.97,
+        "total": 670.7,
+        "po_number": "PO-42811",
+        "line_items": [
+          {
+            "description": "Hydraulic pump seal kit",
+            "quantity": 1,
+            "unit_price": 609.73,
+            "amount": 609.73
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-07.json",
+      "note": "short email with the invoice as a PDF attachment",
+      "file": "docs/inv-07.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "inv-08",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Northgate Cloud Services Inc.",
+        "invoice_number": "NCS-3361",
+        "invoice_date": "2026-06-17",
+        "due_date": "2026-07-17",
+        "currency": "GBP",
+        "subtotal": 6590.3,
+        "tax": 659.03,
+        "total": 7249.33,
+        "po_number": "PO-97885",
+        "line_items": [
+          {
+            "description": "Managed Kubernetes cluster (monthly)",
+            "quantity": 6,
+            "unit_price": 722.79,
+            "amount": 4336.74
+          },
+          {
+            "description": "Object storage, 10 TB",
+            "quantity": 3,
+            "unit_price": 597.28,
+            "amount": 1791.84
+          },
+          {
+            "description": "24/7 support plan",
+            "quantity": 7,
+            "unit_price": 65.96,
+            "amount": 461.72
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-08.json",
+      "note": "short email with the invoice as a PDF attachment",
+      "file": "docs/inv-08.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "inv-09",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Brightline Office Supply Ltd",
+        "invoice_number": "BOS-3080",
+        "invoice_date": "2026-06-30",
+        "due_date": "2026-07-30",
+        "currency": "USD",
+        "subtotal": 8367.69,
+        "tax": 836.77,
+        "total": 9204.46,
+        "po_number": "PO-32052",
+        "line_items": [
+          {
+            "description": "A4 copier paper (box of 5 reams)",
+            "quantity": 5,
+            "unit_price": 285.65,
+            "amount": 1428.25
+          },
+          {
+            "description": "Ergonomic office chair",
+            "quantity": 1,
+            "unit_price": 856.53,
+            "amount": 856.53
+          },
+          {
+            "description": "Whiteboard markers (pack of 12)",
+            "quantity": 11,
+            "unit_price": 508.01,
+            "amount": 5588.11
+          },
+          {
+            "description": "Desk organiser set",
+            "quantity": 1,
+            "unit_price": 494.8,
+            "amount": 494.8
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "inv-09.json",
+      "note": "short email with the invoice as a PDF attachment",
+      "file": "docs/inv-09.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "inv-10",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Northgate Cloud Services Inc.",
+        "invoice_number": "NCS-1998",
+        "invoice_date": "2026-05-14",
+        "due_date": "2026-06-28",
+        "currency": "GBP",
+        "subtotal": 1443.4,
+        "tax": 144.34,
+        "total": 1587.74,
+        "po_number": "PO-82491",
+        "line_items": [
+          {
+            "description": "Managed Kubernetes cluster (monthly)",
+            "quantity": 10,
+            "unit_price": 144.34,
+            "amount": 1443.4
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "api",
+      "format": "pdf",
+      "filename": "NCS-1998.pdf",
+      "note": "uploaded invoice PDF",
+      "file": "docs/inv-10.pdf",
+      "mime": "application/pdf",
+      "split": "dev"
+    },
+    {
+      "id": "inv-11",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Kestrel Logistics GmbH",
+        "invoice_number": "KL-2801",
+        "invoice_date": "2026-01-26",
+        "due_date": "2026-02-09",
+        "currency": "GBP",
+        "subtotal": 9692.59,
+        "tax": 0,
+        "total": 9692.59,
+        "po_number": "PO-44534",
+        "line_items": [
+          {
+            "description": "Pallet freight Hamburg to Rotterdam",
+            "quantity": 5,
+            "unit_price": 548.03,
+            "amount": 2740.15
+          },
+          {
+            "description": "Warehouse storage (per pallet, monthly)",
+            "quantity": 9,
+            "unit_price": 198.2,
+            "amount": 1783.8
+          },
+          {
+            "description": "Customs clearance fee",
+            "quantity": 2,
+            "unit_price": 685.17,
+            "amount": 1370.34
+          },
+          {
+            "description": "Express courier surcharge",
+            "quantity": 5,
+            "unit_price": 759.66,
+            "amount": 3798.3
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "pdf",
+      "filename": "KL-2801.pdf",
+      "note": "uploaded invoice PDF",
+      "file": "docs/inv-11.pdf",
+      "mime": "application/pdf",
+      "split": "calib"
+    },
+    {
+      "id": "inv-12",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Copperleaf Facilities Management",
+        "invoice_number": "CFM-4566",
+        "invoice_date": "2026-08-26",
+        "due_date": "2026-10-10",
+        "currency": "USD",
+        "subtotal": 1594.58,
+        "tax": 159.46,
+        "total": 1754.04,
+        "po_number": "PO-11475",
+        "line_items": [
+          {
+            "description": "Office cleaning (monthly)",
+            "quantity": 2,
+            "unit_price": 797.29,
+            "amount": 1594.58
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "api",
+      "format": "pdf",
+      "filename": "CFM-4566.pdf",
+      "note": "uploaded invoice PDF",
+      "file": "docs/inv-12.pdf",
+      "mime": "application/pdf",
+      "split": "test"
+    },
+    {
+      "id": "inv-13",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Northgate Cloud Services Inc.",
+        "invoice_number": "NCS-7596",
+        "invoice_date": "2026-01-28",
+        "due_date": "2026-02-27",
+        "currency": "USD",
+        "subtotal": 3093.5,
+        "tax": 618.7,
+        "total": 3712.2,
+        "line_items": [
+          {
+            "description": "Managed Kubernetes cluster (monthly)",
+            "quantity": 5,
+            "unit_price": 618.7,
+            "amount": 3093.5
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "docx",
+      "filename": "NCS-7596.docx",
+      "note": "invoice as a Word document",
+      "file": "docs/inv-13.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "split": "dev"
+    },
+    {
+      "id": "inv-14",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Ironbark Industrial Parts Pty Ltd",
+        "invoice_number": "IIP-5062",
+        "invoice_date": "2026-06-25",
+        "due_date": "2026-07-25",
+        "currency": "GBP",
+        "subtotal": 5320.72,
+        "tax": 532.07,
+        "total": 5852.79,
+        "po_number": "PO-89183",
+        "line_items": [
+          {
+            "description": "Hydraulic pump seal kit",
+            "quantity": 8,
+            "unit_price": 665.09,
+            "amount": 5320.72
+          }
+        ]
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "docx",
+      "filename": "IIP-5062.docx",
+      "note": "invoice as a Word document",
+      "file": "docs/inv-14.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "split": "dev"
+    },
+    {
+      "id": "sup-01",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Mateo Mehta",
+        "customer_email": "mateo.mehta@example.com",
+        "product": "Nimbus air purifier",
+        "order_id": "ORD-685393",
+        "issue_summary": "Nimbus air purifier arrived damaged and leaks",
+        "severity": "medium",
+        "requested_action": "replacement"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-01.json",
+      "note": "customer email",
+      "file": "docs/sup-01.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "sup-02",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Mateo Mehta",
+        "customer_email": "mateo.mehta@example.com",
+        "order_id": "SO-629404",
+        "issue_summary": "Charged twice for one order",
+        "severity": "high",
+        "requested_action": "refund"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-02.json",
+      "note": "customer email",
+      "file": "docs/sup-02.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "sup-03",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Mateo Brandt",
+        "customer_email": "mateo.brandt@example.com",
+        "product": "Cadence wireless headphones",
+        "issue_summary": "Locked out of account, reset email not arriving",
+        "severity": "urgent",
+        "requested_action": "account_change"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-03.json",
+      "note": "customer email",
+      "file": "docs/sup-03.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "sup-04",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Omar Alvarez",
+        "customer_email": "omar.alvarez@example.com",
+        "product": "Ledgerline accounting app",
+        "order_id": "ORD-308093",
+        "issue_summary": "Ledgerline accounting app stopped working after two weeks",
+        "severity": "medium",
+        "requested_action": "repair"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-04.json",
+      "note": "customer email",
+      "file": "docs/sup-04.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "sup-05",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Nadia Alvarez",
+        "customer_email": "nadia.alvarez@example.com",
+        "product": "Strata standing desk",
+        "issue_summary": "Cancel Strata standing desk subscription",
+        "severity": "low",
+        "requested_action": "cancellation"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-05.json",
+      "note": "customer email",
+      "file": "docs/sup-05.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "sup-06",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Theo Romero",
+        "customer_email": "theo.romero@example.com",
+        "product": "Aero 2 electric kettle",
+        "issue_summary": "Report export fails in Aero 2 electric kettle after update",
+        "severity": "high",
+        "requested_action": "other"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-06.json",
+      "note": "customer email",
+      "file": "docs/sup-06.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "sup-07",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Amara Mensah",
+        "customer_email": "amara.mensah@example.com",
+        "product": "Lumen desk lamp",
+        "issue_summary": "Asks whether Lumen desk lamp supports 110 V",
+        "severity": "low",
+        "requested_action": "information"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-07.json",
+      "note": "customer email",
+      "file": "docs/sup-07.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "sup-08",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Rahul Romero",
+        "customer_email": "rahul.romero@example.com",
+        "product": "Tempo fitness tracker",
+        "order_id": "ORD-472764",
+        "issue_summary": "Tempo fitness tracker arrived damaged and leaks",
+        "severity": "medium",
+        "requested_action": "replacement"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-08.json",
+      "note": "customer email",
+      "file": "docs/sup-08.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "sup-09",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Lucia Brandt",
+        "customer_email": "lucia.brandt@example.com",
+        "order_id": "SO-688728",
+        "issue_summary": "Charged twice for one order",
+        "severity": "high",
+        "requested_action": "refund"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-09.json",
+      "note": "customer email",
+      "file": "docs/sup-09.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "sup-10",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Nadia Okafor",
+        "customer_email": "nadia.okafor@example.com",
+        "product": "Lumen desk lamp",
+        "issue_summary": "Locked out of account, reset email not arriving",
+        "severity": "urgent",
+        "requested_action": "account_change"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-10.json",
+      "note": "customer email",
+      "file": "docs/sup-10.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "sup-11",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Felix Okafor",
+        "customer_email": "felix.okafor@example.com",
+        "product": "Cadence wireless headphones",
+        "order_id": "ORD-837252",
+        "issue_summary": "Cadence wireless headphones stopped working after two weeks",
+        "severity": "medium",
+        "requested_action": "repair"
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "sup-11.json",
+      "note": "customer email",
+      "file": "docs/sup-11.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "sup-12",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Ines Mensah",
+        "customer_email": "ines.mensah@example.com",
+        "product": "Tempo fitness tracker",
+        "issue_summary": "Cancel Tempo fitness tracker subscription",
+        "severity": "low",
+        "requested_action": "cancellation"
+      },
+      "tags": ["clear"],
+      "source": "api",
+      "format": "eml",
+      "filename": "sup-12.eml",
+      "note": "customer email as an .eml file",
+      "file": "docs/sup-12.eml",
+      "mime": "message/rfc822",
+      "split": "test"
+    },
+    {
+      "id": "sup-13",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Amara Petrova",
+        "customer_email": "amara.petrova@example.com",
+        "product": "Tempo fitness tracker",
+        "issue_summary": "Report export fails in Tempo fitness tracker after update",
+        "severity": "high",
+        "requested_action": "other"
+      },
+      "tags": ["clear"],
+      "source": "api",
+      "format": "eml",
+      "filename": "sup-13.eml",
+      "note": "customer email as an .eml file",
+      "file": "docs/sup-13.eml",
+      "mime": "message/rfc822",
+      "split": "dev"
+    },
+    {
+      "id": "sup-14",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Kenji Costa",
+        "customer_email": "kenji.costa@example.com",
+        "product": "Nimbus air purifier",
+        "issue_summary": "Asks whether Nimbus air purifier supports 110 V",
+        "severity": "low",
+        "requested_action": "information"
+      },
+      "tags": ["clear"],
+      "source": "api",
+      "format": "eml",
+      "filename": "sup-14.eml",
+      "note": "customer email as an .eml file",
+      "file": "docs/sup-14.eml",
+      "mime": "message/rfc822",
+      "split": "dev"
+    },
+    {
+      "id": "con-01",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "nda",
+        "parties": [
+          {
+            "name": "Ironbark Industrial Parts Pty Ltd",
+            "role": "Party"
+          },
+          {
+            "name": "Orchard Lane IT Consulting",
+            "role": "Party"
+          }
+        ],
+        "effective_date": "2026-08-29",
+        "term_months": 36,
+        "governing_law": "State of Delaware",
+        "auto_renewal": true
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "con-01.json",
+      "note": "signed agreement attached to an email",
+      "file": "docs/con-01.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "con-02",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "msa",
+        "parties": [
+          {
+            "name": "Meridian Lab Equipment",
+            "role": "Supplier"
+          },
+          {
+            "name": "Bluefin Packaging Ltd",
+            "role": "Customer"
+          }
+        ],
+        "effective_date": "2026-05-06",
+        "term_months": 12,
+        "governing_law": "Province of Ontario",
+        "total_value": 119000,
+        "currency": "EUR",
+        "auto_renewal": true
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "con-02.json",
+      "note": "signed agreement attached to an email",
+      "file": "docs/con-02.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "con-03",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "sow",
+        "parties": [
+          {
+            "name": "Meridian Lab Equipment",
+            "role": "Supplier"
+          },
+          {
+            "name": "Bluefin Packaging Ltd",
+            "role": "Customer"
+          }
+        ],
+        "effective_date": "2026-08-22",
+        "term_months": 12,
+        "governing_law": "Province of Ontario",
+        "total_value": 96000,
+        "currency": "EUR",
+        "auto_renewal": false
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "con-03.json",
+      "note": "signed agreement attached to an email",
+      "file": "docs/con-03.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "con-04",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "services",
+        "parties": [
+          {
+            "name": "Copperleaf Facilities Management",
+            "role": "Consultant"
+          },
+          {
+            "name": "Orchard Lane IT Consulting",
+            "role": "Client"
+          }
+        ],
+        "effective_date": "2026-06-25",
+        "term_months": 36,
+        "governing_law": "State of New York",
+        "total_value": 94000,
+        "currency": "GBP",
+        "auto_renewal": false
+      },
+      "tags": ["clear"],
+      "source": "email",
+      "format": "postmark",
+      "filename": "con-04.json",
+      "note": "signed agreement attached to an email",
+      "file": "docs/con-04.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "con-05",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "lease",
+        "parties": [
+          {
+            "name": "Ironbark Industrial Parts Pty Ltd",
+            "role": "Landlord"
+          },
+          {
+            "name": "Lindqvist Robotics AB",
+            "role": "Tenant"
+          }
+        ],
+        "effective_date": "2026-02-22",
+        "term_months": 12,
+        "governing_law": "State of New York",
+        "total_value": 64000,
+        "currency": "GBP",
+        "auto_renewal": true
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "pdf",
+      "filename": "LEASE-Lindqvist-2026-02-22.pdf",
+      "note": "uploaded two-page agreement",
+      "file": "docs/con-05.pdf",
+      "mime": "application/pdf",
+      "split": "dev"
+    },
+    {
+      "id": "con-06",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "nda",
+        "parties": [
+          {
+            "name": "Ironbark Industrial Parts Pty Ltd",
+            "role": "Party"
+          },
+          {
+            "name": "Tessellate Design Studio",
+            "role": "Party"
+          }
+        ],
+        "effective_date": "2026-07-27",
+        "term_months": 24,
+        "governing_law": "Province of Ontario",
+        "auto_renewal": false
+      },
+      "tags": ["clear"],
+      "source": "api",
+      "format": "pdf",
+      "filename": "NDA-Tessellate-2026-07-27.pdf",
+      "note": "uploaded two-page agreement",
+      "file": "docs/con-06.pdf",
+      "mime": "application/pdf",
+      "split": "dev"
+    },
+    {
+      "id": "con-07",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "msa",
+        "parties": [
+          {
+            "name": "Northgate Cloud Services Inc.",
+            "role": "Supplier"
+          },
+          {
+            "name": "Saltmarsh Coffee Roasters",
+            "role": "Customer"
+          }
+        ],
+        "effective_date": "2026-09-29",
+        "term_months": 24,
+        "governing_law": "State of New York",
+        "total_value": 32000,
+        "currency": "USD",
+        "auto_renewal": false
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "pdf",
+      "filename": "MSA-Saltmarsh-2026-09-29.pdf",
+      "note": "uploaded two-page agreement",
+      "file": "docs/con-07.pdf",
+      "mime": "application/pdf",
+      "split": "calib"
+    },
+    {
+      "id": "con-08",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "sow",
+        "parties": [
+          {
+            "name": "Harbor & Pine Catering",
+            "role": "Supplier"
+          },
+          {
+            "name": "Lindqvist Robotics AB",
+            "role": "Customer"
+          }
+        ],
+        "effective_date": "2026-05-04",
+        "term_months": 36,
+        "governing_law": "State of New York",
+        "total_value": 71000,
+        "currency": "USD",
+        "auto_renewal": true
+      },
+      "tags": ["clear"],
+      "source": "api",
+      "format": "pdf",
+      "filename": "SOW-Lindqvist-2026-05-04.pdf",
+      "note": "uploaded two-page agreement",
+      "file": "docs/con-08.pdf",
+      "mime": "application/pdf",
+      "split": "test"
+    },
+    {
+      "id": "con-09",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "services",
+        "parties": [
+          {
+            "name": "Harbor & Pine Catering",
+            "role": "Consultant"
+          },
+          {
+            "name": "Saltmarsh Coffee Roasters",
+            "role": "Client"
+          }
+        ],
+        "effective_date": "2026-06-13",
+        "term_months": 36,
+        "governing_law": "England and Wales",
+        "total_value": 152000,
+        "currency": "USD",
+        "auto_renewal": false
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "docx",
+      "filename": "SERVICES-Saltmarsh-2026-06-13.docx",
+      "note": "agreement as a Word document",
+      "file": "docs/con-09.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "split": "dev"
+    },
+    {
+      "id": "con-10",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "lease",
+        "parties": [
+          {
+            "name": "Northgate Cloud Services Inc.",
+            "role": "Landlord"
+          },
+          {
+            "name": "Saltmarsh Coffee Roasters",
+            "role": "Tenant"
+          }
+        ],
+        "effective_date": "2026-06-27",
+        "term_months": 36,
+        "governing_law": "State of Delaware",
+        "total_value": 144000,
+        "currency": "GBP",
+        "auto_renewal": false
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "docx",
+      "filename": "LEASE-Saltmarsh-2026-06-27.docx",
+      "note": "agreement as a Word document",
+      "file": "docs/con-10.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "split": "dev"
+    },
+    {
+      "id": "con-11",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "nda",
+        "parties": [
+          {
+            "name": "Ironbark Industrial Parts Pty Ltd",
+            "role": "Party"
+          },
+          {
+            "name": "Tessellate Design Studio",
+            "role": "Party"
+          }
+        ],
+        "effective_date": "2026-04-05",
+        "term_months": 36,
+        "governing_law": "Province of Ontario",
+        "auto_renewal": true
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "docx",
+      "filename": "NDA-Tessellate-2026-04-05.docx",
+      "note": "agreement as a Word document",
+      "file": "docs/con-11.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "split": "calib"
+    },
+    {
+      "id": "con-12",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "msa",
+        "parties": [
+          {
+            "name": "Meridian Lab Equipment",
+            "role": "Supplier"
+          },
+          {
+            "name": "Tessellate Design Studio",
+            "role": "Customer"
+          }
+        ],
+        "effective_date": "2026-01-05",
+        "term_months": 12,
+        "governing_law": "State of New York",
+        "total_value": 91000,
+        "currency": "EUR",
+        "auto_renewal": true
+      },
+      "tags": ["clear"],
+      "source": "upload",
+      "format": "docx",
+      "filename": "MSA-Tessellate-2026-01-05.docx",
+      "note": "agreement as a Word document",
+      "file": "docs/con-12.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "split": "test"
+    },
+    {
+      "id": "amb-inv-quote",
+      "source": "email",
+      "format": "postmark",
+      "filename": "amb-inv-quote.json",
+      "expectedCategory": "other",
+      "expectedFields": {},
+      "tags": ["ambiguous"],
+      "note": "a quotation that looks like an invoice but isn't a bill",
+      "file": "docs/amb-inv-quote.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "amb-inv-badmath",
+      "source": "upload",
+      "format": "pdf",
+      "filename": "IIP-5622.pdf",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Ironbark Industrial Parts Pty Ltd",
+        "invoice_number": "IIP-5622",
+        "invoice_date": "2026-05-17",
+        "due_date": "2026-07-01",
+        "currency": "GBP",
+        "subtotal": 6583.32,
+        "tax": 1316.66,
+        "total": 7999.98,
+        "line_items": [
+          {
+            "description": "Hydraulic pump seal kit",
+            "quantity": 3,
+            "unit_price": 626.13,
+            "amount": 1878.39
+          },
+          {
+            "description": "Stainless steel fasteners (bulk)",
+            "quantity": 9,
+            "unit_price": 522.77,
+            "amount": 4704.93
+          }
+        ]
+      },
+      "tags": ["ambiguous"],
+      "note": "invoice whose total doesn't equal subtotal plus tax (rule gate)",
+      "file": "docs/amb-inv-badmath.pdf",
+      "mime": "application/pdf",
+      "split": "calib"
+    },
+    {
+      "id": "amb-inv-reminder",
+      "source": "email",
+      "format": "postmark",
+      "filename": "amb-inv-reminder.json",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Quillmark Printing Co.",
+        "invoice_number": "QP-2744",
+        "invoice_date": "2026-04-24",
+        "due_date": "2026-05-08",
+        "currency": "USD",
+        "total": 2407.77
+      },
+      "tags": ["ambiguous"],
+      "note": "payment reminder: a request to pay, without the invoice itself",
+      "file": "docs/amb-inv-reminder.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "amb-sup-dispute",
+      "source": "email",
+      "format": "postmark",
+      "filename": "amb-sup-dispute.json",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Theo Romero",
+        "customer_email": "theo.romero@example.com",
+        "product": "24/7 support plan",
+        "issue_summary": "Invoice charges the support plan twice",
+        "severity": "medium",
+        "requested_action": "refund"
+      },
+      "tags": ["ambiguous"],
+      "note": "billing dispute that mentions an invoice",
+      "file": "docs/amb-sup-dispute.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "amb-sup-vague",
+      "source": "email",
+      "format": "postmark",
+      "filename": "amb-sup-vague.json",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Kwame Costa",
+        "customer_email": "kwame.costa@example.com",
+        "issue_summary": "Something is broken again; wants a call back",
+        "severity": "medium",
+        "requested_action": "other"
+      },
+      "tags": ["ambiguous"],
+      "note": "vague one-line complaint",
+      "file": "docs/amb-sup-vague.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "amb-sup-termination",
+      "source": "email",
+      "format": "postmark",
+      "filename": "amb-sup-termination.json",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Nadia Walsh",
+        "customer_email": "nadia.walsh@example.com",
+        "issue_summary": "Wants to terminate the consulting services agreement",
+        "severity": "low",
+        "requested_action": "cancellation"
+      },
+      "tags": ["ambiguous"],
+      "note": "termination request that is about a contract, not a contract itself",
+      "file": "docs/amb-sup-termination.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "amb-con-amendment",
+      "source": "upload",
+      "format": "pdf",
+      "filename": "MSA-amendment-1.pdf",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "msa",
+        "parties": [
+          {
+            "name": "Harbor & Pine Catering",
+            "role": "Supplier"
+          },
+          {
+            "name": "Saltmarsh Coffee Roasters",
+            "role": "Customer"
+          }
+        ],
+        "effective_date": "2026-08-29",
+        "total_value": 203000,
+        "currency": "EUR"
+      },
+      "tags": ["ambiguous"],
+      "note": "amendment to an agreement rather than a full agreement",
+      "file": "docs/amb-con-amendment.pdf",
+      "mime": "application/pdf",
+      "split": "dev"
+    },
+    {
+      "id": "amb-con-draft",
+      "source": "upload",
+      "format": "docx",
+      "filename": "NDA-draft-v2.docx",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "nda",
+        "parties": [
+          {
+            "name": "Northgate Cloud Services Inc.",
+            "role": "Party"
+          },
+          {
+            "name": "Lindqvist Robotics AB",
+            "role": "Party"
+          }
+        ],
+        "term_months": 24,
+        "governing_law": "State of Delaware",
+        "auto_renewal": false
+      },
+      "tags": ["ambiguous"],
+      "note": "unsigned draft with a blank effective date (required field missing)",
+      "file": "docs/amb-con-draft.docx",
+      "mime": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "split": "dev"
+    },
+    {
+      "id": "amb-con-redlines",
+      "source": "email",
+      "format": "postmark",
+      "filename": "amb-con-redlines.json",
+      "expectedCategory": "other",
+      "expectedFields": {},
+      "tags": ["ambiguous"],
+      "note": "internal email discussing contract terms, not an agreement",
+      "file": "docs/amb-con-redlines.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "oth-newsletter",
+      "source": "email",
+      "format": "postmark",
+      "filename": "oth-newsletter.json",
+      "expectedCategory": "other",
+      "expectedFields": {},
+      "tags": ["clear"],
+      "note": "marketing newsletter (HTML only)",
+      "file": "docs/oth-newsletter.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "oth-ooo",
+      "source": "email",
+      "format": "postmark",
+      "filename": "oth-ooo.json",
+      "expectedCategory": "other",
+      "expectedFields": {},
+      "tags": ["clear"],
+      "note": "out-of-office auto reply",
+      "file": "docs/oth-ooo.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "oth-meeting",
+      "source": "email",
+      "format": "postmark",
+      "filename": "oth-meeting.json",
+      "expectedCategory": "other",
+      "expectedFields": {},
+      "tags": ["clear"],
+      "note": "calendar invitation",
+      "file": "docs/oth-meeting.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "oth-shipping",
+      "source": "email",
+      "format": "postmark",
+      "filename": "oth-shipping.json",
+      "expectedCategory": "other",
+      "expectedFields": {},
+      "tags": ["clear"],
+      "note": "shipping notification (no problem reported)",
+      "file": "docs/oth-shipping.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "oth-application",
+      "source": "email",
+      "format": "postmark",
+      "filename": "oth-application.json",
+      "expectedCategory": "other",
+      "expectedFields": {},
+      "tags": ["clear"],
+      "note": "job application",
+      "file": "docs/oth-application.json",
+      "mime": "application/json",
+      "split": "calib"
+    },
+    {
+      "id": "oth-lunch",
+      "source": "email",
+      "format": "postmark",
+      "filename": "oth-lunch.json",
+      "expectedCategory": "other",
+      "expectedFields": {},
+      "tags": ["clear"],
+      "note": "internal social email",
+      "file": "docs/oth-lunch.json",
+      "mime": "application/json",
+      "split": "test"
+    },
+    {
+      "id": "scan-inv",
+      "source": "upload",
+      "format": "pdf",
+      "filename": "scan-KL-2857.pdf",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Kestrel Logistics GmbH",
+        "invoice_number": "KL-2857",
+        "invoice_date": "2026-05-27",
+        "due_date": "2026-06-10",
+        "currency": "USD",
+        "subtotal": 10648.99,
+        "tax": 0,
+        "total": 10648.99,
+        "line_items": [
+          {
+            "description": "Pallet freight Hamburg to Rotterdam",
+            "quantity": 4,
+            "unit_price": 343.64,
+            "amount": 1374.56
+          },
+          {
+            "description": "Warehouse storage (per pallet, monthly)",
+            "quantity": 11,
+            "unit_price": 843.13,
+            "amount": 9274.43
+          }
+        ]
+      },
+      "tags": ["scan"],
+      "note": "scanned invoice: image-only PDF",
+      "file": "docs/scan-inv.pdf",
+      "mime": "application/pdf",
+      "split": "dev"
+    },
+    {
+      "id": "scan-con",
+      "source": "api",
+      "format": "png",
+      "filename": "scanned-agreement-p1.png",
+      "expectedCategory": "contract",
+      "expectedFields": {
+        "contract_type": "sow",
+        "parties": [
+          {
+            "name": "Copperleaf Facilities Management",
+            "role": "Supplier"
+          },
+          {
+            "name": "Bluefin Packaging Ltd",
+            "role": "Customer"
+          }
+        ],
+        "effective_date": "2026-03-23",
+        "term_months": 36,
+        "auto_renewal": true
+      },
+      "tags": ["scan"],
+      "note": "photo of an agreement's first page (PNG)",
+      "file": "docs/scan-con.png",
+      "mime": "image/png",
+      "split": "calib"
+    },
+    {
+      "id": "scan-sup",
+      "source": "email",
+      "format": "postmark",
+      "filename": "scan-sup.json",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Omar Haddad",
+        "customer_email": "omar.haddad@example.com",
+        "product": "Ledgerline accounting app",
+        "issue_summary": "Bank feed sync fails with error LL-5031",
+        "severity": "high",
+        "requested_action": "other"
+      },
+      "tags": ["scan"],
+      "note": "support email whose key detail is in a screenshot",
+      "file": "docs/scan-sup.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "inj-inv",
+      "source": "email",
+      "format": "postmark",
+      "filename": "inj-inv.json",
+      "expectedCategory": "invoice",
+      "expectedFields": {
+        "vendor_name": "Northgate Cloud Services Inc.",
+        "invoice_number": "NCS-3494",
+        "invoice_date": "2026-06-26",
+        "due_date": "2026-08-10",
+        "currency": "EUR",
+        "subtotal": 5332.59,
+        "tax": 533.26,
+        "total": 5865.85,
+        "line_items": [
+          {
+            "description": "Managed Kubernetes cluster (monthly)",
+            "quantity": 9,
+            "unit_price": 592.51,
+            "amount": 5332.59
+          }
+        ]
+      },
+      "tags": ["injection"],
+      "note": "invoice with instructions aimed at the model",
+      "file": "docs/inj-inv.json",
+      "mime": "application/json",
+      "split": "dev"
+    },
+    {
+      "id": "inj-sup",
+      "source": "email",
+      "format": "postmark",
+      "filename": "inj-sup.json",
+      "expectedCategory": "support_request",
+      "expectedFields": {
+        "customer_name": "Nadia Rossi",
+        "customer_email": "nadia.rossi@example.com",
+        "product": "Cadence wireless headphones",
+        "order_id": "ORD-551902",
+        "issue_summary": "Left ear cup of headphones is silent",
+        "severity": "medium",
+        "requested_action": "replacement"
+      },
+      "tags": ["injection"],
+      "note": "support email that tries to reclassify itself",
+      "file": "docs/inj-sup.json",
+      "mime": "application/json",
+      "split": "calib"
+    }
+  ]
+}
