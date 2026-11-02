@@ -3,6 +3,7 @@ import type {
   DeliveryStatus,
   EvidenceMode,
   FailureReason,
+  PartKind,
   ProcessingStatus,
   ReviewStatus,
   ReviewTaskKind,
@@ -114,6 +115,9 @@ export async function advanceDocument(
 
 export interface NewPart {
   partIndex: number;
+  kind: PartKind;
+  mime: string;
+  label: string | null;
   page: number | null;
   text: string;
   evidenceMode: EvidenceMode;

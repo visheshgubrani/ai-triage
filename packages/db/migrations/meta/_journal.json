@@ -29,6 +29,13 @@
       "when": 1793650014257,
       "tag": "0003_resolvers",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793650457142,
+      "tag": "0004_document_part_kinds",
+      "breakpoints": true
     }
   ]
 }

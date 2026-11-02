@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Pure pipeline: parse, classify, extract, verify evidence, gates, route",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./pipeline": "./src/pipeline/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
@@ -19,6 +20,8 @@
   },
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",
-    "@types/mailparser": "^3.9.0"
+    "@types/mailparser": "^3.9.0",
+    "docx": "^9.15.1",
+    "pdf-lib": "^1.17.1"
   }
 }

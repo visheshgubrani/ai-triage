@@ -318,6 +318,12 @@ importers:
       '@types/mailparser':
         specifier: ^3.9.0
         version: 3.9.0
+      docx:
+        specifier: ^9.15.1
+        version: 9.15.1
+      pdf-lib:
+        specifier: ^1.17.1
+        version: 1.17.1
 
   packages/db:
     dependencies:

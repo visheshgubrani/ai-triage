@@ -72,9 +72,15 @@ describe("composite foreign keys", () => {
     const docA = await withTenantTx(app, a, (tx) => insertDocument(tx));
     // The owner bypasses RLS, so only the composite FK stands in the way.
     await expectPgError(
-      createDb(owner)
-        .insert(documentParts)
-        .values({ tenantId: b, documentId: docA.id, partIndex: 0, text: "x", evidenceMode: "text" }),
+      createDb(owner).insert(documentParts).values({
+        tenantId: b,
+        documentId: docA.id,
+        partIndex: 0,
+        kind: "file",
+        mime: "text/plain",
+        text: "x",
+        evidenceMode: "text",
+      }),
       PG.foreignKeyViolation,
     );
   });

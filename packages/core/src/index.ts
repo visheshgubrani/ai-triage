@@ -26,6 +26,10 @@ export type DocumentSource = (typeof DOCUMENT_SOURCES)[number];
 export const EVIDENCE_MODES = ["text", "pdf_text", "unverifiable"] as const;
 export type EvidenceMode = (typeof EVIDENCE_MODES)[number];
 
+/** What a document part is: an email's rendered body, one of its attachments, or an uploaded file. */
+export const PART_KINDS = ["email_body", "attachment", "file"] as const;
+export type PartKind = (typeof PART_KINDS)[number];
+
 export const RUN_TRIGGERS = ["ingest", "retry", "reclassify"] as const;
 export type RunTrigger = (typeof RUN_TRIGGERS)[number];
 
@@ -162,6 +166,12 @@ export const DOCUMENT_MIMES = {
 } as const;
 export type DocumentMime = (typeof DOCUMENT_MIMES)[keyof typeof DOCUMENT_MIMES];
 export const ACCEPTED_MIMES: readonly DocumentMime[] = Object.values(DOCUMENT_MIMES);
+
+/**
+ * Mime of an email document's source object: the normalized email JSON written at ingestion (from a
+ * Postmark payload or an .eml), with attachments stored as separate objects.
+ */
+export const EMAIL_SOURCE_MIME = "application/vnd.ai-triage.email+json";
 
 /** Categories shipped with a schema template (packages/schemas). `other` is always available too. */
 export const BUILTIN_CATEGORIES = ["invoice", "support_request", "contract"] as const;
