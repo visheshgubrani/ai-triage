@@ -1,0 +1,68 @@
+import { afterAll, describe, expect, it } from "vitest";
+import { createPool } from "./index";
+import { APP_GROUP_ROLE } from "./roles";
+import { testDbUrls } from "./testing";
+
+// Lint the live catalog so a new table or FK can't silently skip tenant isolation.
+// "Tenant table" = a public table with a tenant_id column.
+
+const { ownerUrl } = testDbUrls();
+const owner = createPool(ownerUrl);
+afterAll(() => owner.end());
+
+const TENANT_TABLES = `
+  select c.oid, c.relname
+  from pg_class c join pg_namespace n on n.oid = c.relnamespace
+  where n.nspname = 'public' and c.relkind = 'r'
+    and exists (select 1 from pg_attribute a where a.attrelid = c.oid and a.attname = 'tenant_id' and not a.attisdropped)`;
+
+describe("catalog", () => {
+  it("has RLS enabled, forced and a policy on every tenant table", async () => {
+    const { rows } = await owner.query<{ relname: string; rls: boolean; forced: boolean; policy: boolean }>(`
+      select t.relname, c.relrowsecurity as rls, c.relforcerowsecurity as forced,
+             exists (select 1 from pg_policy p where p.polrelid = t.oid) as policy
+      from (${TENANT_TABLES}) t join pg_class c on c.oid = t.oid
+      order by t.relname`);
+    expect(rows.length).toBeGreaterThanOrEqual(22);
+    expect(rows.filter((r) => !(r.rls && r.forced && r.policy)).map((r) => r.relname)).toEqual([]);
+  });
+
+  it("puts tenant_id in the same position on both sides of every FK between tenant tables", async () => {
+    const { rows } = await owner.query<{ conname: string; src: string[]; tgt: string[] }>(`
+      with tt as (${TENANT_TABLES})
+      select con.conname,
+        array(select a.attname::text from unnest(con.conkey) with ordinality k(num, i)
+              join pg_attribute a on a.attrelid = con.conrelid and a.attnum = k.num order by k.i) as src,
+        array(select a.attname::text from unnest(con.confkey) with ordinality k(num, i)
+              join pg_attribute a on a.attrelid = con.confrelid and a.attnum = k.num order by k.i) as tgt
+      from pg_constraint con
+      where con.contype = 'f'
+        and con.conrelid in (select oid from tt) and con.confrelid in (select oid from tt)`);
+    expect(rows.length).toBeGreaterThan(30);
+    const bad = rows.filter(
+      (r) => r.src.indexOf("tenant_id") < 0 || r.src.indexOf("tenant_id") !== r.tgt.indexOf("tenant_id"),
+    );
+    expect(bad.map((r) => r.conname)).toEqual([]);
+  });
+
+  it(`grants ${APP_GROUP_ROLE} read/write on every table except read-only model_prices`, async () => {
+    const { rows } = await owner.query<{ relname: string; sel: boolean; ins: boolean; upd: boolean; del: boolean }>(
+      `select c.relname,
+              has_table_privilege($1, c.oid, 'SELECT') as sel, has_table_privilege($1, c.oid, 'INSERT') as ins,
+              has_table_privilege($1, c.oid, 'UPDATE') as upd, has_table_privilege($1, c.oid, 'DELETE') as del
+       from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and c.relkind = 'r'`,
+      [APP_GROUP_ROLE],
+    );
+    for (const r of rows) {
+      const writable = r.relname !== "model_prices";
+      expect({ table: r.relname, sel: r.sel, ins: r.ins, upd: r.upd, del: r.del }).toEqual({
+        table: r.relname,
+        sel: true,
+        ins: writable,
+        upd: writable,
+        del: writable,
+      });
+    }
+  });
+});

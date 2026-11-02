@@ -80,13 +80,16 @@ infra/              docker-compose (postgres, rustfs, webhook-catcher), Dockerfi
 
 ## 3. Tenant isolation
 
-- `tenant_id` on every tenant table, plus **RLS** (`tenant_id = current_setting('app.tenant_id')::uuid`) with the app connecting as a non-owner role.
+- `tenant_id` on every tenant table, plus **RLS** (`tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid`, ENABLE + FORCE) with the app connecting as a non-owner role. The NULLIF matters because a pooled session reports `''` after a `SET LOCAL` ends. With no tenant set, queries see no rows.
+- **Roles:** migrations and seeds run as the owner (`DATABASE_OWNER_URL`). The app's login role (`DATABASE_URL`) is created by `db:migrate` as a member of the NOLOGIN group `app_rw`, which every grant targets (DML on all tables, read-only on `model_prices`, DML and EXECUTE on schema `pgboss`). The api and worker refuse to start as a role with `rolsuper` or `rolbypassrls`. The app role also has `idle_in_transaction_session_timeout = 30s`, which backs the short-transaction rule. A test lints the catalog: every tenant table has RLS and a policy, and every FK between tenant tables carries `tenant_id` in the same position on both sides.
 - **Composite FKs:** parent tables declare `unique (tenant_id, id)`, and children reference `(tenant_id, document_id) → documents(tenant_id, id)`. A cross-tenant reference fails at the database even if the code has a bug.
-- `withTenantTx(tenantId, fn)` takes one `pg` PoolClient, runs `BEGIN; SET LOCAL app.tenant_id`, and gives `fn` both a Drizzle handle and a pg-boss `db` adapter (`executeSql` on the same client). Workers take the tenant from the job payload. A `BYPASSRLS` role is used only for cron maintenance.
+- `withTenantTx(pool, tenantId, fn)` takes one `pg` PoolClient, runs `BEGIN` and `set_config('app.tenant_id', $1, true)` (a parameterized `SET LOCAL`), and gives `fn` both a Drizzle handle and a pg-boss `db` adapter (`executeSql` on the same client). Workers take the tenant from the job payload. A `BYPASSRLS` role is used only for cron maintenance (added with the lease reaper in phase 3).
+- **Lookups before tenant context** (Postmark inbound address → tenant, API key hash → tenant) go through narrow `SECURITY DEFINER` functions, added in phase 2. They're owned by a NOLOGIN `app_resolver` role with a `FOR SELECT TO app_resolver USING (true)` policy on just those tables, because FORCE RLS also binds a non-superuser owner.
+- **pg-boss** is installed and upgraded by `db:migrate` as the owner, which also creates every queue (`QUEUES` in core; `send()` refuses unknown queues). Runtime instances run as the app role with `migrate`, `createSchema` and `reindex` off. Queues stay non-partitioned.
 - **Storage:** the client never supplies a key. `POST /uploads` creates an `uploads` row with a server key (`t/{tenant}/u/{uuid}`), an expiry and a presigned PUT. `POST /uploads/:id/complete` checks the row belongs to the tenant, HEADs the object to confirm size and mime, then creates the document. Downloads go through `GET /documents/:id/source`: the RLS-checked lookup returns a short-lived presigned GET.
 - Review decisions and actions resolve every referenced id inside the tenant transaction. Webhook targets come only from tenant settings.
 - **Short transactions:** read under the tenant context and commit, call Claude with no transaction open, then commit the result with revision checks.
-- Auth: Better Auth with the organizations plugin. Roles are `admin`, `reviewer` and `viewer`.
+- Auth: Better Auth with the organizations plugin, whose organization *is* the `tenants` table (`modelName` renames: `users`, `sessions`, `accounts`, `verifications`, `tenants`, `memberships`, `invitations`, all with uuid ids). These auth tables are global (no RLS) and keep BA's `organization_id` naming. Roles are `admin`, `reviewer` and `viewer`. Public sign-up and user-created organizations are disabled. Tenants are created by `createTenant()` (tenant, settings and inbound address in one transaction). A new session lands in the user's first tenant, and the API re-checks membership on every request.
 
 ---
 
@@ -94,12 +97,15 @@ infra/              docker-compose (postgres, rustfs, webhook-catcher), Dockerfi
 
 | Table | Notes |
 |---|---|
-| `tenants`, `users`, `memberships`, `api_keys` | — |
+| `tenants`, `users`, `sessions`, `accounts`, `verifications`, `memberships`, `invitations` | Better Auth's tables (global, no RLS); `memberships.role` ∈ admin/reviewer/viewer |
+| `tenant_settings` | PK `tenant_id`: `active_config_id`, webhook URL and secret, `daily_llm_cap_usd` |
+| `api_keys` | `key_hash` unique, `prefix`, `revoked_at` |
 | `inbound_addresses` | `address` unique → tenant |
 | `uploads` | server-issued `storage_key`, expected size/mime, `expires_at`, `completed_at` |
 | `documents` | `source`, `external_id` (Message-ID header, else Postmark MessageID, else content hash), unique `(tenant_id, source, external_id)`, `source_key`, **`processing_status`**, **`review_status`**, **`delivery_status`**, `current_run_id`, `current_extraction_id` |
 | `document_parts` | text with offsets, or per-page PDF text, plus `evidence_mode` (`text`/`pdf_text`/`unverifiable`) |
-| `pipeline_configs` | **immutable versions**: model + effort per stage, prompt version ids, category schema version ids, policy, thresholds, `automation` per category, audit rate. The tenant points at one active config; `frozen_at` is set once it has been validated |
+| `pipeline_configs` | **immutable versions** (triggers): model, effort and prompt version per stage as explicit columns, `policy`, `parent_id`. The only allowed update sets `frozen_at` once, after calibration. `tenant_settings.active_config_id` points at the active one |
+| `pipeline_config_categories` | per config and category: `schema_version_id` (a composite FK that also matches the category), `threshold`, `automation`, `audit_rate`. Insert-only, and closed once the config is frozen |
 | `category_schema_versions`, `prompt_versions` | immutable |
 | `processing_runs` | document, `config_id`, trigger (`ingest`/`retry`/`reclassify`), `forced_category`, status, `superseded_by` |
 | `llm_calls` | **one row per attempt**. Execution context is **either** `processing_run_id` **or** `eval_run_id` + `eval_item_id`, with a CHECK that exactly one is set. stage, attempt, **`canonical`** (partial unique index: one canonical success per context and stage), **`mode` (`live`/`replay`)**, model, effort, `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `cost_usd`, `price_id`, `latency_ms`, `stop_reason`, `served_by_fallback`, `request_id`, **`response` jsonb**, error |
@@ -107,11 +113,13 @@ infra/              docker-compose (postgres, rustfs, webhook-catcher), Dockerfi
 | `extractions` | **revisions**: document, run (null if a human wrote it), `revision`, `author` (`model`/`user`), `parent_id`, `fields`, `validation_errors`, `gate_results`, `score`, `decision`, `decision_reasons[]`; unique `(document_id, revision)` |
 | `review_tasks` | document, `kind` (`review`/`audit`/`processing_failed`/`unclassified`), `extraction_id` (**nullable**; a CHECK requires it when kind is `review` or `audit`), reasons, status (`pending`/`claimed`/`awaiting_extraction`/`resolved`), `claimed_by`, **`claim_token`**, `lease_expires_at` |
 | `review_decisions` | reviewer, outcome, `before`, `after`, diff, note |
-| `actions` | document, **`extraction_id`**, **frozen `payload`**, `idempotency_key` (= action id), status, attempts, `last_error` |
-| `model_prices` | per-MTok input/output/cache-write/cache-read, batch multiplier, `effective_from` |
+| `actions` | document (NOT NULL), **`extraction_id`** (unique), **frozen `payload`**, status, attempts, `last_error`. The action `id` is the `Idempotency-Key` |
+| `model_prices` | per model and prompt-size tier (`prompt_tokens_above`): per-MTok input, output, 5m and 1h cache write, cache read; batch multiplier; `effective_from`. Global and read-only for the app |
 | `llm_budget_days` | `(tenant_id, day)` → `cap_usd`, `spent_usd`, `reserved_usd` |
 | `eval_datasets`, `eval_items` | immutable source snapshot key, `expected_category`, `expected_fields`, **`split` (`dev`/`calib`/`test`)**, origin, tags. No link to `documents` |
 | `eval_runs`, `eval_results` | run: `config_id`, split, `llm_mode`, status, aggregates. Result: predicted category and fields, field scores, decision, **`proposed_action`** (stored, never sent), cost, latency, canonical llm_call ids |
+
+Enum-like columns are `text` with a CHECK built from the `as const` arrays in `packages/core` (no `pgEnum`, because drizzle's migrator runs pending migrations in one transaction). Pointers to rows of the same document (`current_run_id`, `current_extraction_id`, and `extraction_id` on tasks and actions) use three-column FKs `(tenant_id, document_id, x_id)`, so a document can't adopt another document's run or extraction.
 
 ---
 
