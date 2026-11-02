@@ -1,0 +1,33 @@
+{
+  "FromName": "Amara Okafor",
+  "MessageStream": "inbound",
+  "From": "amara.okafor@example.com",
+  "FromFull": {
+    "Email": "amara.okafor@example.com",
+    "Name": "Amara Okafor",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Your order has shipped",
+  "MessageID": "fixture-oth-shipping",
+  "Date": "Wed, 07 Oct 2026 12:15:00 +0000",
+  "TextBody": "Good news! Your order SO-778201 has shipped and should arrive in 2-3 business days. Track it with tracking number 1Z999AA10123456784.",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<oth-shipping@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

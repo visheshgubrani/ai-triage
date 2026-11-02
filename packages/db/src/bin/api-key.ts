@@ -1,7 +1,5 @@
 import { parseArgs } from "node:util";
-import { eq } from "drizzle-orm";
-import { createApiKey, createDb, createPool, withTenantTx } from "../index";
-import { tenants } from "../schema";
+import { createApiKey, createDb, createPool, findTenantBySlug, withTenantTx } from "../index";
 
 // `pnpm api-key:create --tenant <slug> [--name <label>]`: prints a new tenant API key once.
 // Runs as the app role (DATABASE_URL), through the same RLS as the API.
@@ -14,7 +12,7 @@ if (!values.tenant) {
 
 const pool = createPool();
 try {
-  const [tenant] = await createDb(pool).select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, values.tenant));
+  const tenant = await findTenantBySlug(createDb(pool), values.tenant);
   if (!tenant) throw new Error(`no tenant with slug "${values.tenant}"`);
   const { key, prefix } = await withTenantTx(pool, tenant.id, (tx) => createApiKey(tx, { name: values.name }));
   console.log(`Created API key ${prefix}… for tenant "${values.tenant}". It is shown only once:\n\n  ${key}\n`);

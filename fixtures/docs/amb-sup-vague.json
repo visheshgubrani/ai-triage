@@ -1,0 +1,33 @@
+{
+  "FromName": "Kwame Costa",
+  "MessageStream": "inbound",
+  "From": "kwame.costa@example.com",
+  "FromFull": {
+    "Email": "kwame.costa@example.com",
+    "Name": "Kwame Costa",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "again",
+  "MessageID": "fixture-amb-sup-vague",
+  "Date": "Wed, 14 Oct 2026 16:15:00 +0000",
+  "TextBody": "It's broken again. Call me.\n\nKwame",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<amb-sup-vague@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

@@ -1,0 +1,33 @@
+{
+  "FromName": "Lucia Brandt",
+  "MessageStream": "inbound",
+  "From": "lucia.brandt@example.com",
+  "FromFull": {
+    "Email": "lucia.brandt@example.com",
+    "Name": "Lucia Brandt",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Question about Cadence wireless headphones",
+  "MessageID": "fixture-sup-09",
+  "Date": "Mon, 28 Sep 2026 17:15:00 +0000",
+  "TextBody": "Hello,\n\nI was charged twice for order SO-688728 - both payments show on my card statement. Please refund the duplicate charge.\n\nThanks,\nLucia Brandt",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-09@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

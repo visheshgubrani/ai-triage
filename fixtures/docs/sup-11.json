@@ -1,0 +1,33 @@
+{
+  "FromName": "Felix Okafor",
+  "MessageStream": "inbound",
+  "From": "felix.okafor@example.com",
+  "FromFull": {
+    "Email": "felix.okafor@example.com",
+    "Name": "Felix Okafor",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Support request",
+  "MessageID": "fixture-sup-11",
+  "Date": "Sun, 04 Oct 2026 09:15:00 +0000",
+  "TextBody": "Hello,\n\nThe Cadence wireless headphones I bought (order ORD-837252) stopped turning on after two weeks. I believe it's still under warranty - can you repair it?\n\nThanks,\nFelix Okafor",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-11@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

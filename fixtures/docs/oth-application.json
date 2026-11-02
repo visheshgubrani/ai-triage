@@ -1,0 +1,33 @@
+{
+  "FromName": "Theo Rossi",
+  "MessageStream": "inbound",
+  "From": "theo.rossi@example.com",
+  "FromFull": {
+    "Email": "theo.rossi@example.com",
+    "Name": "Theo Rossi",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Application: Operations Analyst",
+  "MessageID": "fixture-oth-application",
+  "Date": "Fri, 09 Oct 2026 12:15:00 +0000",
+  "TextBody": "Dear hiring team,\n\nPlease find my application for the Operations Analyst position. I have four years of experience in logistics analytics and would love to join your team.\n\nKind regards,\nNadia Petrova",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<oth-application@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

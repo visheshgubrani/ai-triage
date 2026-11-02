@@ -1,0 +1,33 @@
+{
+  "FromName": "Quillmark Printing Co. Accounts",
+  "MessageStream": "inbound",
+  "From": "accounts@quillmark.example",
+  "FromFull": {
+    "Email": "accounts@quillmark.example",
+    "Name": "Quillmark Printing Co. Accounts",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Payment reminder: invoice QP-2744",
+  "MessageID": "fixture-amb-inv-reminder",
+  "Date": "Mon, 18 May 2026 09:15:00 +0000",
+  "TextBody": "Dear Jonah,\n\nThis is a friendly reminder that invoice QP-2744 dated April 24, 2026 for 2,407.77 USD was due on May 8, 2026 and remains unpaid.\n\nPlease arrange payment at your earliest convenience, or let us know if there is a problem.\n\nKind regards,\nQuillmark Printing Co. Accounts",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<amb-inv-reminder@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

@@ -1,0 +1,40 @@
+{
+  "FromName": "Copperleaf Facilities Management Sales",
+  "MessageStream": "inbound",
+  "From": "sales@copperleaf-fm.example",
+  "FromFull": {
+    "Email": "sales@copperleaf-fm.example",
+    "Name": "Copperleaf Facilities Management Sales",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Your quotation from Copperleaf Facilities Management",
+  "MessageID": "fixture-amb-inv-quote",
+  "Date": "Wed, 25 Feb 2026 10:15:00 +0000",
+  "TextBody": "Hi,\n\nAs discussed, our quotation is attached.\n\nBest regards,\nSales",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<amb-inv-quote@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": [
+    {
+      "Name": "quotation.pdf",
+      "Content": "JVBERi0xLjcKJYGBgYEKCjEgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFsgNiAwIFIgXQovQ291bnQgMQo+PgplbmRvYmoKCjIgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDEgMCBSCj4+CmVuZG9iagoKMyAwIG9iago8PAovUHJvZHVjZXIgPEZFRkYwMDYxMDA2OTAwMkQwMDc0MDA3MjAwNjkwMDYxMDA2NzAwNjUwMDIwMDA2NjAwNjkwMDc4MDA3NDAwNzUwMDcyMDA2NTAwNzM+Ci9DcmVhdGlvbkRhdGUgKEQ6MjAyNjEwMDEwMDAwMDBaKQovTW9kRGF0ZSAoRDoyMDI2MTAwMTAwMDAwMFopCj4+CmVuZG9iagoKNCAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTEKL0Jhc2VGb250IC9IZWx2ZXRpY2EKL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcKPj4KZW5kb2JqCgo1IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYS1Cb2xkCi9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nCj4+CmVuZG9iagoKNiAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDEgMCBSCi9SZXNvdXJjZXMgPDwKL0ZvbnQgPDwKL0hlbHZldGljYS1Cb2xkLTcwOTg0ODA3ODkgNSAwIFIKL0hlbHZldGljYS1Cb2xkLTk3NDI2ODI1NjggNSAwIFIKL0hlbHZldGljYS0yMDAwODA1OTg2IDQgMCBSCi9IZWx2ZXRpY2EtOTc1MDQ2OTIwNyA0IDAgUgovSGVsdmV0aWNhLTc1NzI1MzM2ODYgNCAwIFIKL0hlbHZldGljYS04NDUwMTgwMTA3IDQgMCBSCi9IZWx2ZXRpY2EtODY1OTg3MTg3OCA0IDAgUgovSGVsdmV0aWNhLTU4MjQ2NjIzMzggNCAwIFIKL0hlbHZldGljYS0xODQ4NTI0MTc1IDQgMCBSCi9IZWx2ZXRpY2EtNzg4ODkxMTA2MyA0IDAgUgo+PgovWE9iamVjdCA8PAo+PgovRXh0R1N0YXRlIDw8Cj4+Cj4+Ci9NZWRpYUJveCBbIDAgMCA1OTUgODQyIF0KL0Fubm90cyBbIF0KL0NvbnRlbnRzIFsgNyAwIFIgXQo+PgplbmRvYmoKCjcgMCBvYmoKPDwKL0ZpbHRlciAvRmxhdGVEZWNvZGUKL0xlbmd0aCA1NDYKPj4Kc3RyZWFtCnicjVTbitRAEH3PV+RZWK2uazeI4GQy+OCLkB8Q3RVlRVbE7/dUJ8OwsIbM0N0zfak6depUPQ2nZaAxv7+/DW8+3D/+vf/z/cvnu9Ovx693Qa1qpahtLDouDwNj/jiUfr+MRmNUH5efw1sVvwQFuQX75ObFnUkdq3jDTgvFaiHYPWN3xgjcO2PMoe/G5cewvBrmZfg0PO2CgiX2yub1v6CsdVBWzPRiqgWj6UXnY26YiCpZQ2yFXtvLPsQ3H2EIXd2YELq5dwoQFAI3ec9khc8iggdCx/y3MFDXYHDHP/eTpF69pP/0BcLNORiYCmaYEBbjqa85/BiCQAwm4rsM0OrfetxIfelxKxM4uAR3PFg9zeQZTnTqqQdX2iz/QzZIvwDv1AUyexxDWNWoVCp7HHktV44unp+WOQE+2SQ6rx6ZuEKIiUSBdQJvSX6yptvakEHjWaoclGp16CdKjbqDz7fiqaCtKErDszRax2G9ROYVcQA7BJTSX/EUoesvnsRSW0B3WGFWGVJhkT10dlWYRedJkdV4ib1nTDHwsKgI8LSjeitoM8aKWtrBw7GyhSbStXJedZ+6Cu01WHxK1QHLhHrTzknOpCDODnITtdZWCuLcwUJy5SYV07KtxbUTlI4OagJX60m2QbTAW20AoyQuz9t5B3dvlrZ5TmtYy2oJqsDbVcNy4my2PQ+xahoM3N70amz9bWyKkm4rFfS8C/4DBNxOQwplbmRzdHJlYW0KZW5kb2JqCgp4cmVmCjAgOAowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTYgMDAwMDAgbiAKMDAwMDAwMDA3NiAwMDAwMCBuIAowMDAwMDAwMTI2IDAwMDAwIG4gCjAwMDAwMDAzMDAgMDAwMDAgbiAKMDAwMDAwMDM5OCAwMDAwMCBuIAowMDAwMDAwNTAxIDAwMDAwIG4gCjAwMDAwMDA5NTggMDAwMDAgbiAKCnRyYWlsZXIKPDwKL1NpemUgOAovUm9vdCAyIDAgUgovSW5mbyAzIDAgUgo+PgoKc3RhcnR4cmVmCjE1NzcKJSVFT0Y=",
+      "ContentType": "application/pdf",
+      "ContentLength": 1814
+    }
+  ]
+}

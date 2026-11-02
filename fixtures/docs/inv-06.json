@@ -1,0 +1,40 @@
+{
+  "FromName": "Ironbark Industrial Parts Pty Ltd Billing",
+  "MessageStream": "inbound",
+  "From": "billing@ironbark-parts.example",
+  "FromFull": {
+    "Email": "billing@ironbark-parts.example",
+    "Name": "Ironbark Industrial Parts Pty Ltd Billing",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Invoice IIP-7073",
+  "MessageID": "fixture-inv-06",
+  "Date": "Wed, 09 Sep 2026 15:15:00 +0000",
+  "TextBody": "Hi Jonah,\n\nPlease find attached invoice IIP-7073 for 7,250.32 EUR, due 2026-09-23.\n\nThanks,\nIronbark Industrial Parts Pty Ltd Billing",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<inv-06@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": [
+    {
+      "Name": "IIP-7073.pdf",
+      "Content": "JVBERi0xLjcKJYGBgYEKCjEgMCBvYmoKPDwKL1R5cGUgL1BhZ2VzCi9LaWRzIFsgNiAwIFIgXQovQ291bnQgMQo+PgplbmRvYmoKCjIgMCBvYmoKPDwKL1R5cGUgL0NhdGFsb2cKL1BhZ2VzIDEgMCBSCj4+CmVuZG9iagoKMyAwIG9iago8PAovUHJvZHVjZXIgPEZFRkYwMDYxMDA2OTAwMkQwMDc0MDA3MjAwNjkwMDYxMDA2NzAwNjUwMDIwMDA2NjAwNjkwMDc4MDA3NDAwNzUwMDcyMDA2NTAwNzM+Ci9DcmVhdGlvbkRhdGUgKEQ6MjAyNjEwMDEwMDAwMDBaKQovTW9kRGF0ZSAoRDoyMDI2MTAwMTAwMDAwMFopCj4+CmVuZG9iagoKNCAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTEKL0Jhc2VGb250IC9IZWx2ZXRpY2EKL0VuY29kaW5nIC9XaW5BbnNpRW5jb2RpbmcKPj4KZW5kb2JqCgo1IDAgb2JqCjw8Ci9UeXBlIC9Gb250Ci9TdWJ0eXBlIC9UeXBlMQovQmFzZUZvbnQgL0hlbHZldGljYS1Cb2xkCi9FbmNvZGluZyAvV2luQW5zaUVuY29kaW5nCj4+CmVuZG9iagoKNiAwIG9iago8PAovVHlwZSAvUGFnZQovUGFyZW50IDEgMCBSCi9SZXNvdXJjZXMgPDwKL0ZvbnQgPDwKL0hlbHZldGljYS1Cb2xkLTcwOTg0ODA3ODkgNSAwIFIKL0hlbHZldGljYS05NzQyNjgyNTY4IDQgMCBSCi9IZWx2ZXRpY2EtMjAwMDgwNTk4NiA0IDAgUgovSGVsdmV0aWNhLUJvbGQtOTc1MDQ2OTIwNyA1IDAgUgovSGVsdmV0aWNhLTc1NzI1MzM2ODYgNCAwIFIKL0hlbHZldGljYS04NDUwMTgwMTA3IDQgMCBSCi9IZWx2ZXRpY2EtODY1OTg3MTg3OCA0IDAgUgovSGVsdmV0aWNhLTU4MjQ2NjIzMzggNCAwIFIKL0hlbHZldGljYS0xODQ4NTI0MTc1IDQgMCBSCi9IZWx2ZXRpY2EtNzg4ODkxMTA2MyA0IDAgUgovSGVsdmV0aWNhLTk3OTM0NDkyOSA0IDAgUgovSGVsdmV0aWNhLTI3MDgxOTk5NTYgNCAwIFIKL0hlbHZldGljYS02NzAzNjgyNjY0IDQgMCBSCi9IZWx2ZXRpY2EtNzM1NTY5NDg3IDQgMCBSCi9IZWx2ZXRpY2EtODc4NDAxNTcxMSA0IDAgUgovSGVsdmV0aWNhLTk2NjgzMzM0OTMgNCAwIFIKPj4KL1hPYmplY3QgPDwKPj4KL0V4dEdTdGF0ZSA8PAo+Pgo+PgovTWVkaWFCb3ggWyAwIDAgNTk1IDg0MiBdCi9Bbm5vdHMgWyBdCi9Db250ZW50cyBbIDcgMCBSIF0KPj4KZW5kb2JqCgo3IDAgb2JqCjw8Ci9GaWx0ZXIgL0ZsYXRlRGVjb2RlCi9MZW5ndGggNzYyCj4+CnN0cmVhbQp4nKVV24rUQBB9z1fkWVjtrms3iLCTzeCDL8L8gOgqyoqsiN/vqUrGy+rEiBMmk3T3dJ1Tder0/XA4DWWM6/O74cnz27uvt1/ev351dfh09+bKS2/Sirc+VhlPbwfC/cVQc30dtYzebDx9HJ5Kd7KjzUZW8XSgIh1v4ursgpFu1SYqWmIeIxzP+O1YObmYPBtPH4bTo2E+DS+H+0uwugtZI7U21vJY/4zJODFx7G12dE0kFLE0UFYTAhZxU1xT4nbMmXQBLmYmXCXX1O8MgD9Y7MNJpZRWtCM9l3GKxwyQWuRnyv2BRIo9zOaN/8jbbIqsV4uxyXQfnixnd0VCkAW/WE4qazllRjqOkRDZGQKJImW2Lcogtu5vs6M0IMymVPCmdgO62IOvQzzStdANOxd8eR+CJlpqKzX4XUTQ6pr03zAIUiymET/Kj68BQYGM8r4Tg6HoXptvCNRsbRq0x18j01722ghqx/KtyEJn9qvkIAaxY+acbAo8QIfMLK2KzBxw90WY/9aqFdahFA20gYcWPWi0aPR24aU1gSli4ynbb8lPzChHQ+NtbYFAn2hZjlw5dmAVuc61667ghHE5LCws/nGzU9OttV5rgaNc5lD4nFNEcjYOu0tkfcHmgaUuZuc/4cJbSWtM/XnaDbogDct3G2JnkU79MkBtbYHXvFs6mWt6DScAjTTiCSAWj0bJF3B45rb+Goctzixc1xGUg0uynSHSttMXvbTae9cNk4AHrAnVLH2WbYrUxqmRckjfBlIDl+U9XJFinhpEFfwOtKabz1ygEaCesY2tIwQOlVsyw7p9HMxBu5GZbHCQfmagwAPJJZMpW9wRlYCmICpCh8jxoZ2SZMino5YbwfmsSI3OaZEUBFPqGb4k2fJvYWFoUqp6rRtxaztHXemGt4Wn/D/tboYysfSNTsSpceYdx2VHL2UnpcdBHhA6B5I4ViGYQ4znwT5DERYrMOLpGG3xwMVR0p87xBVuGc1zzN5eHPHBSUXzL3y+AWhLCRYKZW5kc3RyZWFtCmVuZG9iagoKeHJlZgowIDgKMDAwMDAwMDAwMCA2NTUzNSBmIAowMDAwMDAwMDE2IDAwMDAwIG4gCjAwMDAwMDAwNzYgMDAwMDAgbiAKMDAwMDAwMDEyNiAwMDAwMCBuIAowMDAwMDAwMzAwIDAwMDAwIG4gCjAwMDAwMDAzOTggMDAwMDAgbiAKMDAwMDAwMDUwMSAwMDAwMCBuIAowMDAwMDAxMTI0IDAwMDAwIG4gCgp0cmFpbGVyCjw8Ci9TaXplIDgKL1Jvb3QgMiAwIFIKL0luZm8gMyAwIFIKPj4KCnN0YXJ0eHJlZgoxOTU5CiUlRU9G",
+      "ContentType": "application/pdf",
+      "ContentLength": 2196
+    }
+  ]
+}

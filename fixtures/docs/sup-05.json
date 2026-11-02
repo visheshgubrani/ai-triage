@@ -1,0 +1,33 @@
+{
+  "FromName": "Nadia Alvarez",
+  "MessageStream": "inbound",
+  "From": "nadia.alvarez@example.com",
+  "FromFull": {
+    "Email": "nadia.alvarez@example.com",
+    "Name": "Nadia Alvarez",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Question about Strata standing desk",
+  "MessageID": "fixture-sup-05",
+  "Date": "Wed, 16 Sep 2026 13:15:00 +0000",
+  "TextBody": "Hello,\n\nPlease cancel my Strata standing desk subscription at the end of the current billing period. I no longer need it.\n\nThanks,\nNadia Alvarez",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-05@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

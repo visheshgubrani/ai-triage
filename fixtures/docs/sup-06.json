@@ -1,0 +1,33 @@
+{
+  "FromName": "Theo Romero",
+  "MessageStream": "inbound",
+  "From": "theo.romero@example.com",
+  "FromFull": {
+    "Email": "theo.romero@example.com",
+    "Name": "Theo Romero",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Problem with my order",
+  "MessageID": "fixture-sup-06",
+  "Date": "Sat, 19 Sep 2026 14:15:00 +0000",
+  "TextBody": "Hello,\n\nSince yesterday's update, our whole team gets an error when exporting reports from Aero 2 electric kettle. We can't close the month until this works again.\n\nThanks,\nTheo Romero",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-06@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

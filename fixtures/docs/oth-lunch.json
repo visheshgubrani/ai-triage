@@ -1,0 +1,33 @@
+{
+  "FromName": "Mateo Haddad",
+  "MessageStream": "inbound",
+  "From": "mateo.haddad@example.com",
+  "FromFull": {
+    "Email": "mateo.haddad@example.com",
+    "Name": "Mateo Haddad",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Team lunch Friday?",
+  "MessageID": "fixture-oth-lunch",
+  "Date": "Sun, 11 Oct 2026 12:15:00 +0000",
+  "TextBody": "Hi all - shall we do team lunch on Friday at the new ramen place? Reply by Wednesday so I can book a table.",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<oth-lunch@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

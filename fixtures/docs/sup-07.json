@@ -1,0 +1,33 @@
+{
+  "FromName": "Amara Mensah",
+  "MessageStream": "inbound",
+  "From": "amara.mensah@example.com",
+  "FromFull": {
+    "Email": "amara.mensah@example.com",
+    "Name": "Amara Mensah",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Support request",
+  "MessageID": "fixture-sup-07",
+  "Date": "Tue, 22 Sep 2026 15:15:00 +0000",
+  "TextBody": "Hello,\n\nBefore I order: does the Lumen desk lamp work with 110 V outlets, and does it come with a US plug?\n\nThanks,\nAmara Mensah",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-07@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

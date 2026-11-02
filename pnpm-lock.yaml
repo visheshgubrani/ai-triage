@@ -261,6 +261,9 @@ importers:
       '@ai-triage/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ai-triage/fixtures':
+        specifier: workspace:*
+        version: link:../../fixtures
       '@ai-triage/ingest':
         specifier: workspace:*
         version: link:../../packages/ingest
@@ -290,6 +293,9 @@ importers:
         specifier: workspace:*
         version: link:../packages/core
     devDependencies:
+      '@ai-triage/schemas':
+        specifier: workspace:*
+        version: link:../packages/schemas
       docx:
         specifier: ^9.15.1
         version: 9.15.1

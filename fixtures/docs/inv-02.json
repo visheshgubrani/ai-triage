@@ -1,0 +1,33 @@
+{
+  "FromName": "Quillmark Printing Co. Billing",
+  "MessageStream": "inbound",
+  "From": "billing@quillmark.example",
+  "FromFull": {
+    "Email": "billing@quillmark.example",
+    "Name": "Quillmark Printing Co. Billing",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Invoice QP-4844 from Quillmark Printing Co.",
+  "MessageID": "fixture-inv-02",
+  "Date": "Sat, 27 Jun 2026 11:15:00 +0000",
+  "TextBody": "Hello Tomas,\n\nHere is our invoice for this month.\n\nQuillmark Printing Co.\n88 Market Lane, Bristol BS1 3QD, United Kingdom\nbilling@quillmark.example\n\nINVOICE\nInvoice #: QP-4844\nInvoice date: 27 June 2026\nDue date: 11 August 2026\nPO number: PO-12123\n\nBill to: Orchard Lane IT Consulting\n62 Orchard Lane, Dublin D02 X285, Ireland\n\nDescription | Qty | Unit price | Amount\nBusiness cards (500) | 4 | 617.52 | 2,470.08\nA1 posters, full colour | 1 | 243.95 | 243.95\n\nSubtotal: 2,714.03 GBP\nTax (0%): 0.00 GBP\nTotal due: 2,714.03 GBP\n\nPayment terms: bank transfer within 45 days, quoting QP-4844.\n\nKind regards,\nQuillmark Printing Co. Billing",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<inv-02@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

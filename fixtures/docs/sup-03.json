@@ -1,0 +1,33 @@
+{
+  "FromName": "Mateo Brandt",
+  "MessageStream": "inbound",
+  "From": "mateo.brandt@example.com",
+  "FromFull": {
+    "Email": "mateo.brandt@example.com",
+    "Name": "Mateo Brandt",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Urgent issue",
+  "MessageID": "fixture-sup-03",
+  "Date": "Thu, 10 Sep 2026 11:15:00 +0000",
+  "TextBody": "Hello,\n\nI can't sign in to my Cadence wireless headphones account since this morning and the password reset email never arrives. I have a client presentation in two hours, please help urgently.\n\nThanks,\nMateo Brandt",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-03@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}

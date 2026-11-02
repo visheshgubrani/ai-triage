@@ -1,0 +1,33 @@
+{
+  "FromName": "Nadia Okafor",
+  "MessageStream": "inbound",
+  "From": "nadia.okafor@example.com",
+  "FromFull": {
+    "Email": "nadia.okafor@example.com",
+    "Name": "Nadia Okafor",
+    "MailboxHash": ""
+  },
+  "To": "demo@inbound.localhost",
+  "ToFull": [
+    {
+      "Email": "demo@inbound.localhost",
+      "Name": "",
+      "MailboxHash": ""
+    }
+  ],
+  "OriginalRecipient": "demo@inbound.localhost",
+  "Subject": "Support request",
+  "MessageID": "fixture-sup-10",
+  "Date": "Thu, 01 Oct 2026 08:15:00 +0000",
+  "TextBody": "Hello,\n\nI can't sign in to my Lumen desk lamp account since this morning and the password reset email never arrives. I have a client presentation in two hours, please help urgently.\n\nThanks,\nNadia Okafor",
+  "HtmlBody": "",
+  "StrippedTextReply": "",
+  "Tag": "",
+  "Headers": [
+    {
+      "Name": "Message-ID",
+      "Value": "<sup-10@mail.fixtures.test>"
+    }
+  ],
+  "Attachments": []
+}
