@@ -65,4 +65,41 @@ describe("catalog", () => {
       });
     }
   });
+
+  it("limits app_resolver to SELECT on the two lookup tables, through definer functions only", async () => {
+    const { rows: policies } = await owner.query<{ table: string; cmd: string; roles: string[] }>(`
+      select c.relname as table, p.polcmd as cmd, array(select rolname::text from pg_roles where oid = any(p.polroles)) as roles
+      from pg_policy p join pg_class c on c.oid = p.polrelid
+      where p.polname <> 'tenant_isolation' order by c.relname`);
+    expect(policies).toEqual([
+      { table: "api_keys", cmd: "r", roles: ["app_resolver"] },
+      { table: "inbound_addresses", cmd: "r", roles: ["app_resolver"] },
+    ]);
+
+    const { rows: functions } = await owner.query<{
+      name: string;
+      owner: string;
+      config: string[];
+      public_exec: boolean;
+    }>(`
+      select p.proname as name, pg_get_userbyid(p.proowner) as owner, p.proconfig as config,
+             exists (select 1 from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+                     where a.grantee = 0 and a.privilege_type = 'EXECUTE') as public_exec
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.prosecdef order by p.proname`);
+    expect(functions).toEqual([
+      { name: "resolve_api_key", owner: "app_resolver", config: ["search_path=public, pg_temp"], public_exec: false },
+      {
+        name: "resolve_inbound_address",
+        owner: "app_resolver",
+        config: ["search_path=public, pg_temp"],
+        public_exec: false,
+      },
+    ]);
+
+    const { rows: members } = await owner.query(
+      "select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid where r.rolname = 'app_resolver'",
+    );
+    expect(members).toEqual([]);
+  });
 });

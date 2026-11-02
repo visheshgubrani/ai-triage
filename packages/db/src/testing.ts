@@ -2,12 +2,15 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { inject } from "vitest";
 import type { NewConfigVersion } from "./configs";
+import { PG, pgCode } from "./errors";
 import type { MigrationUrls } from "./migrate";
 import { categorySchemaVersions, documents, promptVersions } from "./schema";
 import type { TenantTx } from "./tenant-tx";
 import { createTenant } from "./tenants";
 
 // Test-only helpers for *.db.test.ts files (exported as @ai-triage/db/testing; never imported by app code).
+
+export { PG, pgCode };
 
 declare module "vitest" {
   export interface ProvidedContext {
@@ -27,16 +30,6 @@ export async function newTenant(pool: pg.Pool): Promise<string> {
   return id;
 }
 
-/** The Postgres SQLSTATE of an error, looking through drizzle's DrizzleQueryError wrapper. */
-export function pgCode(err: unknown): string | undefined {
-  let e: unknown = err;
-  while (e && typeof e === "object") {
-    if ("code" in e && typeof e.code === "string") return e.code;
-    e = "cause" in e ? e.cause : undefined;
-  }
-  return undefined;
-}
-
 /** Awaits `promise`, expecting it to fail with the given SQLSTATE; returns the error. */
 export async function expectPgError(promise: Promise<unknown>, code: string): Promise<unknown> {
   try {
@@ -48,15 +41,6 @@ export async function expectPgError(promise: Promise<unknown>, code: string): Pr
   }
   throw new Error(`expected SQLSTATE ${code}, but the query succeeded`);
 }
-
-export const PG = {
-  checkViolation: "23514",
-  foreignKeyViolation: "23503",
-  uniqueViolation: "23505",
-  notNullViolation: "23502",
-  integrityViolation: "23000",
-  rlsViolation: "42501",
-} as const;
 
 /**
  * Inserts prompt versions and one schema version per category for the tenant in `tx`, and returns
