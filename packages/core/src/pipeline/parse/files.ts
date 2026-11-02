@@ -68,7 +68,9 @@ async function parseBinary(file: Binary, limits: ParseLimits): Promise<Part[] | 
   }
 }
 
-const numbered = (parts: Part[]): ParsedPart[] => parts.map((p, partIndex) => ({ ...p, partIndex }));
+/** Numbers the parts; drops NUL characters, which some PDFs contain and Postgres text can't store. */
+const numbered = (parts: Part[]): ParsedPart[] =>
+  parts.map((p, partIndex) => ({ ...p, text: p.text.replaceAll("\u0000", ""), partIndex }));
 
 /** Parses an uploaded or API file. An unsupported type fails the run. */
 export async function parseFile(

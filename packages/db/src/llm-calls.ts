@@ -107,3 +107,16 @@ export async function markCanonical(
     .returning({ id: llmCalls.id });
   return rows.length === 1;
 }
+
+/** The attempt a committed stage used (its canonical row), or null. */
+export async function loadCanonicalAttempt(
+  tx: TenantTx,
+  ctx: LlmCallContext,
+  stage: LlmStage,
+): Promise<LlmCallRow | null> {
+  const [row] = await tx.db
+    .select()
+    .from(llmCalls)
+    .where(and(inContext(ctx), eq(llmCalls.stage, stage), eq(llmCalls.canonical, true)));
+  return row ?? null;
+}

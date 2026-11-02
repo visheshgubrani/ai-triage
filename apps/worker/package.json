@@ -12,10 +12,14 @@
   "dependencies": {
     "@ai-triage/core": "workspace:*",
     "@ai-triage/db": "workspace:*",
+    "@ai-triage/ingest": "workspace:*",
     "@ai-triage/llm": "workspace:*",
+    "@ai-triage/schemas": "workspace:*",
+    "@ai-triage/storage": "workspace:*",
     "pg-boss": "^12.38.0"
   },
   "devDependencies": {
+    "pdf-lib": "^1.17.1",
     "tsup": "^9.0.0"
   }
 }
