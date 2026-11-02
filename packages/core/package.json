@@ -9,5 +9,16 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-triage/schemas": "workspace:*",
+    "html-to-text": "^10.0.1",
+    "mailparser": "^3.14.1",
+    "mammoth": "^1.13.0",
+    "unpdf": "^2.1.0"
+  },
+  "devDependencies": {
+    "@types/html-to-text": "^9.0.4",
+    "@types/mailparser": "^3.9.0"
   }
 }

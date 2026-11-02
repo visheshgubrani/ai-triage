@@ -1,4 +1,4 @@
-import { QUEUES } from "@ai-triage/core";
+import { QUEUE_OPTIONS, QUEUES } from "@ai-triage/core";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createBoss, enqueue, type PgBoss } from "./boss";
@@ -52,5 +52,18 @@ describe("withTenantTx + pg-boss", () => {
       db.select().from(documents).where(eq(documents.id, documentId)),
     );
     expect(rows).toEqual([]);
+  });
+});
+
+describe("queue options", () => {
+  it("applies QUEUE_OPTIONS, with stage queues dead-lettering into doc.failed", async () => {
+    for (const name of [QUEUES.parse, QUEUES.classify, QUEUES.extract, QUEUES.route]) {
+      expect(await boss.getQueue(name)).toMatchObject({
+        retryLimit: QUEUE_OPTIONS[name].retryLimit,
+        expireInSeconds: QUEUE_OPTIONS[name].expireInSeconds,
+        deadLetter: QUEUES.failed,
+      });
+    }
+    expect((await boss.getQueue(QUEUES.deliver))?.deadLetter ?? null).toBeNull();
   });
 });

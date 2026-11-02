@@ -10,7 +10,7 @@ export default defineConfig({
       {
         test: {
           name: "unit",
-          include: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts"],
+          include: ["packages/*/src/**/*.test.ts", "apps/*/src/**/*.test.ts", "fixtures/src/**/*.test.ts"],
           exclude: ["**/*.db.test.ts", "**/node_modules/**"],
         },
       },
@@ -19,7 +19,7 @@ export default defineConfig({
         // runs the full migration and seed, and provides its URLs to tests via inject("dbUrls").
         test: {
           name: "db",
-          include: ["packages/*/src/**/*.db.test.ts", "apps/*/src/**/*.db.test.ts"],
+          include: ["packages/*/src/**/*.db.test.ts", "apps/*/src/**/*.db.test.ts", "fixtures/src/**/*.db.test.ts"],
           globalSetup: ["packages/db/test/global-setup.ts"],
           fileParallelism: false,
           testTimeout: 30_000,

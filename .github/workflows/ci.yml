@@ -13,21 +13,6 @@ jobs:
   check:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    services:
-      # Same credentials and port as compose.yaml, so .env.example works unchanged.
-      postgres:
-        image: postgres:17-alpine
-        env:
-          POSTGRES_USER: triage
-          POSTGRES_PASSWORD: triage
-          POSTGRES_DB: triage
-        ports:
-          - 5440:5432
-        options: >-
-          --health-cmd "pg_isready -U triage -d triage"
-          --health-interval 2s
-          --health-timeout 3s
-          --health-retries 30
     env:
       # Never call Claude from CI: replay mode only, and no API key is configured.
       LLM_MODE: replay
@@ -39,9 +24,11 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: cp .env.example .env
+      # Postgres and RustFS from compose.yaml, the same as local development.
+      - run: docker compose up -d --wait postgres storage && docker compose run --rm storage-init
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      # Unit tests plus DB tests (RLS, constraints, queue atomicity, auth) against the service above.
+      # Unit tests plus DB tests (RLS, constraints, queue atomicity, auth, storage, pipeline in replay).
       - run: pnpm test
       - run: pnpm build
