@@ -34,6 +34,13 @@ const ALL_INPUTS: ModelInputs = { pdf: true, images: true };
 
 const attr = (value: string) => value.replace(/["<>\n]/g, " ");
 
+/**
+ * Document text can't open or close a part: `<part` and `</part` inside it are escaped, so a
+ * document can't fake the structure the prompt relies on (docs/security.md, prompt injection).
+ * Text without them is unchanged, so ordinary requests (and their cassettes) are byte-identical.
+ */
+export const escapePartText = (text: string) => text.replace(/<(\/?)(part\b)/gi, "&lt;$1$2");
+
 function partTag(part: DocumentPart, page = false): string {
   const name = part.label ? ` name="${attr(part.label)}"` : "";
   const pageAttr = page && part.page !== null ? ` page="${part.page}"` : "";
@@ -58,7 +65,7 @@ export function documentContent(
     const pdf = part.mime === DOCUMENT_MIMES.pdf;
     const image = part.mime === DOCUMENT_MIMES.png || part.mime === DOCUMENT_MIMES.jpeg;
     if (pdf && !inputs.pdf && part.evidenceMode === "pdf_text") {
-      const text = `${partTag(part, true)}\n${part.text}\n</part>`;
+      const text = `${partTag(part, true)}\n${escapePartText(part.text)}\n</part>`;
       bytes += Buffer.byteLength(text);
       content.push({ type: "text", text });
       continue;
@@ -85,7 +92,7 @@ export function documentContent(
         content.push({ type: "image", mime: part.mime as "image/png" | "image/jpeg", data });
       }
     } else {
-      const text = `${partTag(part)}\n${part.text}\n</part>`;
+      const text = `${partTag(part)}\n${escapePartText(part.text)}\n</part>`;
       bytes += Buffer.byteLength(text);
       content.push({ type: "text", text });
     }

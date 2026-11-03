@@ -44,6 +44,9 @@ export function checkUserRevision(input: {
     validationIssues,
     evidence: { unverifiable: false, checks: [] },
     rules,
+    // A reviewer's own values: the document-level checks were already shown to them.
+    injection: null,
+    senderAuthenticated: true,
   });
   return { validationIssues, gateResults: { failures, evidence: null, rules } };
 }

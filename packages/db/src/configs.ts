@@ -127,6 +127,8 @@ export interface CandidateConfig {
   extract?: Partial<StageConfig>;
   /** Categories not listed keep the parent's settings. The category set and schema versions are the parent's. */
   categories?: CategoryChange[];
+  /** Replaces the parent's sender policy (`policy.sender`, see senderPolicy() in core). */
+  sender?: { require: boolean; trustedAuthServIds: string[] };
   createdBy?: string;
 }
 
@@ -149,7 +151,17 @@ export async function createCandidateConfig(tx: TenantTx, input: CandidateConfig
       effort: input.extract?.effort ?? (parent.extractEffort as Effort),
       promptVersionId: input.extract?.promptVersionId ?? parent.extractPromptVersionId,
     },
-    policy: parent.policy as Record<string, unknown>,
+    policy: {
+      ...(parent.policy as Record<string, unknown>),
+      ...(input.sender
+        ? {
+            sender: {
+              ...input.sender,
+              trustedAuthServIds: input.sender.trustedAuthServIds.map((s) => s.toLowerCase()),
+            },
+          }
+        : {}),
+    },
     categories: parent.categories.map((p) => {
       const change = input.categories?.find((c) => c.category === p.category);
       return {

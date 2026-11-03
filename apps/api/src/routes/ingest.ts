@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IgnoredResponse, IngestResponse } from "@ai-triage/contracts";
 import { normalizePostmark, type PostmarkInbound } from "@ai-triage/core/pipeline";
-import { ingestEmail, ingestFile, resolveEmailTenant } from "@ai-triage/ingest";
+import { checkEmailLimits, IngestRejected, ingestEmail, ingestFile, resolveEmailTenant } from "@ai-triage/ingest";
 import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
 import { bodyLimit } from "hono/body-limit";
@@ -48,6 +48,14 @@ export const webhookRoutes = (deps: AppDeps) =>
     async (c) => {
       const payload = c.req.valid("json") as PostmarkInbound;
       const email = normalizePostmark(payload);
+      try {
+        checkEmailLimits(email, deps.limits);
+      } catch (err) {
+        if (!(err instanceof IngestRejected)) throw err;
+        // 403 is the one status Postmark doesn't retry: this message will never fit.
+        console.warn(`postmark: refused a message: ${err.message}`);
+        return c.json({ error: err.message }, 403);
+      }
       const tenantId = await resolveEmailTenant(deps.pool, email.recipients);
       if (!tenantId) {
         console.warn("postmark: no tenant for the recipients of this message; ignored");

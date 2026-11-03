@@ -17,6 +17,7 @@ import {
   PipelineError,
   parseClassifyOutput,
   parseExtractOutput,
+  senderPolicy,
 } from "@ai-triage/core/pipeline";
 import {
   advanceDocument,
@@ -48,7 +49,7 @@ import {
 import { readAttemptOutput } from "@ai-triage/llm";
 import { type JsonSchema, validateFields } from "@ai-triage/schemas";
 import type { PipelineDeps } from "./deps";
-import { loadBlobs, loadCategoryOptions, parseSource, stageModel } from "./source";
+import { loadBlobs, loadCategoryOptions, loadSender, parseSource, stageModel } from "./source";
 
 // Each stage follows docs/architecture.md §5: read in a short transaction (stop if the run isn't
 // current or the stage is done), do the slow work with no transaction open, then commit in one
@@ -212,6 +213,7 @@ export async function routeStage(deps: PipelineDeps, job: StageJob): Promise<voi
     if (!attempt) throw new Error(`run ${job.runId} has no canonical extract attempt`);
     return {
       run: found.run,
+      document: found.document,
       config: found.config,
       policy,
       extraction,
@@ -243,6 +245,12 @@ export async function routeStage(deps: PipelineDeps, job: StageJob): Promise<voi
     trigger: input.run.trigger,
     auditDraw: deps.auditDraw(job.documentId, job.runId),
     ids: { documentId: job.documentId, extractionId: input.extraction.id },
+    sender: await loadSender(deps.storage, {
+      sourceKey: input.document.sourceKey,
+      mime: input.document.mime,
+      title: input.document.title,
+    }),
+    senderPolicy: senderPolicy(input.config.policy),
   });
   const { decision, audit, reasons, proposedAction } = evaluation.route;
   const autoApproved = decision === "auto" && !audit;

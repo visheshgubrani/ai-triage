@@ -29,6 +29,8 @@ export interface AppDeps {
   webhookEgress: WebhookEgress;
   /** Encrypts and decrypts webhook signing secrets (ENCRYPTION_KEYS). */
   keys: KeyRing;
+  /** Domain of generated inbound addresses (INBOUND_DOMAIN); null keeps the current address's domain. */
+  inboundDomain: string | null;
   /** Request limits (RATE_LIMITS, scaled by RATE_LIMIT_SCALE); tests lower them. */
   rateLimits: RateLimits;
   /** How eval runs started now will call models (from LLM_MODE); the worker refuses a run that differs. */

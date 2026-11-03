@@ -329,6 +329,10 @@ export const GATE_CODES = [
   "evidence_unverifiable",
   "rule_failed",
   "category_other",
+  /** The text addresses the triage system (deterministic patterns, pipeline/untrusted.ts). */
+  "injection_suspected",
+  /** Email that the config requires to be authenticated (SPF/DKIM/DMARC) and isn't. */
+  "sender_unauthenticated",
 ] as const;
 export type GateCode = (typeof GATE_CODES)[number];
 

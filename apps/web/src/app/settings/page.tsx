@@ -1,6 +1,7 @@
 import { getMe } from "@/components/header";
 import { AuditLogView } from "./audit-log";
 import { BudgetSettingsView } from "./budget-settings";
+import { InboundSettingsView } from "./inbound-settings";
 import { WebhookSettingsView } from "./webhook-settings";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export default async function SettingsPage() {
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
       {me?.role === "admin" ? (
         <>
+          <InboundSettingsView />
           <WebhookSettingsView />
           <BudgetSettingsView />
           <AuditLogView />

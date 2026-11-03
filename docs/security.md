@@ -51,22 +51,23 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 | Webhook secrets | AES-256-GCM at rest, with a key ring and the tenant id as AAD. Rotation keeps the old secret valid for 24 h | Done (M3) |
 | Webhook signature | v2 signs the timestamp, the Idempotency-Key and the body | Done (M3) |
 | Abuse | Postgres-backed fixed-window limits shared by every api process: sign-in per address and per account, other auth endpoints per address, inbound email per tenant, the REST API per key, uploads and every other write per user (429 + Retry-After; `RATE_LIMIT_SCALE` raises them all). An admin-editable daily LLM budget | Done (M4) |
-| Served files | Presigned GETs force a content type: the sniffed type for PDFs and images, `application/octet-stream` + `attachment` for everything else | M5 |
-| Uploads | Presigned PUTs sign Content-Length; rejected objects are deleted; `.eml` needs an email MIME | M5 |
-| Email intake | Attachment count and size caps; routing by envelope recipient; unguessable, rotatable inbound addresses | M5 |
-| Parsers | DOCX zip-bomb checks, an image pixel cap, the existing PDF page cap | M5 |
-| Prompt injection | Part delimiters escaped; an `injection_suspected` gate forces review | M5 |
-| Sender spoofing | SPF/DKIM/DMARC results stored at ingest; the `sender_unauthenticated` gate keeps unauthenticated mail out of auto-approval | M5 |
+| Served files | Presigned GETs force a content type: the sniffed type inline for PDFs and raster images, `application/octet-stream` + `attachment` for everything else, so no stored file runs as script on the storage origin | Done (M5) |
+| Uploads | Presigned PUTs sign Content-Type and Content-Length (storage refuses other sizes); refused uploads are deleted; an `.eml` name needs an email or octet-stream type | Done (M5) |
+| Email intake | At most 25 attachments, each within the file limit (Postmark gets a 403, which it doesn't retry); the tenant is chosen by the envelope recipient, never by To/Cc; unguessable inbound addresses that admins can replace (audited) | Done (M5) |
+| Parsers | DOCX zip-bomb check from the central directory (≤ 5000 entries, ≤ 50 MB uncompressed) before mammoth runs; images over 40 MP refused; the PDF page cap | Done (M5) |
+| Prompt injection | `<part` / `</part` in document text escaped; a deterministic `injection_suspected` gate (pipeline/untrusted.ts) sends text that addresses the triage system to review | Done (M5) |
+| Sender spoofing | Authentication-Results headers stored with each email; the `sender_unauthenticated` gate trusts only headers from receiving servers the config names (`policy.sender.trustedAuthServIds`) and needs DMARC (or DKIM) pass. **Opt-in per config** (API: `sender` on a candidate config); on by default once Gmail sync supplies reliable results (phase 7) | Done (M5), opt-in |
 | Accounts | TOTP 2FA (required for admins), session list and revoke, API keys with expiry and revocation from the UI | M6 |
 | Privacy | Document purge, per-tenant retention, expired-upload cleanup, tenant offboarding | M7 |
 | Supply chain | Least-privilege CI, SHA-pinned actions, CodeQL, `pnpm audit`, Dependabot, a minimum release age, digest-pinned images, a read-only app tree in the container | M8 |
 
 ## Deliberate non-goals and residual risks
 
-- **The model can still be fooled.** Gates catch forged structure, missing evidence, failed arithmetic, injection phrasing and unauthenticated senders. They can't prove that a well-formed, authenticated document from a real sender is honest. Automation is opt-in per category, and the audit sample measures how often it is wrong.
+- **The model can still be fooled.** Gates catch forged structure, missing evidence, failed arithmetic, injection phrasing and (where the config requires it) unauthenticated senders. They can't prove that a well-formed, authenticated document from a real sender is honest. Automation is opt-in per category, and the audit sample measures how often it is wrong.
 - **Evidence matching proves a quote exists, not that it supports the value.**
 - **API keys are SHA-256 hashed without a pepper.** They carry 192 bits of randomness, so a leaked hash can't be brute-forced.
 - **Eval snapshots outlive a purged document.** They are copies a human chose to keep. Erasing eval items comes later.
+- **Sender authentication depends on the forwarding path.** Forwarding breaks SPF, and a header any sender can write proves nothing, so the gate needs the tenant to name the receiving server it trusts. Until Gmail sync (phase 7) it is off by default.
 - **Postmark doesn't sign inbound webhooks.** Basic auth over HTTPS is the control. Put the endpoint behind TLS and keep the password long.
 - **Providers see document content.** Choose providers and data-processing terms to match your data. A `compat` server keeps it on your own hardware.
 

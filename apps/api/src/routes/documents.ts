@@ -168,7 +168,7 @@ export const documentRoutes = (deps: AppDeps) =>
       );
       if (!document) return c.json({ error: "Not found" }, 404);
       const body: SourceUrlResponse = {
-        url: await deps.storage.presignGet(document.sourceKey, 300, document.title),
+        url: await deps.storage.presignGet(document.sourceKey, 300, { mime: document.mime, filename: document.title }),
       };
       return c.json(body, 200);
     })
@@ -185,7 +185,7 @@ export const documentRoutes = (deps: AppDeps) =>
       const part = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => loadPart(tx, id, index));
       if (!part?.storageKey) return c.json({ error: "Not found" }, 404);
       const body: FileUrlResponse = {
-        url: await deps.storage.presignGet(part.storageKey, 300, part.label),
+        url: await deps.storage.presignGet(part.storageKey, 300, { mime: part.mime, filename: part.label }),
         mime: part.mime,
         label: part.label,
       };

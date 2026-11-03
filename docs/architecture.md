@@ -212,6 +212,8 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
   - **Evidence check:** `text` means the quote must appear in the source (normalized), with offsets stored for highlighting. `pdf_text` means it must appear on the cited page. `unverifiable` means the item always goes to review.
   - A built-in category rule fails (for example, invoice line items must sum to the total).
   - The category is `other`.
+  - **Injection suspected:** the text addresses the triage system (a short, documented set of patterns in `pipeline/untrusted.ts`, such as "ignore … instructions" or a forged `<part>` tag). Part delimiters inside document text are also escaped before sending.
+  - **Sender unauthenticated** (when the config's `policy.sender.require` is on): no DMARC (or DKIM) pass in an Authentication-Results header from a receiving server the config trusts.
 - **Score = the classification's `self_confidence`.** It is the only number compared against a threshold. Extraction quality is handled by the gates, not by multiplying scores together.
 - **Decision:** auto only if every gate passes, `score ≥ threshold[category]`, and the category's `automation` is `auto_when_confident`, and the run wasn't triggered by a reclassify. The default is `review_all`, so automation is opt-in per category.
 - **A correct auto-approval (one definition, used everywhere):** the right category **and** every required field correct under its comparator. Category accuracy alone never counts as a correct approval.

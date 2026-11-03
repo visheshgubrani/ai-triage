@@ -59,6 +59,7 @@ export async function createTestApp(
     keys: keyRingFromEnv({}),
     // Every test file signs in as the demo users from the same (unknown) address, and the counters
     // live in the shared test database: limits stay out of the way unless a test sets its own.
+    inboundDomain: null,
     rateLimits: options.rateLimits ?? rateLimitsFromEnv({ RATE_LIMIT_SCALE: "10000" }),
     llmMode: "replay",
   });

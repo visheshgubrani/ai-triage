@@ -82,6 +82,21 @@ export function emailExternalId(email: NormalizedEmail, input: { postmark?: Post
 /** External id of a file (and of an .eml-less upload): the SHA-256 of its bytes. */
 export const fileExternalId = (bytes: Uint8Array) => `sha256:${sha256(bytes)}`;
 
+/** Most attachments one email may carry; each is also held to the file size limit. */
+export const MAX_ATTACHMENTS = 25;
+
+/**
+ * Refuses an email with too many or too large attachments before anything is stored (each
+ * attachment becomes its own object and part, so this bounds what one message can cost).
+ */
+export function checkEmailLimits(email: NormalizedEmail, limits: IngestLimits): void {
+  if (email.attachments.length > MAX_ATTACHMENTS) {
+    throw new IngestRejected(413, `email has ${email.attachments.length} attachments (at most ${MAX_ATTACHMENTS})`);
+  }
+  const big = email.attachments.find((a) => a.size > limits.maxFileBytes);
+  if (big) throw new IngestRejected(413, `attachment exceeds ${Math.round(limits.maxFileBytes / 2 ** 20)} MB`);
+}
+
 export const emailTitle = (email: NormalizedEmail) => email.subject ?? "(no subject)";
 
 /**
@@ -108,6 +123,8 @@ export async function writeStoredEmail(
     date: email.date,
     text: email.text,
     attachments,
+    // Only when present, so emails without them store exactly what they did before.
+    ...(email.authResults.length > 0 ? { authResults: email.authResults } : {}),
   };
   const json = new TextEncoder().encode(JSON.stringify(stored));
   await storage.put(keys.email, json, EMAIL_SOURCE_MIME);
@@ -183,6 +200,7 @@ export async function ingestFile(
   if (file.bytes.byteLength === 0) throw new IngestRejected(400, "file is empty");
   if (isEml(file.filename, file.mime)) {
     const email = await normalizeEml(file.bytes);
+    checkEmailLimits(email, limits);
     return ingestEmail(deps, tenantId, email, { source: file.source, eml: file.bytes });
   }
   const mime = file.mime?.split(";")[0]?.trim().toLowerCase() ?? null;
@@ -219,7 +237,9 @@ export async function createUpload(
   if (input.size > limits.maxFileBytes)
     throw new IngestRejected(413, `file exceeds ${Math.round(limits.maxFileBytes / 2 ** 20)} MB`);
   const mime = input.mime.toLowerCase();
-  if (!isOneOf(ACCEPTED_MIMES, mime) && !isEml(input.filename, mime)) {
+  // An .eml name alone isn't enough: the type is signed into the upload and stored with the object.
+  const emlUpload = isEml(input.filename, null) && (EML_MIMES.has(mime) || mime === "application/octet-stream");
+  if (!isOneOf(ACCEPTED_MIMES, mime) && !emlUpload) {
     throw new IngestRejected(415, `unsupported type ${input.mime}`);
   }
   const storageKey = storageKeys.upload(tenantId);
@@ -234,7 +254,7 @@ export async function createUpload(
       createdBy: input.createdBy,
     }),
   );
-  const url = await deps.storage.presignPut(storageKey, mime, UPLOAD_TTL_SECONDS);
+  const url = await deps.storage.presignPut(storageKey, mime, input.size, UPLOAD_TTL_SECONDS);
   return { uploadId, url, method: "PUT" as const, headers: { "content-type": mime }, expiresAt };
 }
 
@@ -255,11 +275,16 @@ export async function completeUpload(
 
   const head = await deps.storage.head(upload.storageKey);
   if (!head) throw new IngestRejected(409, "nothing has been uploaded yet");
+  // A refused object is deleted, so a rejected upload leaves nothing behind in storage.
+  const refuse = async (status: IngestRejected["status"], message: string): Promise<never> => {
+    if (!upload.completedAt) await deps.storage.delete([upload.storageKey]);
+    throw new IngestRejected(status, message);
+  };
   if (head.size !== upload.expectedSize) {
-    throw new IngestRejected(422, `uploaded ${head.size} bytes, expected ${upload.expectedSize}`);
+    await refuse(422, `uploaded ${head.size} bytes, expected ${upload.expectedSize}`);
   }
   if (head.contentType?.toLowerCase() !== upload.expectedMime) {
-    throw new IngestRejected(422, `uploaded type ${head.contentType}, expected ${upload.expectedMime}`);
+    await refuse(422, `uploaded type ${head.contentType}, expected ${upload.expectedMime}`);
   }
 
   const bytes = await deps.storage.get(upload.storageKey);
@@ -268,7 +293,10 @@ export async function completeUpload(
     tenantId,
     { bytes, filename: upload.filename, mime: upload.expectedMime, source: "upload", sourceKey: upload.storageKey },
     limits,
-  );
+  ).catch(async (err: unknown) => {
+    if (err instanceof IngestRejected) await refuse(err.status, err.message);
+    throw err;
+  });
   await withTenantTx(deps.pool, tenantId, (tx) => markUploadCompleted(tx, uploadId));
   return result;
 }

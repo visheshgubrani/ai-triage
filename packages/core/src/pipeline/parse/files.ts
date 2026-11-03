@@ -4,6 +4,7 @@ import { DOCUMENT_MIMES, type PartKind } from "../../index";
 import { PipelineError } from "../errors";
 import type { ParsedPart } from "../types";
 import { renderEmailBody, type StoredAttachment, type StoredEmail } from "./email";
+import { imageDimensions, MAX_IMAGE_PIXELS, MAX_ZIP_ENTRIES, MAX_ZIP_UNCOMPRESSED_BYTES, zipStats } from "./limits";
 import { looksLikeText, sniffMime } from "./mime";
 
 export interface ParseLimits {
@@ -51,12 +52,24 @@ async function parseBinary(file: Binary, limits: ParseLimits): Promise<Part[] | 
         return text.map((pageText, i) => ({ ...base, page: i + 1, text: pageText, evidenceMode }));
       }
       case DOCUMENT_MIMES.docx: {
+        const zip = zipStats(file.bytes);
+        if (!zip || zip.entries > MAX_ZIP_ENTRIES || zip.uncompressedBytes > MAX_ZIP_UNCOMPRESSED_BYTES) {
+          throw new PipelineError(
+            "file_too_large",
+            `${file.label ?? "DOCX"} expands beyond ${MAX_ZIP_UNCOMPRESSED_BYTES / 2 ** 20} MB or isn't a readable zip`,
+          );
+        }
         const { value } = await mammoth.extractRawText({ buffer: Buffer.from(file.bytes) });
         return [{ ...base, page: null, text: value.trim(), evidenceMode: "text" }];
       }
       case DOCUMENT_MIMES.png:
-      case DOCUMENT_MIMES.jpeg:
+      case DOCUMENT_MIMES.jpeg: {
+        const size = imageDimensions(file.bytes);
+        if (size && size.width * size.height > MAX_IMAGE_PIXELS) {
+          throw new PipelineError("file_too_large", `${file.label ?? "image"} is ${size.width}×${size.height} pixels`);
+        }
         return [{ ...base, page: null, text: "", evidenceMode: "unverifiable" }];
+      }
       case DOCUMENT_MIMES.text:
         return [{ ...base, page: null, text: new TextDecoder().decode(file.bytes).trim(), evidenceMode: "text" }];
       default:

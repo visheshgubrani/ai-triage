@@ -398,6 +398,12 @@ export type WebhookSettingsRequest = z.infer<typeof WebhookSettingsRequest>;
 export const WebhookSettingsResponse = z.object({ settings: WebhookSettings, secret: z.string().nullable() });
 export type WebhookSettingsResponse = z.infer<typeof WebhookSettingsResponse>;
 
+// ── Inbound email ───────────────────────────────────────────────────────────────────────────
+
+/** GET /settings/inbound and POST /settings/inbound/rotate: where to forward mail for this tenant. */
+export const InboundSettings = z.object({ addresses: z.array(z.string()) });
+export type InboundSettings = z.infer<typeof InboundSettings>;
+
 // ── LLM budget ──────────────────────────────────────────────────────────────────────────────
 
 /** GET/PUT /settings/budget: the daily cap (USD) and today's (UTC) live spend. */
@@ -515,6 +521,16 @@ export const CandidateConfigRequest = z.object({
   classify: StageChange.optional(),
   extract: StageChange.optional(),
   categories: z.array(CategoryChange).max(50).optional(),
+  /**
+   * Require authenticated email (DMARC, or DKIM) to auto-approve, trusting Authentication-Results
+   * only from these receiving servers (e.g. `mx.google.com`). Omitted: the parent's policy.
+   */
+  sender: z
+    .object({
+      require: z.boolean(),
+      trustedAuthServIds: z.array(z.string().trim().min(1).max(253)).max(20),
+    })
+    .optional(),
 });
 export type CandidateConfigRequest = z.infer<typeof CandidateConfigRequest>;
 

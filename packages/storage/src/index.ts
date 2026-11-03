@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
   NotFound,
@@ -47,9 +48,22 @@ export interface Storage {
   get(key: string): Promise<Uint8Array>;
   /** Size and content type of an object, or null if it doesn't exist. */
   head(key: string): Promise<{ size: number; contentType: string | null } | null>;
-  /** A URL the browser can PUT the object to. The Content-Type header is part of the signature. */
-  presignPut(key: string, contentType: string, expiresInSeconds: number): Promise<string>;
-  presignGet(key: string, expiresInSeconds: number, filename?: string | null): Promise<string>;
+  /**
+   * A URL the browser can PUT the object to. Content-Type and Content-Length are part of the
+   * signature, so storage refuses any other type or size.
+   */
+  presignPut(key: string, contentType: string, size: number, expiresInSeconds: number): Promise<string>;
+  /**
+   * A short-lived download URL. `mime` is the type the server determined (sniffed, never the
+   * sender's claim): see servedAs() for what the browser is allowed to render.
+   */
+  presignGet(
+    key: string,
+    expiresInSeconds: number,
+    file: { mime: string | null; filename?: string | null },
+  ): Promise<string>;
+  /** Deletes objects; a key that doesn't exist is fine. */
+  delete(keys: readonly string[]): Promise<void>;
   /** Lets `origins` PUT and GET objects from the browser (presigned uploads and downloads). */
   allowBrowserOrigins(origins: string[]): Promise<void>;
 }
@@ -64,6 +78,25 @@ function client(config: StorageConfig, endpoint: string) {
     requestChecksumCalculation: "WHEN_REQUIRED",
     responseChecksumValidation: "WHEN_REQUIRED",
   });
+}
+
+/**
+ * Types the browser may render from storage: none of them can run script. Everything else,
+ * whatever the sender claimed (an HTML or SVG "attachment"), is served as a download, so a file
+ * can't become script on the storage origin (docs/security.md, served files).
+ */
+export const INLINE_SAFE_MIMES: ReadonlySet<string> = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
+export function servedAs(mime: string | null): { contentType: string; inline: boolean } {
+  return mime && INLINE_SAFE_MIMES.has(mime)
+    ? { contentType: mime, inline: true }
+    : { contentType: "application/octet-stream", inline: false };
 }
 
 export function createStorage(config: StorageConfig): Storage {
@@ -94,17 +127,28 @@ export function createStorage(config: StorageConfig): Storage {
         throw err;
       }
     },
-    presignPut(key, contentType, expiresIn) {
-      return getSignedUrl(signer, new PutObjectCommand({ Bucket, Key: key, ContentType: contentType }), {
+    presignPut(key, contentType, size, expiresIn) {
+      const command = new PutObjectCommand({ Bucket, Key: key, ContentType: contentType, ContentLength: size });
+      return getSignedUrl(signer, command, {
         expiresIn,
-        signableHeaders: new Set(["content-type"]),
+        signableHeaders: new Set(["content-type", "content-length"]),
       });
     },
-    presignGet(key, expiresIn, filename) {
-      const disposition = filename ? `inline; filename="${filename.replace(/["\\\r\n]/g, "_")}"` : undefined;
-      return getSignedUrl(signer, new GetObjectCommand({ Bucket, Key: key, ResponseContentDisposition: disposition }), {
-        expiresIn,
+    presignGet(key, expiresIn, file) {
+      const { contentType, inline } = servedAs(file.mime);
+      const name = file.filename ? `; filename="${file.filename.replace(/["\\\r\n]/g, "_")}"` : "";
+      const command = new GetObjectCommand({
+        Bucket,
+        Key: key,
+        ResponseContentType: contentType,
+        ResponseContentDisposition: `${inline ? "inline" : "attachment"}${name}`,
       });
+      return getSignedUrl(signer, command, { expiresIn });
+    },
+    async delete(keys) {
+      for (let i = 0; i < keys.length; i += 20) {
+        await Promise.all(keys.slice(i, i + 20).map((Key) => s3.send(new DeleteObjectCommand({ Bucket, Key }))));
+      }
     },
     async allowBrowserOrigins(origins) {
       await s3.send(

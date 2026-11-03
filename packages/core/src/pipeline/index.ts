@@ -12,3 +12,4 @@ export * from "./requests";
 export * from "./revision";
 export * from "./route";
 export * from "./types";
+export * from "./untrusted";

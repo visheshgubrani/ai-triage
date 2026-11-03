@@ -12,6 +12,7 @@ import { type EvidencePart, type EvidenceResult, verifyEvidence } from "./eviden
 import { type GateFailure, gateReason, runGates } from "./gates";
 import type { ExtractOutput } from "./outputs";
 import { type RoutePolicy, type RouteResult, route } from "./route";
+import { findInjection, type SenderPolicy, senderAuthenticated } from "./untrusted";
 
 export interface EvaluateInput {
   category: string;
@@ -24,6 +25,10 @@ export interface EvaluateInput {
   trigger: RunTrigger;
   auditDraw: number;
   ids: { documentId: string; extractionId: string };
+  /** For email sources, the Authentication-Results headers as received; null for files. */
+  sender: { authResults: readonly string[] } | null;
+  /** The config's sender policy (senderPolicy(config.policy)). */
+  senderPolicy: SenderPolicy;
 }
 
 export interface Evaluation {
@@ -53,6 +58,9 @@ export function evaluateExtraction(input: EvaluateInput): Evaluation {
     validationIssues,
     evidence,
     rules,
+    injection: findInjection(input.parts.map((p) => p.text)),
+    senderAuthenticated:
+      !input.sender || !input.senderPolicy.require || senderAuthenticated(input.sender.authResults, input.senderPolicy),
   });
   return {
     validationIssues,

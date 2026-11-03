@@ -83,7 +83,9 @@ export const evalRoutes = (deps: AppDeps) => {
         getEvalItem(tx, c.req.valid("param").id),
       );
       if (!item) return c.json({ error: "Not found" }, 404);
-      const body: SourceUrlResponse = { url: await deps.storage.presignGet(item.sourceKey, 300, item.sourceTitle) };
+      const body: SourceUrlResponse = {
+        url: await deps.storage.presignGet(item.sourceKey, 300, { mime: item.sourceMime, filename: item.sourceTitle }),
+      };
       return c.json(body, 200);
     })
     .get("/runs", validate("query", EvalRunsQuery), async (c) => {

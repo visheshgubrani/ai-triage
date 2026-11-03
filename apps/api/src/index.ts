@@ -61,6 +61,7 @@ const app = createApp({
   webhookEgress: { policy: egressPolicyFromEnv(process.env), resolve: systemResolve },
   keys: keyRingFromEnv(process.env),
   rateLimits: rateLimitsFromEnv(process.env),
+  inboundDomain: process.env.INBOUND_DOMAIN || null,
   llmMode: callModeOf(getLlmMode()),
 });
 
