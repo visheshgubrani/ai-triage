@@ -17,7 +17,7 @@ import { createApp } from "./app";
 export const WEB_ORIGIN = "http://localhost:3000";
 export const POSTMARK = { user: "postmark", password: "test-postmark-password" };
 
-export async function createTestApp(options: { maxFileBytes?: number } = {}) {
+export async function createTestApp(options: { maxFileBytes?: number; allowHttpWebhooks?: boolean } = {}) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
   let fixedNow: Date | null = null;
   const { appUrl } = testDbUrls();
@@ -42,6 +42,7 @@ export async function createTestApp(options: { maxFileBytes?: number } = {}) {
     postmark: POSTMARK,
     webOrigin: WEB_ORIGIN,
     now: () => fixedNow ?? new Date(),
+    webhooks: { allowHttp: options.allowHttpWebhooks ?? false },
   });
 
   /** Pins the app's clock (null: real time again). */

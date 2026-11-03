@@ -3,6 +3,7 @@ import { assertAppRole, createBoss, createPool } from "@ai-triage/db";
 import { createTransport, getLlmMode } from "@ai-triage/llm";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { workerConfig } from "./config";
+import { registerDelivery } from "./delivery/register";
 import { createDbLlmGateway } from "./llm";
 import { registerPipeline } from "./pipeline/register";
 
@@ -34,7 +35,8 @@ await registerPipeline(
   },
   { llmConcurrency: config.llmConcurrency },
 );
-// action.deliver (signed webhooks) is handled from phase 3; until then its jobs wait in the queue.
+// Signed webhooks for approved actions. These deps have no LLM or storage: delivery only posts.
+await registerDelivery(boss, { pool, boss, fetch, now: () => new Date(), timeoutMs: config.webhookTimeoutMs });
 
 console.log(`worker started (llm mode: ${mode}${mode === "replay" ? `, cassettes: ${config.cassetteDir}` : ""})`);
 

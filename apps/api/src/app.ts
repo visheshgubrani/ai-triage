@@ -8,9 +8,11 @@ import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import type { AppDeps } from "./deps";
 import { REVIEW_ERROR_STATUS } from "./review";
+import { actionRoutes } from "./routes/actions";
 import { documentRoutes } from "./routes/documents";
 import { publicApiRoutes, webhookRoutes } from "./routes/ingest";
 import { reviewRoutes } from "./routes/review";
+import { settingsRoutes } from "./routes/settings";
 import { uploadRoutes } from "./routes/uploads";
 import { requireTenant } from "./tenant";
 
@@ -60,6 +62,8 @@ export function createApp(deps: AppDeps) {
       .route("/uploads", uploadRoutes(deps))
       .route("/documents", documentRoutes(deps))
       .route("/review", reviewRoutes(deps))
+      .route("/actions", actionRoutes(deps))
+      .route("/settings", settingsRoutes(deps))
       .route("/webhooks", webhookRoutes(deps))
       .route("/v1", publicApiRoutes(deps))
   );

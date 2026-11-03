@@ -42,6 +42,7 @@ const app = createApp({
   postmark: postmarkUser && postmarkPassword ? { user: postmarkUser, password: postmarkPassword } : null,
   webOrigin,
   now: () => new Date(),
+  webhooks: { allowHttp: process.env.WEBHOOK_ALLOW_HTTP === "true" },
 });
 
 const server = serve({ fetch: app.fetch, port }, (info) => {

@@ -1,4 +1,6 @@
 import { existsSync } from "node:fs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { join } from "node:path";
 import { auditDraw } from "@ai-triage/core/pipeline";
 import {
@@ -8,6 +10,7 @@ import {
   DEMO_CATEGORY_SETTINGS,
   getDocumentDetail,
   type PgBoss,
+  setWebhook,
   withTenantTx,
 } from "@ai-triage/db";
 import { newTenant, testDbUrls } from "@ai-triage/db/testing";
@@ -16,6 +19,8 @@ import { replayTransport } from "@ai-triage/llm";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { workerConfig } from "../config";
+import { drainDeliveries } from "../delivery/drain";
+import { verifyWebhook } from "../delivery/sign";
 import { ingestFixture } from "../fixtures";
 import { createDbLlmGateway } from "../llm";
 import { drainTenantJobs } from "./drain";
@@ -23,7 +28,8 @@ import { drainTenantJobs } from "./drain";
 // End to end in replay mode (docs/architecture.md §10): every fixture through ingestion and the
 // real pipeline, with Claude's responses served from the committed cassettes. Runs once cassettes
 // have been recorded (`LLM_MODE=record pnpm cassettes:record --yes` writes recorded.json); after
-// that, a missing cassette fails the affected documents, and this test with them.
+// that, a missing cassette fails the affected documents, and this test with them. Auto-approved
+// documents are then delivered to an in-process receiver, as the worker would send them.
 
 const config = workerConfig();
 const recorded = existsSync(join(config.cassetteDir, "recorded.json"));
@@ -37,16 +43,38 @@ describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
   let boss: PgBoss;
   let tenantId: string;
   const docs = new Map<string, string>();
+  const secret = "whsec_e2e";
+  const delivered: { key: string; valid: boolean }[] = [];
+  let receiver: Server;
 
   beforeAll(async () => {
     boss = createBoss(appUrl, { supervise: false, schedule: false });
     await boss.start();
+    receiver = createServer((req, res) => {
+      let body = "";
+      req.on("data", (c: Buffer) => {
+        body += c.toString("utf8");
+      });
+      req.on("end", () => {
+        const signature = req.headers["x-triage-signature"];
+        delivered.push({
+          key: String(req.headers["idempotency-key"]),
+          valid: verifyWebhook(secret, typeof signature === "string" ? signature : null, body, new Date()),
+        });
+        res.writeHead(200).end();
+      });
+    });
+    await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
     tenantId = await newTenant(pool);
     // The demo routing, without audit sampling (the audit branch is covered by unit tests).
     const categories = Object.fromEntries(
       Object.entries(DEMO_CATEGORY_SETTINGS).map(([k, v]) => [k, { ...v, auditRate: 0 }]),
     );
-    await withTenantTx(pool, tenantId, (tx) => buildPipelineConfig(tx, { categories }));
+    await withTenantTx(pool, tenantId, async (tx) => {
+      await buildPipelineConfig(tx, { categories });
+      const { port } = receiver.address() as AddressInfo;
+      await setWebhook(tx, { url: `http://127.0.0.1:${port}/hook`, secret });
+    });
     for (const item of manifest.items) {
       docs.set(
         item.id,
@@ -65,8 +93,10 @@ describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
       },
       tenantId,
     );
+    await drainDeliveries({ pool, boss, fetch, now: () => new Date(), timeoutMs: 5000 }, tenantId);
   }, 300_000);
   afterAll(async () => {
+    await new Promise((resolve) => receiver.close(resolve));
     await boss.stop({ graceful: false });
     await pool.end();
   });
@@ -96,7 +126,7 @@ describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
       expect(d.extraction?.decisionReasons).toEqual([]);
       expect(d.extraction?.decision).toBe("auto");
       expect(d.actions).toHaveLength(1);
-      expect(d.document.deliveryStatus).toBe("pending");
+      expect(d.document.deliveryStatus).toBe("delivered");
     },
   );
 
@@ -150,6 +180,18 @@ describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
     expect(rows.dupes).toEqual([]);
     expect(rows.costs.priced).toBe(rows.costs.calls);
     expect(rows.costs.total).toBeGreaterThan(0);
+  });
+
+  it("delivers every approved action exactly once, signed, keyed by the action id", async () => {
+    const ids = await withTenantTx(pool, tenantId, async (tx) =>
+      (await tx.queueDb.executeSql("select id, status from actions")).rows.map(
+        (r) => r as { id: string; status: string },
+      ),
+    );
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.every((a) => a.status === "delivered")).toBe(true);
+    expect(delivered.map((d) => d.key).sort()).toEqual(ids.map((a) => a.id).sort());
+    expect(delivered.every((d) => d.valid)).toBe(true);
   });
 
   it("does nothing for a redelivered email", async () => {
