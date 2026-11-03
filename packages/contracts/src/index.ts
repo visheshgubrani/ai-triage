@@ -1,5 +1,6 @@
 import {
   ACTION_STATUSES,
+  API_ERROR_CODES,
   AUTOMATION_MODES,
   DECISIONS,
   DELIVERY_STATUSES,
@@ -61,9 +62,11 @@ export type Issue = z.infer<typeof Issue>;
  */
 export const ErrorResponse = z.object({
   error: z.string(),
-  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES]).optional(),
+  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES, ...API_ERROR_CODES]).optional(),
   issues: z.array(Issue).optional(),
   details: z.record(z.string(), z.unknown()).optional(),
+  /** Set on 500s: quote it when reporting a problem; the server log carries the same id. */
+  requestId: z.string().optional(),
 });
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
 

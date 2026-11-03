@@ -241,6 +241,10 @@ export const EVAL_ERROR_CODES = [
 ] as const;
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 
+/** Request-level refusals shared by every route (docs/security.md), shown as `code` in ErrorResponse. */
+export const API_ERROR_CODES = ["bad_origin", "unreadable_file"] as const;
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
 /** Headers of a webhook delivery. Receivers dedupe on the Idempotency-Key, which is the action id. */
 export const WEBHOOK_HEADERS = {
   idempotencyKey: "Idempotency-Key",

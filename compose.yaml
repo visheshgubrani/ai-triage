@@ -4,15 +4,17 @@ name: ai-triage
 # demo seed including the eval dataset and runs), then api, worker and web in replay mode, so no API
 # key is needed. Contributors run only the infrastructure (`pnpm infra:up`) and `pnpm dev`.
 # Secrets below are dev-only defaults; override them in the environment for anything else.
+# TRIAGE_DEMO=true lets the production image start on them (with a warning); never expose it.
 x-app-env: &app-env
+  TRIAGE_DEMO: "true"
   DATABASE_OWNER_URL: postgres://triage:triage@postgres:5432/triage
   DATABASE_URL: postgres://triage_app:triage_app@postgres:5432/triage
   S3_ENDPOINT: http://storage:9000
   S3_PUBLIC_ENDPOINT: http://localhost:${S3_PORT:-9020}
   S3_REGION: us-east-1
   S3_BUCKET: triage
-  S3_ACCESS_KEY_ID: triage
-  S3_SECRET_ACCESS_KEY: triage-secret
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-triage}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-triage-secret}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me-0123456789abcdef}
   BETTER_AUTH_URL: http://localhost:${API_PORT:-8787}
   WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
@@ -48,8 +50,8 @@ services:
   storage:
     image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
     environment:
-      RUSTFS_ACCESS_KEY: triage
-      RUSTFS_SECRET_KEY: triage-secret
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID:-triage}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY:-triage-secret}
       RUSTFS_CONSOLE_ENABLE: "true"
     ports:
       - "127.0.0.1:${S3_PORT:-9020}:9000"
@@ -72,7 +74,7 @@ services:
     command:
       - >
         code=$$(curl -s -o /dev/null -w "%{http_code}" -X PUT
-        --aws-sigv4 "aws:amz:us-east-1:s3" --user "triage:triage-secret"
+        --aws-sigv4 "aws:amz:us-east-1:s3" --user "${S3_ACCESS_KEY_ID:-triage}:${S3_SECRET_ACCESS_KEY:-triage-secret}"
         http://storage:9000/triage);
         echo "create bucket: HTTP $$code";
         [ "$$code" = 200 ] || [ "$$code" = 409 ]

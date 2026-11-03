@@ -4,7 +4,7 @@ import { createApiKey, getDocumentDetail, insertUpload, revokeApiKey, stageJobId
 import { DEMO_TENANT } from "@ai-triage/db/seed";
 import { newTenant } from "@ai-triage/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createTestApp, POSTMARK } from "./test-app";
+import { createTestApp, POSTMARK, WEB_ORIGIN } from "./test-app";
 
 // The ingestion paths end to end against Postgres and RustFS: upload (presign → PUT → complete),
 // the Postmark webhook and the REST API. Each creates a document, run #1 and a parse job.
@@ -25,7 +25,7 @@ afterAll(t.close);
 
 const json = (cookie: string, body: unknown) => ({
   method: "POST",
-  headers: { cookie, "content-type": "application/json" },
+  headers: { cookie, origin: WEB_ORIGIN, "content-type": "application/json" },
   body: JSON.stringify(body),
 });
 

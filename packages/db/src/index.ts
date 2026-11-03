@@ -22,6 +22,7 @@ export * from "./roles";
 export * from "./runs";
 export { MODEL_PRICE_SEED } from "./seed/prices";
 export * from "./settings";
+export * from "./startup";
 export * from "./tenant-tx";
 export * from "./tenants";
 export * from "./uploads";

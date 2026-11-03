@@ -40,12 +40,12 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 | Auto-approval blast radius | Opt-in per category, an audit sample, scans and images always go to review, no tools on model calls | Done (phase 2–3) |
 | Email HTML | Sanitized server-side, rendered in a sandboxed `srcdoc` iframe with a CSP that blocks remote loads | Done (phase 3) |
 | Webhook redirects | Not followed; a 3xx fails the delivery | Done (phase 3) |
-| HTTP headers | API: `secureHeaders`, a JSON-only CSP, HSTS on https. Web: nonce CSP, nosniff, Referrer-Policy, Permissions-Policy | M1 |
-| CSRF | Origin check on every cookie-authenticated unsafe request, alongside SameSite=Lax | M1 |
-| Request limits | A 1 MiB body limit on JSON routes; request IDs | M1 |
-| Safe startup | Production refuses default secrets, a non-https auth URL, http webhooks and demo users, unless `TRIAGE_DEMO=true` | M1 |
-| Auth surface | Only the Better Auth endpoints the web uses are mounted; Secure cookies on https; 12-character passwords | M1 |
-| Postmark auth | Constant-time credential check | M1 |
+| HTTP headers | API: `secureHeaders`, a JSON-only CSP, HSTS on https. Web: nonce CSP, nosniff, Referrer-Policy, Permissions-Policy | Done (M1) |
+| CSRF | Origin check on every cookie-authenticated unsafe request, alongside SameSite=Lax | Done (M1) |
+| Request limits | A 1 MiB body limit on JSON routes; request IDs | Done (M1) |
+| Safe startup | Production refuses default secrets, a non-https auth URL, http webhooks and demo users, unless `TRIAGE_DEMO=true` | Done (M1) |
+| Auth surface | Only the Better Auth endpoints the web uses are mounted; Secure cookies on https; 12-character passwords | Done (M1) |
+| Postmark auth | Constant-time credential check | Done (M1) |
 | Audit log | Insert-only `audit_events`, written in the same transaction as the change: settings, keys, configs, redeliveries, purges, 2FA | M2 |
 | SSRF | Webhook URLs must be https, on allowed ports, resolving to public addresses. Checked at save time **and at connect time** (DNS rebinding). An explicit allowlist for internal receivers | M3 |
 | Webhook secrets | AES-256-GCM at rest, with a key ring and the tenant id as AAD. Rotation keeps the old secret valid for 24 h | M3 |
@@ -74,13 +74,14 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 
 Set these before exposing an instance. `TRIAGE_DEMO` must be unset; the api and worker refuse to start on the dev defaults.
 
-- [ ] TLS in front of web and API. `BETTER_AUTH_URL` and `WEB_ORIGIN` are `https://` URLs.
+- [ ] TLS in front of web and API, with HSTS on the web's TLS terminator (the API sends its own). `BETTER_AUTH_URL` and `WEB_ORIGIN` are `https://` URLs, and `NODE_ENV=production`.
+- [ ] `pnpm db:migrate` (it also seeds model prices).
 - [ ] `BETTER_AUTH_SECRET`: at least 32 random bytes (`openssl rand -base64 32`).
 - [ ] `ENCRYPTION_KEYS` (or `ENCRYPTION_KEY`): 32 random bytes, base64. Back it up apart from the database; losing it loses the webhook secrets.
 - [ ] Postgres: strong passwords for the owner (`DATABASE_OWNER_URL`) and app (`DATABASE_URL`) roles. The app role is never the owner.
 - [ ] S3: a private bucket, credentials scoped to it, server-side encryption on.
 - [ ] `POSTMARK_INBOUND_USER` / `POSTMARK_INBOUND_PASSWORD`: long and random.
-- [ ] `TRUSTED_PROXY_HOPS`: the number of proxies in front of the API, so rate limits and audit IPs see the real client.
+- [ ] `TRUSTED_PROXIES`: the addresses (or CIDRs) of the proxies in front of the API, so rate limits and audit IPs see the real client.
 - [ ] `WEBHOOK_ALLOWED_HOSTS`: only if a receiver lives on a private network.
 - [ ] No demo seed. `pnpm db:seed` loads demo users, and production refuses it.
 - [ ] Backups for Postgres and the bucket, with restores tested.

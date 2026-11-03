@@ -1,5 +1,5 @@
 import { callModeOf, getLlmMode } from "@ai-triage/core";
-import { assertAppRole, createAuth, createBoss, createDb, createPool } from "@ai-triage/db";
+import { assertAppRole, assertSafeStartup, createAuth, createBoss, createDb, createPool } from "@ai-triage/db";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
@@ -13,13 +13,10 @@ if (!databaseUrl) throw new Error("DATABASE_URL is not set (see .env.example)");
 
 const pool = createPool(databaseUrl);
 await assertAppRole(pool);
+await assertSafeStartup(pool, process.env, "api");
 const db = createDb(pool);
-const auth = createAuth({
-  db,
-  secret,
-  baseURL: process.env.BETTER_AUTH_URL ?? `http://localhost:${port}`,
-  trustedOrigins: [webOrigin],
-});
+const baseURL = process.env.BETTER_AUTH_URL ?? `http://localhost:${port}`;
+const auth = createAuth({ db, secret, baseURL, trustedOrigins: [webOrigin] });
 
 // The api only enqueues (inside tenant transactions); the worker supervises and runs jobs.
 const boss = createBoss(databaseUrl, { supervise: false, schedule: false });
@@ -42,6 +39,7 @@ const app = createApp({
   limits: { maxFileBytes: Number(process.env.MAX_FILE_MB ?? 20) * 2 ** 20 },
   postmark: postmarkUser && postmarkPassword ? { user: postmarkUser, password: postmarkPassword } : null,
   webOrigin,
+  hsts: baseURL.startsWith("https://"),
   now: () => new Date(),
   webhooks: { allowHttp: process.env.WEBHOOK_ALLOW_HTTP === "true" },
   llmMode: callModeOf(getLlmMode()),

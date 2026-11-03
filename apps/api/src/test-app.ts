@@ -41,6 +41,7 @@ export async function createTestApp(options: { maxFileBytes?: number; allowHttpW
     limits: { maxFileBytes: options.maxFileBytes ?? 20 * 2 ** 20 },
     postmark: POSTMARK,
     webOrigin: WEB_ORIGIN,
+    hsts: false,
     now: () => fixedNow ?? new Date(),
     webhooks: { allowHttp: options.allowHttpWebhooks ?? false },
     llmMode: "replay",

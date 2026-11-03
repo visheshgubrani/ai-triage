@@ -3,6 +3,10 @@ import type { ReactNode } from "react";
 import { Header } from "@/components/header";
 import "./globals.css";
 
+// Every page renders per request: the CSP nonce (src/proxy.ts) is applied during rendering, and a
+// statically rendered page's scripts would carry none and be blocked.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = {
   title: "AI Triage",
   description: "LLM triage inbox with a human approval queue and evals",

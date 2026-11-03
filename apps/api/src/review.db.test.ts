@@ -14,7 +14,7 @@ import { DEMO_PASSWORD } from "@ai-triage/db/seed";
 import { newTenant, SAMPLE_INVOICE_FIELDS, seedReviewTask } from "@ai-triage/db/testing";
 import { ingestEmail } from "@ai-triage/ingest";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
-import { createTestApp } from "./test-app";
+import { createTestApp, WEB_ORIGIN } from "./test-app";
 
 // The review queue over HTTP: claims, the five decisions, and the 409/422 refusals that keep a stale
 // tab or a wrong action from changing anything (docs/architecture.md §5, §10).
@@ -45,7 +45,7 @@ async function setup() {
 const post = (path: string, cookie: string, body: unknown = {}) =>
   app.request(path, {
     method: "POST",
-    headers: { cookie, "content-type": "application/json" },
+    headers: { cookie, origin: WEB_ORIGIN, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
 

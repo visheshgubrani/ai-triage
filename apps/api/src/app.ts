@@ -5,7 +5,7 @@ import { IngestRejected } from "@ai-triage/ingest";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
-import { logger } from "hono/logger";
+import { requestId } from "hono/request-id";
 import type { AppDeps } from "./deps";
 import { EVAL_ERROR_STATUS } from "./evals";
 import { REVIEW_ERROR_STATUS } from "./review";
@@ -17,6 +17,7 @@ import { publicApiRoutes, webhookRoutes } from "./routes/ingest";
 import { reviewRoutes } from "./routes/review";
 import { settingsRoutes } from "./routes/settings";
 import { uploadRoutes } from "./routes/uploads";
+import { AUTH_PATHS, apiSecureHeaders, limitJsonBodies, requestLog, requireTrustedOrigin } from "./security";
 import { requireTenant } from "./tenant";
 
 export type { AppDeps } from "./deps";
@@ -25,12 +26,22 @@ export type { AppDeps } from "./deps";
 export function createApp(deps: AppDeps) {
   const { db, auth, webOrigin } = deps;
   const app = new Hono();
-  if (process.env.NODE_ENV !== "test") app.use(logger());
+  app.use(requestId());
+  if (process.env.NODE_ENV !== "test") app.use(requestLog());
 
   app.onError((err, c) => {
     if (err instanceof IngestRejected) return c.json({ error: err.message }, err.status);
-    // A file that can't be read as what it claims to be (for example, a malformed .eml).
-    if (err instanceof PipelineError) return c.json({ error: err.message }, 422);
+    // A file that can't be read as what it claims to be (for example, a malformed .eml). The
+    // parser's own message stays in the log: it can quote library internals.
+    if (err instanceof PipelineError) {
+      console.warn(`req=${c.get("requestId")} unreadable file (${err.reason}): ${err.message}`);
+      const body: ErrorResponse = {
+        error: "The file couldn't be read",
+        code: "unreadable_file",
+        details: { reason: err.reason },
+      };
+      return c.json(body, 422);
+    }
     if (err instanceof ReviewError) {
       const { issues, ...details } = err.details as { issues?: Issue[] };
       const body: ErrorResponse = { error: err.message, code: err.code, issues, details };
@@ -46,15 +57,23 @@ export function createApp(deps: AppDeps) {
       return c.json(body, 422);
     }
     if (err instanceof HTTPException) return err.getResponse();
-    console.error(err);
-    return c.json({ error: "Internal error" }, 500);
+    const id = c.get("requestId");
+    console.error(`req=${id}`, err);
+    const body: ErrorResponse = { error: "Internal error", requestId: id };
+    return c.json(body, 500);
   });
 
   return (
     app
+      .use("*", apiSecureHeaders({ hsts: deps.hsts }))
       // CORS must be registered before the auth routes so their responses carry the headers.
       .use("*", cors({ origin: webOrigin, credentials: true }))
-      .on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw))
+      .use("*", requireTrustedOrigin([webOrigin]))
+      .use("*", limitJsonBodies())
+      .on(["GET", "POST"], "/api/auth/*", async (c) => {
+        if (!AUTH_PATHS.has(c.req.path)) return c.notFound();
+        return auth.handler(c.req.raw);
+      })
       .get("/health", async (c) => {
         const dbUp = await pingDb(db);
         const body: HealthResponse = {

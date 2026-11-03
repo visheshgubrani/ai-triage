@@ -1,5 +1,5 @@
 import { auditDraw } from "@ai-triage/core/pipeline";
-import { assertAppRole, createBoss, createPool } from "@ai-triage/db";
+import { assertAppRole, assertSafeStartup, createBoss, createPool } from "@ai-triage/db";
 import { callModeOf, createTransport, getLlmMode } from "@ai-triage/llm";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { workerConfig } from "./config";
@@ -17,6 +17,7 @@ const mode = getLlmMode();
 // `pnpm db:migrate`, so this instance never migrates (see packages/db/src/boss.ts).
 const pool = createPool(connectionString);
 await assertAppRole(pool);
+await assertSafeStartup(pool, process.env, "worker");
 
 // Workers need a direct (non-pooled) connection: see docs/architecture.md §3.
 const boss = createBoss(connectionString);

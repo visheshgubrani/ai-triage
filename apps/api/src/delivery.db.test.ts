@@ -4,7 +4,7 @@ import { QUEUES } from "@ai-triage/core";
 import { buildPipelineConfig, createAction, markDeliveryFailed, withTenantTx } from "@ai-triage/db";
 import { newTenant, seedReviewTask } from "@ai-triage/db/testing";
 import { afterAll, describe, expect, it } from "vitest";
-import { createTestApp } from "./test-app";
+import { createTestApp, WEB_ORIGIN } from "./test-app";
 
 // The outbox views (Delivery failures, Redeliver) and the admin-only webhook settings.
 
@@ -15,7 +15,7 @@ afterAll(t.close);
 const send = (method: string, path: string, cookie: string, body?: unknown) =>
   app.request(path, {
     method,
-    headers: { cookie, "content-type": "application/json" },
+    headers: { cookie, origin: WEB_ORIGIN, "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 

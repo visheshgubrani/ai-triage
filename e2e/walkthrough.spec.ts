@@ -69,7 +69,10 @@ test("review an invoice, approve the corrected revision, deliver it signed, rede
   expect(first?.body.fields?.invoice_number).toBe(corrected);
 
   // A forced redelivery: same Idempotency-Key, still one action.
-  const redeliver = await page.request.post(`${API}/actions/${actionId}/redeliver`);
+  // Like the browser's own fetches, a write carries the web origin (the API refuses others).
+  const redeliver = await page.request.post(`${API}/actions/${actionId}/redeliver`, {
+    headers: { origin: new URL(page.url()).origin },
+  });
   expect(redeliver.status()).toBe(200);
   await expect.poll(async () => (await deliveriesOf(page, actionId)).length, { timeout: 20_000 }).toBe(2);
   const after = await (await page.request.get(`${API}/documents/${task.documentId}`)).json();

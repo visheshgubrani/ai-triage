@@ -14,8 +14,10 @@ export interface AppDeps {
   limits: IngestLimits;
   /** Basic-auth credentials Postmark sends with inbound webhooks; null disables the endpoint. */
   postmark: { user: string; password: string } | null;
-  /** The web app's origin: allowed by CORS with credentials, and trusted by Better Auth. */
+  /** The web app's origin: allowed by CORS with credentials, trusted by Better Auth, and the only Origin writes may come from. */
   webOrigin: string;
+  /** Send Strict-Transport-Security (the API is served over https). */
+  hsts: boolean;
   /** The clock for claims and leases (injected so tests can let a lease run out). */
   now: () => Date;
   /** Tenants may set an http: webhook URL only when this is on (local development). */

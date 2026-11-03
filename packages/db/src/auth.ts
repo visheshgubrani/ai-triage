@@ -40,12 +40,17 @@ export function createAuth({ db, secret, baseURL, trustedOrigins }: AuthOptions)
     database: drizzleAdapter(db, { provider: "pg", schema }),
     // The adapter finds tables by these export names in ./schema.
     user: { modelName: "users" },
-    session: { modelName: "sessions" },
     account: { modelName: "accounts" },
     verification: { modelName: "verifications" },
-    // Leave id out of inserts so Postgres fills uuid defaults; tenant_id columns are uuid.
-    advanced: { database: { generateId: "uuid" } },
-    emailAndPassword: { enabled: true, disableSignUp: true },
+    advanced: {
+      // Leave id out of inserts so Postgres fills uuid defaults; tenant_id columns are uuid.
+      database: { generateId: "uuid" },
+      // Secure cookies whenever the API is served over https, whatever NODE_ENV says.
+      useSecureCookies: baseURL.startsWith("https://"),
+    },
+    // Sliding 7-day sessions, refreshed at most daily (Better Auth's defaults, stated on purpose).
+    session: { modelName: "sessions", expiresIn: 7 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
+    emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
     databaseHooks: {
       session: {
         create: {
