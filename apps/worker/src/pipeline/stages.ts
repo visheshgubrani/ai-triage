@@ -1,9 +1,4 @@
 import {
-  DOCUMENT_MIMES,
-  type Effort,
-  EMAIL_SOURCE_MIME,
-  type LlmStage,
-  type ModelRef,
   OTHER_CATEGORY,
   PIPELINE_STAGES,
   type PipelineStage,
@@ -18,14 +13,10 @@ import {
   buildExtractRequest,
   classifyCategories,
   evaluateExtraction,
-  isContentAttachment,
   type ParsedPart,
   PipelineError,
   parseClassifyOutput,
-  parseEmail,
   parseExtractOutput,
-  parseFile,
-  type StoredEmail,
 } from "@ai-triage/core/pipeline";
 import {
   advanceDocument,
@@ -47,9 +38,7 @@ import {
   loadPromptBody,
   loadRun,
   loadSchemaVersion,
-  loadSchemaVersions,
   markCanonical,
-  type PipelineConfig,
   setCurrentExtraction,
   stagePolicy,
   type TenantTx,
@@ -57,37 +46,14 @@ import {
   withTenantTx,
 } from "@ai-triage/db";
 import { readAttemptOutput } from "@ai-triage/llm";
-import { type JsonSchema, schemaDescription, validateFields } from "@ai-triage/schemas";
-import type { Storage } from "@ai-triage/storage";
+import { type JsonSchema, validateFields } from "@ai-triage/schemas";
 import type { PipelineDeps } from "./deps";
+import { loadBlobs, loadCategoryOptions, parseSource, stageModel } from "./source";
 
 // Each stage follows docs/architecture.md §5: read in a short transaction (stop if the run isn't
 // current or the stage is done), do the slow work with no transaction open, then commit in one
 // transaction: guarded status advance (which locks the document row and detects stale or duplicate
 // jobs), stage result, pointers, canonical attempt, next job.
-
-const BINARY = new Set<string>([DOCUMENT_MIMES.pdf, DOCUMENT_MIMES.png, DOCUMENT_MIMES.jpeg]);
-
-/** The PDFs and images among the parts, which are sent to the model as they are (if it reads them). */
-async function loadBlobs(storage: Storage, parts: readonly ParsedPart[]): Promise<Map<string, Uint8Array>> {
-  const keys = new Set(parts.flatMap((p) => (p.storageKey && BINARY.has(p.mime) ? [p.storageKey] : [])));
-  return new Map(await Promise.all([...keys].map(async (key) => [key, await storage.get(key)] as const)));
-}
-
-function stageModel(config: PipelineConfig, stage: LlmStage) {
-  const policy = stagePolicy(config.policy);
-  return stage === "classify"
-    ? {
-        model: config.classifyModel as ModelRef,
-        effort: config.classifyEffort as Effort,
-        maxTokens: policy.classifyMaxTokens,
-      }
-    : {
-        model: config.extractModel as ModelRef,
-        effort: config.extractEffort as Effort,
-        maxTokens: policy.extractMaxTokens,
-      };
-}
 
 /** Loads the run if its document is waiting for `stage`; null for a stale or duplicate job. */
 async function currentRun(tx: TenantTx, job: StageJob, stage: PipelineStage) {
@@ -114,21 +80,7 @@ export async function parseStage(deps: PipelineDeps, job: StageJob): Promise<voi
   const doc = await withTenantTx(deps.pool, job.tenantId, async (tx) => (await currentRun(tx, job, "parse"))?.document);
   if (!doc) return;
 
-  let parts: ParsedPart[];
-  if (doc.mime === EMAIL_SOURCE_MIME) {
-    const email = JSON.parse(new TextDecoder().decode(await deps.storage.get(doc.sourceKey))) as StoredEmail;
-    const attachments = email.attachments.filter(isContentAttachment);
-    const blobs = new Map(
-      await Promise.all(attachments.map(async (a) => [a.storageKey, await deps.storage.get(a.storageKey)] as const)),
-    );
-    parts = await parseEmail(email, blobs, deps.limits);
-  } else {
-    const bytes = await deps.storage.get(doc.sourceKey);
-    parts = await parseFile(
-      { label: doc.title, bytes, declaredMime: doc.mime, storageKey: doc.sourceKey },
-      deps.limits,
-    );
-  }
+  const parts = await parseSource(deps.storage, doc, deps.limits);
 
   await withTenantTx(deps.pool, job.tenantId, async (tx) => {
     if (!(await advanceDocument(tx, { documentId: job.documentId, runId: job.runId, from: "received", to: "parsed" })))
@@ -142,19 +94,9 @@ export async function classifyStage(deps: PipelineDeps, job: StageJob): Promise<
   const input = await withTenantTx(deps.pool, job.tenantId, async (tx) => {
     const found = await currentRun(tx, job, "classify");
     if (!found) return null;
-    const versions = await loadSchemaVersions(
-      tx,
-      found.config.categories.map((c) => c.schemaVersionId),
-    );
-    const categories = found.config.categories.map((c) => ({
-      name: c.category,
-      description: schemaDescription(
-        (versions.find((v) => v.id === c.schemaVersionId)?.jsonSchema ?? {}) as JsonSchema,
-      ),
-    }));
     return {
       config: found.config,
-      categories,
+      categories: await loadCategoryOptions(tx, found.config),
       parts: await loadParts(tx, job.documentId),
       promptBody: await loadPromptBody(tx, found.config.classifyPromptVersionId),
     };

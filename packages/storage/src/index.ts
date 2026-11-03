@@ -142,4 +142,17 @@ export const storageKeys = {
       attachment: (index: number) => `${base}/att/${index}`,
     };
   },
+  /**
+   * An eval item's immutable source snapshot, laid out like a document's source: a file, or a
+   * normalized email with one object per attachment. Never shared with a document, so deleting
+   * (later, retention) a document can't break an eval item.
+   */
+  evalSource(tenantId: string) {
+    const base = `t/${tenantId}/x/${randomUUID()}`;
+    return {
+      file: `${base}/source`,
+      email: `${base}/email.json`,
+      attachment: (index: number) => `${base}/att/${index}`,
+    };
+  },
 };

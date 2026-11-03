@@ -74,27 +74,29 @@ export async function resolveEmailTenant(pool: Pool, recipients: readonly string
   return null;
 }
 
-/**
- * Ingests an email for a tenant: each attachment becomes its own object, the normalized email is
- * stored as the document's source (`email.json`), and the original (Postmark payload or .eml) is
- * kept beside it as the source of record. External id: Message-ID, else a hash of the original.
- */
-export async function ingestEmail(
-  deps: IngestDeps,
-  tenantId: string,
-  email: NormalizedEmail,
-  input: { source: DocumentSource; postmark?: PostmarkInbound; eml?: Uint8Array },
-): Promise<IngestResult> {
-  const original = input.eml ?? JSON.stringify(input.postmark ?? null);
-  const externalId = email.messageId ?? `sha256:${sha256(original)}`;
-  const dup = await existing(deps, tenantId, input.source, externalId);
-  if (dup) return dup;
+/** External id of an email: its Message-ID, else a hash of the original (Postmark payload or .eml). */
+export function emailExternalId(email: NormalizedEmail, input: { postmark?: PostmarkInbound; eml?: Uint8Array }) {
+  return email.messageId ?? `sha256:${sha256(input.eml ?? JSON.stringify(input.postmark ?? null))}`;
+}
 
-  const keys = storageKeys.email(tenantId);
+/** External id of a file (and of an .eml-less upload): the SHA-256 of its bytes. */
+export const fileExternalId = (bytes: Uint8Array) => `sha256:${sha256(bytes)}`;
+
+export const emailTitle = (email: NormalizedEmail) => email.subject ?? "(no subject)";
+
+/**
+ * Writes a normalized email the way the parse stage reads it: each attachment as its own object,
+ * then the StoredEmail (`email.json`) pointing at them.
+ */
+export async function writeStoredEmail(
+  storage: Storage,
+  keys: { email: string; attachment: (index: number) => string },
+  email: NormalizedEmail,
+): Promise<{ attachments: StoredEmail["attachments"]; json: Uint8Array }> {
   const attachments = await Promise.all(
     email.attachments.map(async (att, index) => {
       const storageKey = keys.attachment(index);
-      await deps.storage.put(storageKey, att.content, att.mime);
+      await storage.put(storageKey, att.content, att.mime);
       return { index, filename: att.filename, mime: att.mime, size: att.size, contentId: att.contentId, storageKey };
     }),
   );
@@ -108,7 +110,27 @@ export async function ingestEmail(
     attachments,
   };
   const json = new TextEncoder().encode(JSON.stringify(stored));
-  await deps.storage.put(keys.email, json, EMAIL_SOURCE_MIME);
+  await storage.put(keys.email, json, EMAIL_SOURCE_MIME);
+  return { attachments, json };
+}
+
+/**
+ * Ingests an email for a tenant: each attachment becomes its own object, the normalized email is
+ * stored as the document's source (`email.json`), and the original (Postmark payload or .eml) is
+ * kept beside it as the source of record. External id: Message-ID, else a hash of the original.
+ */
+export async function ingestEmail(
+  deps: IngestDeps,
+  tenantId: string,
+  email: NormalizedEmail,
+  input: { source: DocumentSource; postmark?: PostmarkInbound; eml?: Uint8Array },
+): Promise<IngestResult> {
+  const externalId = emailExternalId(email, input);
+  const dup = await existing(deps, tenantId, input.source, externalId);
+  if (dup) return dup;
+
+  const keys = storageKeys.email(tenantId);
+  const { attachments, json } = await writeStoredEmail(deps.storage, keys, email);
   if (input.postmark) {
     const record = {
       ...input.postmark,
@@ -127,7 +149,7 @@ export async function ingestEmail(
       source: input.source,
       externalId,
       sourceKey: keys.email,
-      title: email.subject ?? "(no subject)",
+      title: emailTitle(email),
       mime: EMAIL_SOURCE_MIME,
       sizeBytes,
     }),
@@ -166,7 +188,7 @@ export async function ingestFile(
   const mime = file.mime?.split(";")[0]?.trim().toLowerCase() ?? null;
   if (!isOneOf(ACCEPTED_MIMES, mime)) throw new IngestRejected(415, `unsupported type ${file.mime ?? "(none)"}`);
 
-  const externalId = `sha256:${sha256(file.bytes)}`;
+  const externalId = fileExternalId(file.bytes);
   const dup = await existing(deps, tenantId, file.source, externalId);
   if (dup) return dup;
   const sourceKey = file.sourceKey ?? storageKeys.file(tenantId);
@@ -252,3 +274,4 @@ export async function completeUpload(
 }
 
 export { type EmailViewData, readEmailView, sanitizeEmailHtml } from "./email-view";
+export * from "./eval-source";
