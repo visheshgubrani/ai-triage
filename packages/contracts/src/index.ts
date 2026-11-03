@@ -1,8 +1,14 @@
 import {
   ACTION_STATUSES,
+  AUTOMATION_MODES,
   DECISIONS,
   DELIVERY_STATUSES,
   DOCUMENT_SOURCES,
+  EFFORTS,
+  EVAL_ERROR_CODES,
+  type EVAL_ITEM_ORIGINS,
+  type EVAL_RUN_STATUSES,
+  EVAL_SPLITS,
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
   MEMBER_ROLES,
@@ -16,6 +22,15 @@ import {
   RUN_STATUSES,
   RUN_TRIGGERS,
 } from "@ai-triage/core";
+import type {
+  ProductionMetrics,
+  ReliabilityBucket,
+  ResultDetail,
+  RunDiff,
+  RunMetrics,
+  RunSummary,
+  ThresholdSweep,
+} from "@ai-triage/evals";
 import { z } from "zod";
 
 export const HealthResponse = z.object({
@@ -41,12 +56,12 @@ export const Issue = z.object({ field: z.string(), path: z.string(), message: z.
 export type Issue = z.infer<typeof Issue>;
 
 /**
- * Every error body. Review endpoints add a machine-readable `code` (409: the state moved on, reload;
- * 422: the request can't apply to this task), and `issues` for invalid input.
+ * Every error body. Review and eval endpoints add a machine-readable `code` (409: the state moved
+ * on, reload; 422: the request can't apply), and `issues` for invalid input.
  */
 export const ErrorResponse = z.object({
   error: z.string(),
-  code: z.enum(REVIEW_ERROR_CODES).optional(),
+  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES]).optional(),
   issues: z.array(Issue).optional(),
   details: z.record(z.string(), z.unknown()).optional(),
 });
@@ -296,16 +311,23 @@ export type ReleaseResponse = z.infer<typeof ReleaseResponse>;
 const decisionBase = { claimToken: z.uuid(), note: z.string().max(2000).optional() };
 
 /**
+ * "Add to eval set" on an approval: the approved category and fields become the label of a new item
+ * in the tenant's Main dataset, with a copy of the document's source.
+ */
+const addToEvalSet = z.object({ split: z.enum(EVAL_SPLITS) }).optional();
+
+/**
  * POST /review/tasks/:id/decisions. Approvals name the exact revision they approve; the server
  * refuses with 409 if it isn't the document's current one. Which actions a task allows depends on
  * its kind (ACTIONS_BY_TASK_KIND).
  */
 export const DecisionRequest = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("approve"), extractionId: z.uuid(), ...decisionBase }),
+  z.object({ action: z.literal("approve"), extractionId: z.uuid(), addToEvalSet, ...decisionBase }),
   z.object({
     action: z.literal("edit_approve"),
     extractionId: z.uuid(),
     fields: z.record(z.string(), z.unknown()),
+    addToEvalSet,
     ...decisionBase,
   }),
   z.object({ action: z.literal("reclassify"), category: z.string().min(1).max(100), ...decisionBase }),
@@ -324,6 +346,8 @@ export const DecisionResponse = z.object({
   actionId: z.string().nullable(),
   /** The run a retry or reclassify started. */
   runId: z.string().nullable(),
+  /** The eval item "Add to eval set" created (or found: the same content was already in the set). */
+  evalItem: z.object({ id: z.string(), split: z.enum(EVAL_SPLITS), duplicate: z.boolean() }).nullable(),
 });
 export type DecisionResponse = z.infer<typeof DecisionResponse>;
 
@@ -366,3 +390,165 @@ export type WebhookSettingsRequest = z.infer<typeof WebhookSettingsRequest>;
 /** PUT /settings/webhook and POST /settings/webhook/rotate. `secret` is set only when one was created. */
 export const WebhookSettingsResponse = z.object({ settings: WebhookSettings, secret: z.string().nullable() });
 export type WebhookSettingsResponse = z.infer<typeof WebhookSettingsResponse>;
+
+// ── Evals ────────────────────────────────────────────────────────────────────────────────────
+// Request bodies are Zod (validated); responses are typed with the metric shapes from @ai-triage/evals.
+
+export type EvalSplit = (typeof EVAL_SPLITS)[number];
+
+export interface EvalDataset {
+  id: string;
+  name: string;
+  description: string | null;
+  createdAt: string;
+  /** Active items per split. */
+  counts: Record<EvalSplit, number>;
+}
+export interface EvalDatasetList {
+  datasets: EvalDataset[];
+}
+
+export const EvalItemsQuery = z.object({
+  split: z.enum(EVAL_SPLITS).optional(),
+  retired: z.literal("1").optional(),
+});
+export type EvalItemsQuery = z.infer<typeof EvalItemsQuery>;
+
+export interface EvalItem {
+  id: string;
+  split: EvalSplit;
+  expectedCategory: string;
+  expectedFields: Record<string, unknown>;
+  origin: (typeof EVAL_ITEM_ORIGINS)[number];
+  originRef: string | null;
+  tags: string[];
+  sourceTitle: string | null;
+  sourceMime: string;
+  createdAt: string;
+  retiredAt: string | null;
+}
+export interface EvalItemList {
+  items: EvalItem[];
+}
+
+/** A config version as the evals page shows it. */
+export interface ConfigSummary {
+  id: string;
+  version: number;
+  name: string;
+  parentId: string | null;
+  frozenAt: string | null;
+  active: boolean;
+  createdAt: string;
+  classify: { model: string; effort: string; promptVersionId: string };
+  extract: { model: string; effort: string; promptVersionId: string };
+  categories: {
+    category: string;
+    threshold: number;
+    automation: (typeof AUTOMATION_MODES)[number];
+    auditRate: number;
+  }[];
+}
+export interface ConfigList {
+  configs: ConfigSummary[];
+  promptVersions: { id: string; stage: string; version: number }[];
+}
+
+const CategoryChange = z.object({
+  category: z.string().min(1).max(100),
+  threshold: z.number().min(0).max(1),
+  automation: z.enum(AUTOMATION_MODES),
+  auditRate: z.number().min(0).max(1),
+});
+const StageChange = z
+  .object({ model: z.string().min(1).max(200), effort: z.enum(EFFORTS), promptVersionId: z.uuid() })
+  .partial();
+
+/** POST /configs: a new (unfrozen, inactive) version derived from `parentId`. */
+export const CandidateConfigRequest = z.object({
+  parentId: z.uuid(),
+  name: z.string().trim().min(1).max(200),
+  classify: StageChange.optional(),
+  extract: StageChange.optional(),
+  categories: z.array(CategoryChange).max(50).optional(),
+});
+export type CandidateConfigRequest = z.infer<typeof CandidateConfigRequest>;
+
+export interface ConfigResponse {
+  config: ConfigSummary;
+}
+
+export const EvalRunsQuery = z.object({ datasetId: z.uuid().optional() });
+export type EvalRunsQuery = z.infer<typeof EvalRunsQuery>;
+
+export interface EvalRun {
+  id: string;
+  datasetId: string;
+  datasetName: string;
+  split: EvalSplit;
+  status: (typeof EVAL_RUN_STATUSES)[number];
+  /** `replay`: served from cassettes, so costs are recorded figures and latencies recorded live latencies. */
+  llmMode: "live" | "replay";
+  itemCount: number;
+  /** Results stored so far. */
+  done: number;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  config: { id: string; version: number; name: string; frozen: boolean; classifyModel: string; extractModel: string };
+  /** Set once the run is done. */
+  summary: RunSummary | null;
+}
+export interface EvalRunList {
+  runs: EvalRun[];
+  /** How a run started now would call models (the deployment's LLM_MODE). */
+  newRunMode: "live" | "replay";
+}
+
+/** POST /evals/runs. Test-split runs need a frozen config (422 config_not_frozen). */
+export const EvalRunRequest = z.object({ datasetId: z.uuid(), split: z.enum(EVAL_SPLITS), configId: z.uuid() });
+export type EvalRunRequest = z.infer<typeof EvalRunRequest>;
+
+export interface EvalRunCreated {
+  runId: string;
+  itemCount: number;
+}
+
+export interface EvalRunDetail {
+  run: EvalRun;
+  config: ConfigSummary;
+  /** Null until the run is done. */
+  metrics: RunMetrics | null;
+  /** Per category the config routes, from the results so far. */
+  sweeps: ThresholdSweep[];
+  reliability: ReliabilityBucket[];
+  results: ResultDetail[];
+}
+
+/** POST /evals/runs/:id/freeze: a frozen child of the run's config with these category settings. */
+export const FreezeRequest = z.object({
+  name: z.string().trim().min(1).max(200),
+  categories: z.array(CategoryChange).max(50),
+});
+export type FreezeRequest = z.infer<typeof FreezeRequest>;
+
+export const EvalDiffQuery = z.object({ a: z.uuid(), b: z.uuid() });
+export type EvalDiffQuery = z.infer<typeof EvalDiffQuery>;
+
+export interface EvalDiffResponse {
+  a: EvalRun;
+  b: EvalRun;
+  diff: RunDiff;
+  /** Item titles, for the regression list. */
+  titles: Record<string, string | null>;
+}
+
+export const ProductionQuery = z.object({ days: z.coerce.number().int().min(1).max(90).default(30) });
+export type ProductionQuery = z.infer<typeof ProductionQuery>;
+
+export interface ProductionResponse extends ProductionMetrics {
+  since: string;
+  until: string;
+  days: number;
+}

@@ -1,4 +1,4 @@
-import { type Decision, type LlmCallMode, type LlmStage, OTHER_CATEGORY } from "@ai-triage/core";
+import { type Decision, type EvalSplit, type LlmCallMode, type LlmStage, OTHER_CATEGORY } from "@ai-triage/core";
 import type { FieldScores } from "./grade";
 import { mean, percentile, type Rate, rate, rateOf } from "./stats";
 
@@ -316,4 +316,20 @@ export function runMetrics(rows: readonly ResultRow[], calls: readonly CallRow[]
     routing,
     cost,
   };
+}
+
+/** A result as the run page shows it: the metrics' row plus the item's label and the model's output. */
+export interface ResultDetail extends ResultRow {
+  resultId: string;
+  sourceTitle: string | null;
+  split: EvalSplit;
+  tags: string[];
+  expectedFields: Record<string, unknown>;
+  predictedFields: Record<string, unknown> | null;
+  proposedAction: unknown;
+  /** Every attempt of the item. */
+  costUsd: number;
+  /** The item's canonical attempts. */
+  latencyMs: number | null;
+  error: string | null;
 }

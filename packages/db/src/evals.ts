@@ -8,7 +8,7 @@ import {
   type LlmCallMode,
   QUEUES,
 } from "@ai-triage/core";
-import { type CallRow, type FieldScores, type ResultRow, type RunSummary, runMetrics } from "@ai-triage/evals";
+import { type CallRow, type FieldScores, type ResultDetail, type RunSummary, runMetrics } from "@ai-triage/evals";
 import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
 import {
@@ -456,21 +456,7 @@ export async function commitEvalResult(
 
 // ── Reading results ──────────────────────────────────────────────────────────────────────────
 
-/** A result as the metrics read it, plus what the run page shows per item. */
-export interface EvalResultView extends ResultRow {
-  resultId: string;
-  sourceTitle: string | null;
-  split: EvalSplit;
-  tags: string[];
-  expectedFields: Record<string, unknown>;
-  predictedFields: Record<string, unknown> | null;
-  proposedAction: unknown;
-  costUsd: number;
-  latencyMs: number | null;
-  error: string | null;
-}
-
-export async function loadRunResults(tx: TenantTx, runId: string): Promise<EvalResultView[]> {
+export async function loadRunResults(tx: TenantTx, runId: string): Promise<ResultDetail[]> {
   const rows = await tx.db
     .select({ result: evalResults, item: evalItems })
     .from(evalResults)

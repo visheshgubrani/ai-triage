@@ -84,6 +84,20 @@ export type LlmCallContext = { runId: string } | { evalRunId: string; evalItemId
 export const LLM_CALL_MODES = ["live", "replay"] as const;
 export type LlmCallMode = (typeof LLM_CALL_MODES)[number];
 
+/** How the deployment calls models: `replay` (cassettes, the default), `record` (live, saved) or `live`. */
+export const LLM_MODES = ["replay", "record", "live"] as const;
+export type LlmMode = (typeof LLM_MODES)[number];
+
+/** Replay is the default so a fresh clone never spends money. Live must be explicit. */
+export function getLlmMode(value = process.env.LLM_MODE): LlmMode {
+  if (value === undefined || value === "") return "replay";
+  if ((LLM_MODES as readonly string[]).includes(value)) return value as LlmMode;
+  throw new Error(`Invalid LLM_MODE "${value}". Expected one of: ${LLM_MODES.join(", ")}`);
+}
+
+/** How a mode's calls are stored in llm_calls: record calls the live API, so its calls are `live`. */
+export const callModeOf = (mode: LlmMode): LlmCallMode => (mode === "replay" ? "replay" : "live");
+
 /**
  * Effort levels across providers (Claude's `output_config.effort`, OpenAI-style `reasoning_effort`).
  * `none` means no reasoning, or no effort control at all. Each model lists the ones it accepts

@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",
+    "@ai-triage/evals": "workspace:*",
     "zod": "^4.6.7"
   }
 }

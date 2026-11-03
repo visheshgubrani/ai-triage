@@ -43,6 +43,7 @@ export async function createTestApp(options: { maxFileBytes?: number; allowHttpW
     webOrigin: WEB_ORIGIN,
     now: () => fixedNow ?? new Date(),
     webhooks: { allowHttp: options.allowHttpWebhooks ?? false },
+    llmMode: "replay",
   });
 
   /** Pins the app's clock (null: real time again). */

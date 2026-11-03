@@ -1,3 +1,4 @@
+import { callModeOf, getLlmMode } from "@ai-triage/core";
 import { assertAppRole, createAuth, createBoss, createDb, createPool } from "@ai-triage/db";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { serve } from "@hono/node-server";
@@ -43,6 +44,7 @@ const app = createApp({
   webOrigin,
   now: () => new Date(),
   webhooks: { allowHttp: process.env.WEBHOOK_ALLOW_HTTP === "true" },
+  llmMode: callModeOf(getLlmMode()),
 });
 
 const server = serve({ fetch: app.fetch, port }, (info) => {

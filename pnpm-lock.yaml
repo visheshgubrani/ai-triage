@@ -199,6 +199,9 @@ importers:
       '@ai-triage/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ai-triage/evals':
+        specifier: workspace:*
+        version: link:../../packages/evals
       '@ai-triage/ingest':
         specifier: workspace:*
         version: link:../../packages/ingest
@@ -317,6 +320,9 @@ importers:
       '@ai-triage/core':
         specifier: workspace:*
         version: link:../core
+      '@ai-triage/evals':
+        specifier: workspace:*
+        version: link:../evals
       zod:
         specifier: ^4.6.7
         version: 4.6.7
