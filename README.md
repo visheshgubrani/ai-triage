@@ -133,6 +133,10 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 - **Calibration before the headline**: thresholds come from calib, the config is frozen (a database trigger refuses test runs on unfrozen configs), and only then is test run.
 - **No surprise spend**: replay is the default, a missing cassette is a hard error, live budgets are reserved atomically, and a worker refuses an eval run whose LLM mode differs from its own.
 
+## Security
+
+[docs/security.md](docs/security.md) has the threat model, the controls and the production checklist. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+
 ## License
 
 MIT
