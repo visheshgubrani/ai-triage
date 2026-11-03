@@ -148,6 +148,20 @@
       "when": 1793729696001,
       "tag": "0020_invitations",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793730282358,
+      "tag": "0021_mailboxes",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793730282947,
+      "tag": "0022_mailbox_guards",
+      "breakpoints": true
     }
   ]
 }

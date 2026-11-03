@@ -103,6 +103,9 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |
 | Add a document-derived table | Add it to `purge_document()` (a new migration replacing the function), or purges fail on the FK |
 | A Better Auth table | Keep BA's model and field names, and use `uuid().defaultRandom()` ids |
+| An encrypted column (`encryptSecret`) | Re-encrypt it in `pnpm secrets:rotate-key` (`packages/db/src/bin/rotate-key.ts`) |
+| Add a mail provider | `MAILBOX_PROVIDERS` and `MAILBOX_AUTHSERV_IDS` in core, a client in `packages/mailbox/src/<provider>/`, and a fake beside `testing/fake-google.ts` |
+| Call Google (OAuth or Gmail) | Go through `packages/mailbox` with an injected `fetch` (tests use `FakeGoogle`); never hold a transaction across the call |
 
 ## Gotchas
 

@@ -16,6 +16,11 @@ import {
   EXTRACTION_AUTHORS,
   INVITATION_ACCEPT_METHODS,
   JOIN_ROLES,
+  MAILBOX_BACKFILL_MAX_DAYS,
+  MAILBOX_MESSAGE_REASONS,
+  MAILBOX_MESSAGE_STATUSES,
+  MAILBOX_PROVIDERS,
+  MAILBOX_STATUSES,
   MEMBER_ERROR_CODES,
   MEMBER_ROLES,
   PART_KINDS,
@@ -733,3 +738,60 @@ export type AcceptWithPasswordRequest = z.infer<typeof AcceptWithPasswordRequest
 
 export const InvitationAccepted = z.object({ tenantId: z.string(), email: z.string() });
 export type InvitationAccepted = z.infer<typeof InvitationAccepted>;
+
+// ── Mailboxes ────────────────────────────────────────────────────────────────────────────────
+
+export const MailboxSummary = z.object({
+  id: z.string(),
+  provider: z.enum(MAILBOX_PROVIDERS),
+  email: z.string(),
+  status: z.enum(MAILBOX_STATUSES),
+  labelId: z.string(),
+  labelName: z.string(),
+  lastSyncedAt: isoDate.nullable(),
+  lastError: z.string().nullable(),
+  lastErrorAt: isoDate.nullable(),
+  createdAt: isoDate,
+});
+export type MailboxSummary = z.infer<typeof MailboxSummary>;
+
+/** GET /mailboxes (admin). `google`: whether this instance can connect Google mailboxes. */
+export const MailboxList = z.object({ mailboxes: z.array(MailboxSummary), google: z.boolean() });
+export type MailboxList = z.infer<typeof MailboxList>;
+
+export const MailboxMessage = z.object({
+  id: z.string(),
+  status: z.enum(MAILBOX_MESSAGE_STATUSES),
+  reason: z.enum(MAILBOX_MESSAGE_REASONS).nullable(),
+  documentId: z.string().nullable(),
+  sizeBytes: z.number().nullable(),
+  receivedAt: isoDate.nullable(),
+  createdAt: isoDate,
+});
+export type MailboxMessage = z.infer<typeof MailboxMessage>;
+
+/** GET /mailboxes/:id: the mailbox and what became of its most recent messages. */
+export const MailboxDetail = z.object({ mailbox: MailboxSummary, messages: z.array(MailboxMessage) });
+export type MailboxDetail = z.infer<typeof MailboxDetail>;
+
+/** POST /mailboxes/google/authorize: start connecting; the browser goes to `url`. */
+export const AuthorizeMailboxRequest = z.object({
+  /** Also import this many days of recent mail. */
+  backfillDays: z.number().int().min(0).max(MAILBOX_BACKFILL_MAX_DAYS).default(0),
+  /** Reconnecting a known mailbox: pre-fill Google's account picker. */
+  loginHint: z.email().optional(),
+});
+export type AuthorizeMailboxRequest = z.infer<typeof AuthorizeMailboxRequest>;
+
+export const AuthorizeResponse = z.object({ url: z.string() });
+export type AuthorizeResponse = z.infer<typeof AuthorizeResponse>;
+
+export const MailboxLabels = z.object({
+  labels: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional() })),
+});
+export type MailboxLabels = z.infer<typeof MailboxLabels>;
+
+export const UpdateMailboxRequest = z
+  .object({ labelId: z.string().trim().min(1).max(200).optional(), paused: z.boolean().optional() })
+  .refine((v) => v.labelId !== undefined || v.paused !== undefined, { message: "Nothing to change" });
+export type UpdateMailboxRequest = z.infer<typeof UpdateMailboxRequest>;

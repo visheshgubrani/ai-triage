@@ -15,6 +15,7 @@ import { configRoutes } from "./routes/configs";
 import { documentRoutes } from "./routes/documents";
 import { evalRoutes } from "./routes/evals";
 import { publicApiRoutes, webhookRoutes } from "./routes/ingest";
+import { integrationRoutes, mailboxRoutes } from "./routes/mailboxes";
 import { invitationRoutes, MEMBER_ERROR_STATUS, memberRoutes } from "./routes/members";
 import { reviewRoutes } from "./routes/review";
 import { settingsRoutes } from "./routes/settings";
@@ -105,6 +106,8 @@ export function createApp(deps: AppDeps) {
       .route("/settings", settingsRoutes(deps))
       .route("/members", memberRoutes(deps))
       .route("/invitations", invitationRoutes(deps))
+      .route("/mailboxes", mailboxRoutes(deps))
+      .route("/integrations", integrationRoutes(deps))
       .route("/evals", evalRoutes(deps))
       .route("/configs", configRoutes(deps))
       .route("/webhooks", webhookRoutes(deps))

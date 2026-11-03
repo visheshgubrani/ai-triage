@@ -3,6 +3,7 @@
 export * from "./audit";
 export * from "./auth";
 export * from "./evals";
+export * from "./mailboxes";
 export * from "./pipeline";
 export * from "./prices";
 export * from "./rate-limit";

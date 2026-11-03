@@ -317,15 +317,19 @@ export const MAILBOX_MESSAGE_STATUSES = [
 ] as const;
 export type MailboxMessageStatus = (typeof MAILBOX_MESSAGE_STATUSES)[number];
 
-/** Why a synced message wasn't ingested. */
-export const MAILBOX_SKIP_REASONS = [
-  /** A draft, sent, spam, trash or chat message. */
+/** Why a synced message wasn't ingested (`skipped`), or why it failed (`failed`). */
+export const MAILBOX_MESSAGE_REASONS = [
+  /** A draft, sent, spam, trash or chat message, or one no longer in the intake label. */
   "not_inbound",
+  /** Deleted from the mailbox before it was downloaded. */
+  "deleted",
   "too_large",
   "too_many_attachments",
   "unreadable",
+  /** `failed`: downloading or ingesting kept failing. */
+  "retries_exhausted",
 ] as const;
-export type MailboxSkipReason = (typeof MAILBOX_SKIP_REASONS)[number];
+export type MailboxMessageReason = (typeof MAILBOX_MESSAGE_REASONS)[number];
 
 /** What an OAuth round trip started by this app is for (`oauth_states.purpose`). */
 export const OAUTH_PURPOSES = ["mailbox", "workspace_domain"] as const;

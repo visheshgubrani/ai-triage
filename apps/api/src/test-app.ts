@@ -45,6 +45,8 @@ export async function createTestApp(
     requireAdmin2fa?: boolean;
     /** Turns Google on (sign-in, mailboxes); off by default, as without GOOGLE_CLIENT_ID. */
     google?: GoogleConfig;
+    /** Where mailbox code sends Google requests (a FakeGoogle's fetch). */
+    googleFetch?: typeof fetch;
   } = {},
 ) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
@@ -84,6 +86,8 @@ export async function createTestApp(
     rateLimits: options.rateLimits ?? rateLimitsFromEnv({ RATE_LIMIT_SCALE: "10000" }),
     llmMode: "replay",
     google,
+    googleFetch: options.googleFetch ?? (() => Promise.reject(new Error("no Google in this test"))),
+    apiBaseUrl: "http://localhost:8787",
   });
 
   /** Pins the app's clock (null: real time again). */

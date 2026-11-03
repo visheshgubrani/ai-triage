@@ -15,6 +15,7 @@ export * from "./documents";
 export * from "./errors";
 export * from "./evals";
 export * from "./llm-calls";
+export * from "./mailboxes";
 export * from "./members";
 export * from "./metrics";
 export * from "./pipeline";

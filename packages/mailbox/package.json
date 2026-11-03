@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Mailbox providers (Google OAuth + Gmail REST over an injected fetch)",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/fake-google.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

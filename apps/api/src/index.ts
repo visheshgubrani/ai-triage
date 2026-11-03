@@ -70,6 +70,8 @@ const app = createApp({
     : process.env.TRIAGE_DEMO !== "true",
   llmMode: callModeOf(getLlmMode()),
   google,
+  googleFetch: fetch,
+  apiBaseUrl: baseURL,
 });
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
