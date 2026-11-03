@@ -1,5 +1,6 @@
 import { getMe } from "@/components/header";
 import { AuditLogView } from "./audit-log";
+import { BudgetSettingsView } from "./budget-settings";
 import { WebhookSettingsView } from "./webhook-settings";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export default async function SettingsPage() {
       {me?.role === "admin" ? (
         <>
           <WebhookSettingsView />
+          <BudgetSettingsView />
           <AuditLogView />
         </>
       ) : (

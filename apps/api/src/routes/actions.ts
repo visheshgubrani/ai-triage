@@ -10,13 +10,14 @@ import {
 import { Hono } from "hono";
 import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
+import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { idParam } from "./documents";
 
 /** The outbox: the "Delivery failures" view and manual Redeliver (same Idempotency-Key, new attempt). */
 export const actionRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth))
+    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/failed", async (c) => {
       const rows = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDeliveryFailures(tx));
       const body: DeliveryFailureList = {

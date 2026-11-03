@@ -5,5 +5,6 @@ export * from "./auth";
 export * from "./evals";
 export * from "./pipeline";
 export * from "./prices";
+export * from "./rate-limit";
 export * from "./review";
 export * from "./tenancy";

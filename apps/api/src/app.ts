@@ -6,8 +6,10 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { requestId } from "hono/request-id";
+import { clientIp } from "./client-ip";
 import type { AppDeps } from "./deps";
 import { EVAL_ERROR_STATUS } from "./evals";
+import { overLimit } from "./rate-limit";
 import { REVIEW_ERROR_STATUS } from "./review";
 import { actionRoutes } from "./routes/actions";
 import { configRoutes } from "./routes/configs";
@@ -72,7 +74,18 @@ export function createApp(deps: AppDeps) {
       .use("*", limitJsonBodies())
       .on(["GET", "POST"], "/api/auth/*", async (c) => {
         if (!AUTH_PATHS.has(c.req.path)) return c.notFound();
-        return auth.handler(c.req.raw);
+        const ip = clientIp(c, deps.trustedProxies) ?? "unknown";
+        const limited =
+          c.req.path === "/api/auth/sign-in/email"
+            ? ((await overLimit(c, deps, deps.rateLimits.signInPerIp, `ip:${ip}:sign-in`)) ??
+              (await overLimit(
+                c,
+                deps,
+                deps.rateLimits.signInPerEmail,
+                `email:${await signInEmail(c.req.raw)}:sign-in`,
+              )))
+            : await overLimit(c, deps, deps.rateLimits.authPerIp, `ip:${ip}:auth`);
+        return limited ?? auth.handler(c.req.raw);
       })
       .get("/health", async (c) => {
         const dbUp = await pingDb(db);
@@ -100,6 +113,16 @@ export function createApp(deps: AppDeps) {
       .route("/webhooks", webhookRoutes(deps))
       .route("/v1", publicApiRoutes(deps))
   );
+}
+
+/** The account a sign-in attempt is for (read from a copy, so Better Auth still gets the body). */
+async function signInEmail(request: Request): Promise<string> {
+  try {
+    const body = (await request.clone().json()) as { email?: unknown };
+    return typeof body.email === "string" ? body.email.trim().toLowerCase() : "none";
+  } catch {
+    return "none";
+  }
 }
 
 export type AppType = ReturnType<typeof createApp>;

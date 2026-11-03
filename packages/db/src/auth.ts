@@ -29,9 +29,11 @@ export interface AuthOptions {
   baseURL: string;
   /** Origins allowed to call the auth endpoints (the web app). */
   trustedOrigins: string[];
+  /** Proxies whose X-Forwarded-For is believed (TRUSTED_PROXIES), for session IPs. */
+  trustedProxies?: string[];
 }
 
-export function createAuth({ db, secret, baseURL, trustedOrigins }: AuthOptions) {
+export function createAuth({ db, secret, baseURL, trustedOrigins, trustedProxies = [] }: AuthOptions) {
   return betterAuth({
     appName: "AI Triage",
     secret,
@@ -47,7 +49,12 @@ export function createAuth({ db, secret, baseURL, trustedOrigins }: AuthOptions)
       database: { generateId: "uuid" },
       // Secure cookies whenever the API is served over https, whatever NODE_ENV says.
       useSecureCookies: baseURL.startsWith("https://"),
+      ipAddress: { trustedProxies },
     },
+    // The api rate-limits /api/auth itself, in Postgres and keyed on the trusted client IP
+    // (apps/api/src/rate-limit.ts). Better Auth's limiter is per process, and without a proxy header
+    // it would put every client in one bucket.
+    rateLimit: { enabled: false },
     // Sliding 7-day sessions, refreshed at most daily (Better Auth's defaults, stated on purpose).
     session: { modelName: "sessions", expiresIn: 7 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
     emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },

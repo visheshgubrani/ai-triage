@@ -187,7 +187,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 - Model and effort come from the config. The default is `claude-opus-5-5` at `effort: "low"` for classify and `"low"`/`"medium"` for extract, and the evals page compares alternatives such as `claude-sonnet-5-5` and `claude-haiku-5-5`.
 - `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`), with a `stop_reason` check before reading content.
 - The system prompt (instructions, category definitions, few-shot examples) is cached; the document comes after it.
-- **Budget:** a daily cap per tenant, reserved atomically before each live call:
+- **Budget:** a daily cap per tenant (admins edit it in Settings; today's row takes the new cap at once), reserved atomically before each live call:
   ```sql
   UPDATE llm_budget_days SET reserved_usd = reserved_usd + $worst_case
   WHERE spent_usd + reserved_usd + $worst_case <= cap_usd RETURNING …

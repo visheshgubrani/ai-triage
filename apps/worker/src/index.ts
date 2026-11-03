@@ -7,6 +7,7 @@ import { createGuardedFetch } from "./delivery/egress";
 import { registerDelivery } from "./delivery/register";
 import { registerEvals } from "./evals/register";
 import { createDbLlmGateway } from "./llm";
+import { registerMaintenance } from "./maintenance/register";
 import { registerPipeline } from "./pipeline/register";
 
 const connectionString = process.env.DATABASE_URL;
@@ -51,6 +52,8 @@ await registerDelivery(boss, {
   now: () => new Date(),
   timeoutMs: config.webhookTimeoutMs,
 });
+
+await registerMaintenance(boss, { pool, now: () => new Date() });
 
 console.log(`worker started (llm mode: ${mode}${mode === "replay" ? `, cassettes: ${config.cassetteDir}` : ""})`);
 

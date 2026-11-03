@@ -23,6 +23,7 @@ import {
 } from "@ai-triage/db";
 import { Hono } from "hono";
 import type { AppDeps } from "../deps";
+import { limitUserWrites } from "../rate-limit";
 import { decide } from "../review";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
@@ -50,7 +51,7 @@ const claimBody = (claim: Claim): ClaimResponse => ({
 export const reviewRoutes = (deps: AppDeps) => {
   const reviewer = requireRole("admin", "reviewer");
   return new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth))
+    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/tasks", validate("query", InboxQuery), async (c) => {
       const q = c.req.valid("query");
       const now = deps.now();

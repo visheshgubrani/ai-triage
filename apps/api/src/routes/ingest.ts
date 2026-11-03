@@ -1,13 +1,14 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { IgnoredResponse, IngestResponse } from "@ai-triage/contracts";
-import type { PostmarkInbound } from "@ai-triage/core/pipeline";
-import { ingestFile, ingestPostmark } from "@ai-triage/ingest";
+import { normalizePostmark, type PostmarkInbound } from "@ai-triage/core/pipeline";
+import { ingestEmail, ingestFile, resolveEmailTenant } from "@ai-triage/ingest";
 import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { type ApiKeyEnv, requireApiKey } from "../apikey";
 import type { AppDeps } from "../deps";
+import { overLimit } from "../rate-limit";
 import { validate } from "../validate";
 
 /** Room for base64 (Postmark) or multipart framing around a maximum-size file. */
@@ -45,13 +46,19 @@ export const webhookRoutes = (deps: AppDeps) =>
     },
     validate("json", z.looseObject({})),
     async (c) => {
-      const result = await ingestPostmark(deps, c.req.valid("json") as PostmarkInbound);
-      if ("ignored" in result) {
+      const payload = c.req.valid("json") as PostmarkInbound;
+      const email = normalizePostmark(payload);
+      const tenantId = await resolveEmailTenant(deps.pool, email.recipients);
+      if (!tenantId) {
         console.warn("postmark: no tenant for the recipients of this message; ignored");
-        const body: IgnoredResponse = result;
+        const body: IgnoredResponse = { ignored: "unknown_recipient" };
         return c.json(body, 200);
       }
-      const body: IngestResponse = result;
+      // Per tenant: anyone who knows an inbound address can send to it. A 429 makes Postmark retry
+      // later, so a burst is delayed rather than lost.
+      const limited = await overLimit(c, deps, deps.rateLimits.postmarkPerTenant, `tenant:${tenantId}:inbound`);
+      if (limited) return limited;
+      const body: IngestResponse = await ingestEmail(deps, tenantId, email, { source: "email", postmark: payload });
       return c.json(body, 200);
     },
   );
@@ -60,6 +67,11 @@ export const webhookRoutes = (deps: AppDeps) =>
 export const publicApiRoutes = (deps: AppDeps) =>
   new Hono<ApiKeyEnv>()
     .use(requireApiKey(deps.db, deps.pool))
+    .use(async (c, next) => {
+      const limited = await overLimit(c, deps, deps.rateLimits.apiPerKey, `api_key:${c.var.apiKey.keyId}`);
+      if (limited) return limited;
+      await next();
+    })
     .post("/documents", limit(deps), validate("form", z.object({ file: z.instanceof(File) })), async (c) => {
       const { file } = c.req.valid("form");
       const result: IngestResponse = await ingestFile(

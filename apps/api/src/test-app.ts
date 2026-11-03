@@ -13,6 +13,7 @@ import { DEMO_PASSWORD } from "@ai-triage/db/seed";
 import { testDbUrls } from "@ai-triage/db/testing";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { createApp } from "./app";
+import { type RateLimits, rateLimitsFromEnv } from "./rate-limit";
 
 // Builds the real app against the scratch test database and the local storage service.
 
@@ -25,7 +26,9 @@ export const POSTMARK = { user: "postmark", password: "test-postmark-password" }
  */
 const testResolve = async (hostname: string) => [hostname.startsWith("private.") ? "10.0.0.7" : "93.184.215.14"];
 
-export async function createTestApp(options: { maxFileBytes?: number; webhookAllowedHosts?: string[] } = {}) {
+export async function createTestApp(
+  options: { maxFileBytes?: number; webhookAllowedHosts?: string[]; rateLimits?: RateLimits } = {},
+) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
   let fixedNow: Date | null = null;
   const { appUrl } = testDbUrls();
@@ -54,6 +57,9 @@ export async function createTestApp(options: { maxFileBytes?: number; webhookAll
     now: () => fixedNow ?? new Date(),
     webhookEgress: { policy: egressPolicy(options.webhookAllowedHosts ?? []), resolve: testResolve },
     keys: keyRingFromEnv({}),
+    // Every test file signs in as the demo users from the same (unknown) address, and the counters
+    // live in the shared test database: limits stay out of the way unless a test sets its own.
+    rateLimits: options.rateLimits ?? rateLimitsFromEnv({ RATE_LIMIT_SCALE: "10000" }),
     llmMode: "replay",
   });
 

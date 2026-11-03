@@ -1,21 +1,26 @@
 import {
   type AuditEventList,
   AuditQuery,
+  BudgetRequest,
+  type BudgetSettings,
   type ErrorResponse,
   WebhookSettingsRequest,
   type WebhookSettingsResponse,
 } from "@ai-triage/contracts";
 import {
+  getBudget,
   getWebhookSettings,
   listAuditEvents,
   recordAudit,
   rotateWebhookSecret,
+  setBudgetCap,
   setWebhook,
   withTenantTx,
 } from "@ai-triage/db";
 import { Hono } from "hono";
 import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
+import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
 import { webhookUrlProblem } from "../webhook-url";
@@ -27,7 +32,7 @@ import { webhookUrlProblem } from "../webhook-url";
  */
 export const settingsRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth), requireRole("admin"))
+    .use(requireTenant(deps.db, deps.auth), requireRole("admin"), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/webhook", async (c) => {
       const settings = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
         getWebhookSettings(tx, deps.keys, deps.now()),
@@ -61,6 +66,25 @@ export const settingsRoutes = (deps: AppDeps) =>
         const secret = await rotateWebhookSecret(tx, deps.keys, deps.now());
         await recordAudit(tx, userActor(c, deps), { action: "settings.webhook_secret_rotated" });
         return { settings: await getWebhookSettings(tx, deps.keys, deps.now()), secret };
+      });
+      return c.json(body, 200);
+    })
+    .get("/budget", async (c) => {
+      const body: BudgetSettings = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        getBudget(tx, deps.now()),
+      );
+      return c.json(body, 200);
+    })
+    .put("/budget", validate("json", BudgetRequest), async (c) => {
+      const { capUsd } = c.req.valid("json");
+      const body: BudgetSettings = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const before = await getBudget(tx, deps.now());
+        await setBudgetCap(tx, capUsd, deps.now());
+        await recordAudit(tx, userActor(c, deps), {
+          action: "settings.budget_updated",
+          details: { fromUsd: before.capUsd, toUsd: capUsd },
+        });
+        return getBudget(tx, deps.now());
       });
       return c.json(body, 200);
     })

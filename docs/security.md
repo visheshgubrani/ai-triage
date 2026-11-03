@@ -50,7 +50,7 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 | SSRF | Webhook URLs must be https, on allowed ports, resolving to public addresses. Checked at save time **and at connect time** (DNS rebinding). An explicit allowlist for internal receivers | Done (M3) |
 | Webhook secrets | AES-256-GCM at rest, with a key ring and the tenant id as AAD. Rotation keeps the old secret valid for 24 h | Done (M3) |
 | Webhook signature | v2 signs the timestamp, the Idempotency-Key and the body | Done (M3) |
-| Abuse | Database-backed rate limits (auth, Postmark, REST, uploads, review), an admin-editable daily budget | M4 |
+| Abuse | Postgres-backed fixed-window limits shared by every api process: sign-in per address and per account, other auth endpoints per address, inbound email per tenant, the REST API per key, uploads and every other write per user (429 + Retry-After; `RATE_LIMIT_SCALE` raises them all). An admin-editable daily LLM budget | Done (M4) |
 | Served files | Presigned GETs force a content type: the sniffed type for PDFs and images, `application/octet-stream` + `attachment` for everything else | M5 |
 | Uploads | Presigned PUTs sign Content-Length; rejected objects are deleted; `.eml` needs an email MIME | M5 |
 | Email intake | Attachment count and size caps; routing by envelope recipient; unguessable, rotatable inbound addresses | M5 |
@@ -83,6 +83,7 @@ Set these before exposing an instance. `TRIAGE_DEMO` must be unset; the api and 
 - [ ] `POSTMARK_INBOUND_USER` / `POSTMARK_INBOUND_PASSWORD`: long and random.
 - [ ] `TRUSTED_PROXIES`: the addresses (or CIDRs) of the proxies in front of the API, so rate limits and audit IPs see the real client.
 - [ ] `WEBHOOK_ALLOWED_HOSTS`: only if a receiver lives on a private network.
+- [ ] `RATE_LIMIT_SCALE`: only if legitimate traffic hits the default limits (it multiplies them all).
 - [ ] No demo seed. `pnpm db:seed` loads demo users, and production refuses it.
 - [ ] Backups for Postgres and the bucket, with restores tested.
 - [ ] GitHub: secret scanning with push protection, and private vulnerability reporting.

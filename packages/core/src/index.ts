@@ -122,6 +122,8 @@ export const QUEUES = {
   evalItem: "eval.item",
   /** Dead-letter queue of `eval.item`: stores an error result once retries are exhausted. */
   evalFailed: "eval.failed",
+  /** Daily housekeeping (cron): prunes old rate-limit windows. */
+  maintenance: "system.maintenance",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -183,7 +185,11 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
     deadLetter: QUEUES.evalFailed,
   },
   [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
+  [QUEUES.maintenance]: { retryLimit: 3, retryDelay: 60, retryBackoff: true, expireInSeconds: 900 },
 };
+
+/** When the maintenance job runs (cron, UTC). */
+export const MAINTENANCE_CRON = "15 3 * * *";
 
 /** Payload of every pipeline stage job (and of its dead-letter copy). */
 export interface StageJob {
@@ -242,7 +248,7 @@ export const EVAL_ERROR_CODES = [
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 
 /** Request-level refusals shared by every route (docs/security.md), shown as `code` in ErrorResponse. */
-export const API_ERROR_CODES = ["bad_origin", "unreadable_file"] as const;
+export const API_ERROR_CODES = ["bad_origin", "unreadable_file", "rate_limited"] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
 /** Who did something recorded in the audit log: a member, a tenant API key, or the system (CLI, cron). */

@@ -1,6 +1,7 @@
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type pg from "pg";
-import { withTenantTx } from "./tenant-tx";
+import { llmBudgetDays, tenantSettings } from "./schema";
+import { type TenantTx, withTenantTx } from "./tenant-tx";
 
 // Daily LLM budget per tenant (docs/architecture.md §5). Live calls reserve their worst-case cost
 // before calling Claude; the guarded UPDATE serializes on the row, so concurrent workers can't
@@ -45,4 +46,33 @@ export async function settleBudget(
       set reserved_usd = greatest(reserved_usd - ${usd(reservedUsd)}, 0), spent_usd = spent_usd + ${usd(actualUsd)}
       where tenant_id = ${tenantId} and day = ${day}`),
   );
+}
+
+/** The tenant's daily cap and today's (UTC) spend and open reservations. */
+export async function getBudget(tx: TenantTx, now: Date = new Date()) {
+  const day = now.toISOString().slice(0, 10);
+  const [settings] = await tx.db.select({ cap: tenantSettings.dailyLlmCapUsd }).from(tenantSettings);
+  const [today] = await tx.db
+    .select({ spent: llmBudgetDays.spentUsd, reserved: llmBudgetDays.reservedUsd })
+    .from(llmBudgetDays)
+    .where(eq(llmBudgetDays.day, day));
+  return {
+    day,
+    capUsd: Number(settings?.cap ?? 0),
+    spentUsd: Number(today?.spent ?? 0),
+    reservedUsd: Number(today?.reserved ?? 0),
+  };
+}
+
+/** Sets the daily cap. Today's budget row takes it at once (it copied the old cap when it was made). */
+export async function setBudgetCap(tx: TenantTx, capUsd: number, now: Date = new Date()): Promise<void> {
+  const day = now.toISOString().slice(0, 10);
+  await tx.db
+    .update(tenantSettings)
+    .set({ dailyLlmCapUsd: usd(capUsd) })
+    .where(eq(tenantSettings.tenantId, tx.tenantId));
+  await tx.db
+    .update(llmBudgetDays)
+    .set({ capUsd: usd(capUsd) })
+    .where(eq(llmBudgetDays.day, day));
 }

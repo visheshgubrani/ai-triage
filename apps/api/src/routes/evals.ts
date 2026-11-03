@@ -37,6 +37,7 @@ import { Hono } from "hono";
 import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
 import { toConfigSummary, toEvalItem, toEvalRun } from "../evals";
+import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
 import { idParam } from "./documents";
@@ -50,7 +51,7 @@ const DAY_MS = 86_400_000;
 export const evalRoutes = (deps: AppDeps) => {
   const admin = requireRole("admin");
   return new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth))
+    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/datasets", async (c) => {
       const datasets = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDatasets(tx));
       const body: EvalDatasetList = {

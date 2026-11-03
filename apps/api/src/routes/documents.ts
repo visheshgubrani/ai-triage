@@ -13,6 +13,7 @@ import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
 import type { AppDeps } from "../deps";
+import { limitUserWrites } from "../rate-limit";
 import { requireTenant, type TenantEnv } from "../tenant";
 
 /** A malformed id is just a document that doesn't exist. */
@@ -148,7 +149,7 @@ const partParam = zValidator("param", z.object({ id: z.uuid(), index: z.coerce.n
 /** Document views for any member of the tenant, including the sources the review page shows. */
 export const documentRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth))
+    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/", async (c) => {
       const rows = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDocuments(tx, { limit: 100 }));
       const body: DocumentList = { documents: rows.map(summary) };

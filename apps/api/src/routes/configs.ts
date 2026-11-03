@@ -12,6 +12,7 @@ import { Hono } from "hono";
 import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
 import { toConfigSummary } from "../evals";
+import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
 import { idParam } from "./documents";
@@ -23,7 +24,7 @@ import { idParam } from "./documents";
 export const configRoutes = (deps: AppDeps) => {
   const admin = requireRole("admin");
   return new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth))
+    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/", async (c) => {
       const body: ConfigList = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => ({
         configs: (await listConfigs(tx)).map((config) => toConfigSummary(config)),

@@ -18,6 +18,7 @@ export * from "./metrics";
 export * from "./pipeline";
 export * from "./pipeline-config";
 export * from "./prices";
+export * from "./rate-limit";
 export * from "./resolvers";
 export * from "./review";
 export * from "./roles";

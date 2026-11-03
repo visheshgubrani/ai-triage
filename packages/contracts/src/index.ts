@@ -398,6 +398,20 @@ export type WebhookSettingsRequest = z.infer<typeof WebhookSettingsRequest>;
 export const WebhookSettingsResponse = z.object({ settings: WebhookSettings, secret: z.string().nullable() });
 export type WebhookSettingsResponse = z.infer<typeof WebhookSettingsResponse>;
 
+// ── LLM budget ──────────────────────────────────────────────────────────────────────────────
+
+/** GET/PUT /settings/budget: the daily cap (USD) and today's (UTC) live spend. */
+export const BudgetSettings = z.object({
+  day: z.string(),
+  capUsd: z.number(),
+  spentUsd: z.number(),
+  reservedUsd: z.number(),
+});
+export type BudgetSettings = z.infer<typeof BudgetSettings>;
+
+export const BudgetRequest = z.object({ capUsd: z.number().min(0).max(100_000) });
+export type BudgetRequest = z.infer<typeof BudgetRequest>;
+
 // ── Audit log ───────────────────────────────────────────────────────────────────────────────
 
 export const AuditEvent = z.object({

@@ -13,6 +13,7 @@ import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { parseTrustedProxies } from "./client-ip";
+import { rateLimitsFromEnv } from "./rate-limit";
 import { systemResolve } from "./webhook-url";
 
 const port = Number(process.env.API_PORT ?? 8787);
@@ -27,7 +28,11 @@ await assertAppRole(pool);
 await assertSafeStartup(pool, process.env, "api");
 const db = createDb(pool);
 const baseURL = process.env.BETTER_AUTH_URL ?? `http://localhost:${port}`;
-const auth = createAuth({ db, secret, baseURL, trustedOrigins: [webOrigin] });
+const trustedProxies = (process.env.TRUSTED_PROXIES ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const auth = createAuth({ db, secret, baseURL, trustedOrigins: [webOrigin], trustedProxies });
 
 // The api only enqueues (inside tenant transactions); the worker supervises and runs jobs.
 const boss = createBoss(databaseUrl, { supervise: false, schedule: false });
@@ -51,10 +56,11 @@ const app = createApp({
   postmark: postmarkUser && postmarkPassword ? { user: postmarkUser, password: postmarkPassword } : null,
   webOrigin,
   hsts: baseURL.startsWith("https://"),
-  trustedProxies: parseTrustedProxies(process.env.TRUSTED_PROXIES),
+  trustedProxies: parseTrustedProxies(trustedProxies.join(",")),
   now: () => new Date(),
   webhookEgress: { policy: egressPolicyFromEnv(process.env), resolve: systemResolve },
   keys: keyRingFromEnv(process.env),
+  rateLimits: rateLimitsFromEnv(process.env),
   llmMode: callModeOf(getLlmMode()),
 });
 

@@ -3,6 +3,7 @@ import type { Auth, Db, KeyRing, PgBoss, Pool } from "@ai-triage/db";
 import type { IngestLimits } from "@ai-triage/ingest";
 import type { Storage } from "@ai-triage/storage";
 import type { parseTrustedProxies } from "./client-ip";
+import type { RateLimits } from "./rate-limit";
 import type { WebhookEgress } from "./webhook-url";
 
 export interface AppDeps {
@@ -28,6 +29,8 @@ export interface AppDeps {
   webhookEgress: WebhookEgress;
   /** Encrypts and decrypts webhook signing secrets (ENCRYPTION_KEYS). */
   keys: KeyRing;
+  /** Request limits (RATE_LIMITS, scaled by RATE_LIMIT_SCALE); tests lower them. */
+  rateLimits: RateLimits;
   /** How eval runs started now will call models (from LLM_MODE); the worker refuses a run that differs. */
   llmMode: LlmCallMode;
 }
