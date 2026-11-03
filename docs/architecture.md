@@ -100,7 +100,7 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 | Table | Notes |
 |---|---|
 | `tenants`, `users`, `sessions`, `accounts`, `verifications`, `memberships`, `invitations` | Better Auth's tables (global, no RLS); `memberships.role` ∈ admin/reviewer/viewer |
-| `tenant_settings` | PK `tenant_id`: `active_config_id`, webhook URL and secret, `daily_llm_cap_usd` |
+| `tenant_settings` | PK `tenant_id`: `active_config_id`, webhook URL, the signing secret **encrypted** (`webhook_secret_enc`, AES-256-GCM with the tenant id as AAD) and the previous one during a rotation's grace period, `daily_llm_cap_usd` |
 | `api_keys` | `key_hash` unique, `prefix`, `revoked_at` |
 | `inbound_addresses` | `address` unique → tenant |
 | `uploads` | server-issued `storage_key`, expected size/mime, `expires_at`, `completed_at` |
@@ -175,11 +175,12 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 **Approval check (one transaction):** the document row and then the task row are locked (the worker's order, so they can't deadlock). The task must be claimed by this user, `claim_token` must match, the lease must be valid, and `extraction_id` must equal `documents.current_extraction_id`. Any mismatch returns 409 with a `code` and the UI reloads; an action outside the task kind's list returns 422. An expired browser tab can't approve. Every decision goes through `POST /review/tasks/:id/decisions` (`apps/api/src/review.ts`). Refusals are `ReviewError(code)`: 409 when the state moved on (`claim_lost`, `stale_revision`, `task_resolved`, `reprocessing`, `claimed_by_other`, `not_redeliverable`), 422 when the request can never apply (`action_not_allowed`, `invalid_fields`, `invalid_category`).
 
-**Delivery:** a POST of the frozen payload with `Idempotency-Key` (the action id), `X-Triage-Event` and `X-Triage-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>`, at least once, with no transaction open during the call. Redirects aren't followed.
+**Delivery:** a POST of the frozen payload with `Idempotency-Key` (the action id), `X-Triage-Event` and `X-Triage-Signature: t=<unix>,v2=<hex HMAC-SHA256(secret, "<t>.<idempotency key>.<body>")>` (one `v2` per secret during a rotation), at least once, with no transaction open during the call. Redirects aren't followed.
 - A 2xx delivers it. A missing URL or secret, a 3xx, or a 4xx other than 408/425/429 fails the action at once.
 - Anything else (5xx, 408/425/429, timeouts, network errors) counts an attempt and is retried by pg-boss with backoff, then dead-lettered to `action.failed`, which marks it failed.
 - **Redeliver** (failed or delivered actions) re-enqueues with a fresh job id and the same Idempotency-Key; `actions` keeps one row.
-- The webhook URL and secret come only from tenant settings (admins; `https:` unless `WEBHOOK_ALLOW_HTTP=true`). The secret is shown once, when created or rotated. The README documents the receiver contract.
+- The webhook URL and secret come only from tenant settings (admins). The secret is shown once, when created or rotated; a rotation keeps the old one signing for 24 h.
+- **SSRF guard** (`checkWebhookUrl`, `isAllowedAddress` in `@ai-triage/core/pipeline`): https only, no credentials, port 443/8443/>1023, and every resolved address public unicast. The API checks DNS when the URL is saved; the worker's fetch resolves through a guarded lookup at every connection (DNS rebinding). `WEBHOOK_ALLOWED_HOSTS` (hostnames or CIDRs) admits private receivers; `TRIAGE_DEMO` admits localhost and the catcher. A blocked URL fails the delivery at once; network errors are stored generically ("connection failed"), and at most 4 KiB of a response is read. The README documents the receiver contract.
 
 **Claude calls (`@anthropic-ai/sdk`):**
 - `messages.create` with `output_config.format` json_schema, sent the stripped schema. Ajv then validates the **full** schema.

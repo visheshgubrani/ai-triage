@@ -17,7 +17,8 @@
     "migrate": "tsx --env-file-if-exists=../../.env src/bin/migrate.ts",
     "studio": "drizzle-kit studio",
     "seed": "tsx --env-file-if-exists=../../.env src/bin/seed.ts",
-    "api-key:create": "tsx --env-file-if-exists=../../.env src/bin/api-key.ts"
+    "api-key:create": "tsx --env-file-if-exists=../../.env src/bin/api-key.ts",
+    "secrets:rotate-key": "tsx --env-file-if-exists=../../.env src/bin/rotate-key.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",

@@ -15,6 +15,7 @@
   "dependencies": {
     "@ai-triage/schemas": "workspace:*",
     "html-to-text": "^10.0.1",
+    "ipaddr.js": "^2.5.0",
     "mailparser": "^3.14.1",
     "mammoth": "^1.13.0",
     "unpdf": "^2.1.0"

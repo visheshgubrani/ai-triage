@@ -18,6 +18,7 @@ import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
+import { webhookUrlProblem } from "../webhook-url";
 
 /**
  * Tenant settings (admins only). The webhook target: deliveries go only here (docs/architecture.md
@@ -28,33 +29,38 @@ export const settingsRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
     .use(requireTenant(deps.db, deps.auth), requireRole("admin"))
     .get("/webhook", async (c) => {
-      const settings = await withTenantTx(deps.pool, c.var.tenant.tenantId, getWebhookSettings);
+      const settings = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        getWebhookSettings(tx, deps.keys, deps.now()),
+      );
       return c.json(settings, 200);
     })
     .put("/webhook", validate("json", WebhookSettingsRequest), async (c) => {
       const { url } = c.req.valid("json");
-      if (url && !url.startsWith("https://") && !deps.webhooks.allowHttp) {
+      // Deliveries must not reach the operator's network (SSRF): public https hosts only, unless
+      // the operator allowlisted the host (WEBHOOK_ALLOWED_HOSTS).
+      const problem = url ? await webhookUrlProblem(url, deps.webhookEgress) : null;
+      if (problem) {
         const body: ErrorResponse = {
-          error: "The webhook URL must use https.",
-          issues: [{ field: "url", path: "/url", message: "must use https (http is allowed only in development)" }],
+          error: `The webhook URL ${problem}.`,
+          issues: [{ field: "url", path: "/url", message: problem }],
         };
         return c.json(body, 400);
       }
       const body: WebhookSettingsResponse = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
-        const { secret } = await setWebhook(tx, { url });
+        const { secret } = await setWebhook(tx, deps.keys, { url });
         await recordAudit(tx, userActor(c, deps), {
           action: "settings.webhook_updated",
           details: { url, secretCreated: secret !== null },
         });
-        return { settings: await getWebhookSettings(tx), secret };
+        return { settings: await getWebhookSettings(tx, deps.keys, deps.now()), secret };
       });
       return c.json(body, 200);
     })
     .post("/webhook/rotate", async (c) => {
       const body: WebhookSettingsResponse = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
-        const secret = await rotateWebhookSecret(tx);
+        const secret = await rotateWebhookSecret(tx, deps.keys, deps.now());
         await recordAudit(tx, userActor(c, deps), { action: "settings.webhook_secret_rotated" });
-        return { settings: await getWebhookSettings(tx), secret };
+        return { settings: await getWebhookSettings(tx, deps.keys, deps.now()), secret };
       });
       return c.json(body, 200);
     })

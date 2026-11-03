@@ -1,3 +1,4 @@
+import { type KeyRing, keyRingFromEnv } from "../crypto";
 import { createDb, createPool } from "../index";
 import type { MigrationUrls } from "../migrate";
 import { type DemoSeed, seedDemo, seedDemoWebhook, seedPipelineConfig } from "./demo";
@@ -13,7 +14,7 @@ export { MODEL_PRICE_SEED, PRICES_VERIFIED_ON } from "./prices";
  */
 export async function runSeed(
   { ownerUrl, appUrl }: MigrationUrls,
-  options: { webhook?: { url: string; secret: string } } = {},
+  options: { webhook?: { url: string; secret: string }; keys?: KeyRing } = {},
 ): Promise<DemoSeed> {
   const ownerPool = createPool(ownerUrl);
   const appPool = createPool(appUrl);
@@ -21,7 +22,9 @@ export async function runSeed(
     await seedPrices(createDb(ownerPool));
     const demo = await seedDemo(appPool);
     await seedPipelineConfig(appPool, demo);
-    if (options.webhook) await seedDemoWebhook(appPool, demo, options.webhook);
+    if (options.webhook) {
+      await seedDemoWebhook(appPool, demo, options.webhook, options.keys ?? keyRingFromEnv(process.env));
+    }
     return demo;
   } finally {
     await Promise.all([ownerPool.end(), appPool.end()]);

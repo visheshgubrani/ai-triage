@@ -1,3 +1,4 @@
+import { egressPolicy } from "@ai-triage/core/pipeline";
 import {
   addMembership,
   createAuth,
@@ -5,6 +6,7 @@ import {
   createDb,
   createPool,
   ensurePasswordUser,
+  keyRingFromEnv,
   type PgBoss,
 } from "@ai-triage/db";
 import { DEMO_PASSWORD } from "@ai-triage/db/seed";
@@ -17,7 +19,13 @@ import { createApp } from "./app";
 export const WEB_ORIGIN = "http://localhost:3000";
 export const POSTMARK = { user: "postmark", password: "test-postmark-password" };
 
-export async function createTestApp(options: { maxFileBytes?: number; allowHttpWebhooks?: boolean } = {}) {
+/**
+ * Test DNS: every name resolves to a public address, except names starting with "private.", which
+ * resolve into 10/8 (to exercise the SSRF check).
+ */
+const testResolve = async (hostname: string) => [hostname.startsWith("private.") ? "10.0.0.7" : "93.184.215.14"];
+
+export async function createTestApp(options: { maxFileBytes?: number; webhookAllowedHosts?: string[] } = {}) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
   let fixedNow: Date | null = null;
   const { appUrl } = testDbUrls();
@@ -44,7 +52,8 @@ export async function createTestApp(options: { maxFileBytes?: number; allowHttpW
     hsts: false,
     trustedProxies: [],
     now: () => fixedNow ?? new Date(),
-    webhooks: { allowHttp: options.allowHttpWebhooks ?? false },
+    webhookEgress: { policy: egressPolicy(options.webhookAllowedHosts ?? []), resolve: testResolve },
+    keys: keyRingFromEnv({}),
     llmMode: "replay",
   });
 

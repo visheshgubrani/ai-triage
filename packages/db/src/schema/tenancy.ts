@@ -24,7 +24,13 @@ export const tenantSettings = pgTable(
       .references(() => tenants.id),
     activeConfigId: uuid("active_config_id"),
     webhookUrl: text("webhook_url"),
+    /** Legacy plaintext column: `db:migrate` encrypts any value into webhook_secret_enc and clears it. */
     webhookSecret: text("webhook_secret"),
+    /** The signing secret, encrypted (crypto.ts: AES-256-GCM, the tenant id as AAD). */
+    webhookSecretEnc: text("webhook_secret_enc"),
+    /** The secret before the last rotation, still signed with until `webhook_secret_prev_until`. */
+    webhookSecretPrevEnc: text("webhook_secret_prev_enc"),
+    webhookSecretPrevUntil: timestamp("webhook_secret_prev_until", { withTimezone: true }),
     dailyLlmCapUsd: numeric("daily_llm_cap_usd", { precision: 12, scale: 4 }).notNull().default("5"),
     updatedAt: updatedAt(),
   },

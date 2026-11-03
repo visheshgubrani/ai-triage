@@ -278,7 +278,7 @@ export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 export const WEBHOOK_HEADERS = {
   idempotencyKey: "Idempotency-Key",
   event: "X-Triage-Event",
-  /** `t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>` */
+  /** `t=<unix seconds>,v2=<hex HMAC-SHA256(secret, "<t>.<idempotency key>.<body>")>[,v2=…]` */
   signature: "X-Triage-Signature",
 } as const;
 export const WEBHOOK_EVENT = "document.approved";

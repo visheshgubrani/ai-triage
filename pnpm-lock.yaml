@@ -297,6 +297,9 @@ importers:
       pg-boss:
         specifier: ^12.38.0
         version: 12.38.0(@opentelemetry/api@1.10.0)
+      undici:
+        specifier: ^7.30.1
+        version: 7.30.1
     devDependencies:
       pdf-lib:
         specifier: ^1.17.1
@@ -341,6 +344,9 @@ importers:
       html-to-text:
         specifier: ^10.0.1
         version: 10.0.1
+      ipaddr.js:
+        specifier: ^2.5.0
+        version: 2.5.0
       mailparser:
         specifier: ^3.14.1
         version: 3.14.1
@@ -3125,6 +3131,10 @@ packages:
   undici-types@8.9.0:
     resolution: {integrity: sha512-KTDyRTYX8sWmKXAikPHHSyc63CRPETMctyjKFupcC6OBLXT3xsN0e9aF7m+mIXutFWpUXuedtowG7iLOzp0kQg==}
 
+  undici@7.30.1:
+    resolution: {integrity: sha512-03KrMbjIFDWQR5RNPrSw3bd1r12JpyFQl9/yxjUbJtqkjmllqC5lFjZh6ujeuJCKr8EOQvRW872Oy/az+nLYxg==}
+    engines: {node: '>=20.18.1'}
+
   unpdf@2.1.0:
     resolution: {integrity: sha512-G/Hsrm++g0EoubUhV8TDFItq6oQ+FUu9EMvIRtHUwseKXB0iJoCvaLvBGOpYUBqyvggv/XfxhYYtohL2QpE3xQ==}
     engines: {node: '>=24'}
@@ -5343,6 +5353,8 @@ snapshots:
   undici-types@7.24.6: {}
 
   undici-types@8.9.0: {}
+
+  undici@7.30.1: {}
 
   unpdf@2.1.0: {}
 

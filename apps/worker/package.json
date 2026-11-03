@@ -22,7 +22,8 @@
     "@ai-triage/llm": "workspace:*",
     "@ai-triage/schemas": "workspace:*",
     "@ai-triage/storage": "workspace:*",
-    "pg-boss": "^12.38.0"
+    "pg-boss": "^12.38.0",
+    "undici": "^7.30.1"
   },
   "devDependencies": {
     "pdf-lib": "^1.17.1",

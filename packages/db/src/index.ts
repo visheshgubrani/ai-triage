@@ -8,6 +8,7 @@ export * from "./auth";
 export * from "./boss";
 export * from "./budget";
 export * from "./configs";
+export * from "./crypto";
 export * from "./delivery";
 export * from "./documents";
 export * from "./errors";

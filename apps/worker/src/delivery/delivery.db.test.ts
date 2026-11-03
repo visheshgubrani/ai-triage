@@ -1,7 +1,7 @@
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { QUEUES } from "@ai-triage/core";
-import { approvedPayload, proposeAction } from "@ai-triage/core/pipeline";
+import { approvedPayload, egressPolicy, proposeAction } from "@ai-triage/core/pipeline";
 import {
   buildPipelineConfig,
   createAction,
@@ -9,6 +9,7 @@ import {
   createPool,
   enqueue,
   getDocumentDetail,
+  keyRingFromEnv,
   type PgBoss,
   requeueAction,
   setReviewOutcome,
@@ -20,6 +21,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { deliverAction } from "./deliver";
 import type { DeliveryDeps } from "./deps";
 import { drainDeliveries } from "./drain";
+import { createGuardedFetch } from "./egress";
 import { verifyWebhook } from "./sign";
 
 // Webhook delivery against a real HTTP receiver: signing, the Idempotency-Key, permanent versus
@@ -72,8 +74,12 @@ beforeEach(() => {
 const NOW = new Date("2026-11-03T12:00:00Z");
 const SECRET = "whsec_test_secret";
 
+const KEYS = keyRingFromEnv({});
+// The receiver listens on 127.0.0.1, which only an allowlist lets a webhook reach.
+const guardedFetch = createGuardedFetch(egressPolicy(["127.0.0.1"]));
+
 function deps(overrides: Partial<DeliveryDeps> = {}): DeliveryDeps {
-  return { pool, boss, fetch, now: () => NOW, timeoutMs: 2000, ...overrides };
+  return { pool, boss, keys: KEYS, fetch: guardedFetch, now: () => NOW, timeoutMs: 2000, ...overrides };
 }
 
 /** A tenant with a webhook (or none), and one approved action waiting in the outbox. */
@@ -81,7 +87,7 @@ async function approved(webhookPath: string | null = "/hook") {
   const tenantId = await newTenant(pool);
   return withTenantTx(pool, tenantId, async (tx) => {
     await buildPipelineConfig(tx);
-    if (webhookPath) await setWebhook(tx, { url: `${base}${webhookPath}`, secret: SECRET });
+    if (webhookPath) await setWebhook(tx, KEYS, { url: `${base}${webhookPath}`, secret: SECRET });
     const task = await seedReviewTask(tx);
     const extractionId = task.extractionId ?? "";
     const payload = approvedPayload(
@@ -110,9 +116,11 @@ describe("deliverAction", () => {
     expect(req?.headers["idempotency-key"]).toBe(a.actionId);
     expect(req?.headers["x-triage-event"]).toBe("document.approved");
     const signature = req?.headers["x-triage-signature"] as string;
-    expect(verifyWebhook(SECRET, signature, req?.body ?? "", NOW)).toBe(true);
-    expect(verifyWebhook("whsec_other", signature, req?.body ?? "", NOW)).toBe(false);
-    expect(verifyWebhook(SECRET, signature, `${req?.body} `, NOW)).toBe(false);
+    expect(verifyWebhook(SECRET, signature, a.actionId, req?.body ?? "", NOW)).toBe(true);
+    expect(verifyWebhook("whsec_other", signature, a.actionId, req?.body ?? "", NOW)).toBe(false);
+    expect(verifyWebhook(SECRET, signature, a.actionId, `${req?.body} `, NOW)).toBe(false);
+    // The Idempotency-Key is signed: the same body under another key doesn't verify.
+    expect(verifyWebhook(SECRET, signature, "another-key", req?.body ?? "", NOW)).toBe(false);
     expect(JSON.parse(req?.body ?? "")).toMatchObject({ document_id: a.documentId, fields: SAMPLE_INVOICE_FIELDS });
     expect(await state(a.tenantId, a.documentId)).toMatchObject({
       delivery: "delivered",

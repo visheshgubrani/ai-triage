@@ -1,4 +1,4 @@
-import type { PgBoss, Pool } from "@ai-triage/db";
+import type { KeyRing, PgBoss, Pool } from "@ai-triage/db";
 
 /**
  * Everything webhook delivery touches. No LLM, storage or pipeline port: and the eval runner is never
@@ -7,6 +7,9 @@ import type { PgBoss, Pool } from "@ai-triage/db";
 export interface DeliveryDeps {
   pool: Pool;
   boss: PgBoss;
+  /** Decrypts the tenant's signing secrets. */
+  keys: KeyRing;
+  /** Guarded against SSRF in production (createGuardedFetch); tests may pass another. */
   fetch: typeof fetch;
   now: () => Date;
   /** Per attempt; a timeout counts as a transient failure and is retried. */

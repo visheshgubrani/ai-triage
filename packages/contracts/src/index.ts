@@ -381,6 +381,8 @@ export const WebhookSettings = z.object({
   secretSet: z.boolean(),
   /** The secret's first characters, to recognise it. The full secret is shown only when created. */
   secretHint: z.string().nullable(),
+  /** After a rotation: until when deliveries are also signed with the previous secret. */
+  previousSecretValidUntil: isoDate.nullable(),
 });
 export type WebhookSettings = z.infer<typeof WebhookSettings>;
 

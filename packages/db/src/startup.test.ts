@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { DEV_ENCRYPTION_KEY } from "./crypto";
 import { assertDemoSeedAllowed, DEV_DEFAULTS, unsafeConfig } from "./startup";
 
 const safe = {
@@ -8,6 +9,7 @@ const safe = {
   POSTMARK_INBOUND_PASSWORD: "a-long-random-postmark-password",
   S3_SECRET_ACCESS_KEY: "a-real-secret",
   DATABASE_URL: "postgres://triage_app:s3cret-pw@db:5432/triage",
+  ENCRYPTION_KEY: "cmVhbC1rZXktY2hvc2VuLWJ5LXRoZS1vcGVyYXRvciE=",
 };
 
 describe("unsafeConfig", () => {
@@ -23,7 +25,7 @@ describe("unsafeConfig", () => {
         BETTER_AUTH_URL: "http://localhost:8787",
         WEB_ORIGIN: "http://localhost:3000",
         POSTMARK_INBOUND_PASSWORD: DEV_DEFAULTS.postmarkPassword,
-        WEBHOOK_ALLOW_HTTP: "true",
+        ENCRYPTION_KEY: DEV_ENCRYPTION_KEY,
         S3_SECRET_ACCESS_KEY: DEV_DEFAULTS.s3SecretKey,
         DATABASE_URL: "postgres://triage_app:triage_app@localhost:5440/triage",
       },
@@ -38,7 +40,12 @@ describe("unsafeConfig", () => {
     expect(problems.join("\n")).toMatch(/BETTER_AUTH_URL/);
   });
 
-  it("checks only storage and database settings for the worker", () => {
+  it("requires an operator-chosen encryption key", () => {
+    expect(unsafeConfig({ ...safe, ENCRYPTION_KEY: undefined }, "worker").join()).toMatch(/ENCRYPTION_KEYS/);
+    expect(unsafeConfig({ ...safe, ENCRYPTION_KEY: undefined, ENCRYPTION_KEYS: "a:x,b:y" }, "api")).toEqual([]);
+  });
+
+  it("checks only storage, database and key settings for the worker", () => {
     expect(unsafeConfig({ ...safe, BETTER_AUTH_SECRET: undefined, WEB_ORIGIN: undefined }, "worker")).toEqual([]);
     expect(unsafeConfig({ ...safe, S3_SECRET_ACCESS_KEY: DEV_DEFAULTS.s3SecretKey }, "worker")).toHaveLength(1);
   });

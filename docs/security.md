@@ -47,9 +47,9 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 | Auth surface | Only the Better Auth endpoints the web uses are mounted; Secure cookies on https; 12-character passwords | Done (M1) |
 | Postmark auth | Constant-time credential check | Done (M1) |
 | Audit log | Insert-only `audit_events`, written in the same transaction as the change: settings, keys, configs, redeliveries, purges, 2FA | Done (M2) |
-| SSRF | Webhook URLs must be https, on allowed ports, resolving to public addresses. Checked at save time **and at connect time** (DNS rebinding). An explicit allowlist for internal receivers | M3 |
-| Webhook secrets | AES-256-GCM at rest, with a key ring and the tenant id as AAD. Rotation keeps the old secret valid for 24 h | M3 |
-| Webhook signature | v2 signs the timestamp, the Idempotency-Key and the body | M3 |
+| SSRF | Webhook URLs must be https, on allowed ports, resolving to public addresses. Checked at save time **and at connect time** (DNS rebinding). An explicit allowlist for internal receivers | Done (M3) |
+| Webhook secrets | AES-256-GCM at rest, with a key ring and the tenant id as AAD. Rotation keeps the old secret valid for 24 h | Done (M3) |
+| Webhook signature | v2 signs the timestamp, the Idempotency-Key and the body | Done (M3) |
 | Abuse | Database-backed rate limits (auth, Postmark, REST, uploads, review), an admin-editable daily budget | M4 |
 | Served files | Presigned GETs force a content type: the sniffed type for PDFs and images, `application/octet-stream` + `attachment` for everything else | M5 |
 | Uploads | Presigned PUTs sign Content-Length; rejected objects are deleted; `.eml` needs an email MIME | M5 |

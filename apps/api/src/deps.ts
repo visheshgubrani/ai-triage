@@ -1,8 +1,9 @@
 import type { LlmCallMode } from "@ai-triage/core";
-import type { Auth, Db, PgBoss, Pool } from "@ai-triage/db";
+import type { Auth, Db, KeyRing, PgBoss, Pool } from "@ai-triage/db";
 import type { IngestLimits } from "@ai-triage/ingest";
 import type { Storage } from "@ai-triage/storage";
 import type { parseTrustedProxies } from "./client-ip";
+import type { WebhookEgress } from "./webhook-url";
 
 export interface AppDeps {
   db: Db;
@@ -23,8 +24,10 @@ export interface AppDeps {
   trustedProxies: ReturnType<typeof parseTrustedProxies>;
   /** The clock for claims and leases (injected so tests can let a lease run out). */
   now: () => Date;
-  /** Tenants may set an http: webhook URL only when this is on (local development). */
-  webhooks: { allowHttp: boolean };
+  /** What webhook URLs may point at (WEBHOOK_ALLOWED_HOSTS, TRIAGE_DEMO), and how hosts resolve. */
+  webhookEgress: WebhookEgress;
+  /** Encrypts and decrypts webhook signing secrets (ENCRYPTION_KEYS). */
+  keys: KeyRing;
   /** How eval runs started now will call models (from LLM_MODE); the worker refuses a run that differs. */
   llmMode: LlmCallMode;
 }

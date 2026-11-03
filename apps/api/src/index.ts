@@ -1,9 +1,19 @@
 import { callModeOf, getLlmMode } from "@ai-triage/core";
-import { assertAppRole, assertSafeStartup, createAuth, createBoss, createDb, createPool } from "@ai-triage/db";
+import { egressPolicyFromEnv } from "@ai-triage/core/pipeline";
+import {
+  assertAppRole,
+  assertSafeStartup,
+  createAuth,
+  createBoss,
+  createDb,
+  createPool,
+  keyRingFromEnv,
+} from "@ai-triage/db";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { parseTrustedProxies } from "./client-ip";
+import { systemResolve } from "./webhook-url";
 
 const port = Number(process.env.API_PORT ?? 8787);
 const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
@@ -43,7 +53,8 @@ const app = createApp({
   hsts: baseURL.startsWith("https://"),
   trustedProxies: parseTrustedProxies(process.env.TRUSTED_PROXIES),
   now: () => new Date(),
-  webhooks: { allowHttp: process.env.WEBHOOK_ALLOW_HTTP === "true" },
+  webhookEgress: { policy: egressPolicyFromEnv(process.env), resolve: systemResolve },
+  keys: keyRingFromEnv(process.env),
   llmMode: callModeOf(getLlmMode()),
 });
 

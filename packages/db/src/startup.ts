@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { DEV_ENCRYPTION_KEY } from "./crypto";
 
 // Startup safety (docs/security.md). In production the api and worker refuse to start on the
 // dev defaults from .env.example and compose.yaml, unless TRIAGE_DEMO=true says the instance is
@@ -52,8 +53,10 @@ export function unsafeConfig(env: Env, role: StartupRole): string[] {
     ) {
       problems.push("POSTMARK_INBOUND_PASSWORD is the dev default or shorter than 16 characters");
     }
-    if (env.WEBHOOK_ALLOW_HTTP === "true") problems.push("WEBHOOK_ALLOW_HTTP=true allows unencrypted webhooks");
   }
+  const encryptionKey = env.ENCRYPTION_KEYS ?? env.ENCRYPTION_KEY;
+  if (!encryptionKey) problems.push("ENCRYPTION_KEYS (or ENCRYPTION_KEY) is not set");
+  else if (encryptionKey.includes(DEV_ENCRYPTION_KEY)) problems.push("the encryption key is the published dev key");
   if (env.S3_SECRET_ACCESS_KEY === DEV_DEFAULTS.s3SecretKey) problems.push("S3_SECRET_ACCESS_KEY is the dev default");
   const dbPassword = databasePassword(env.DATABASE_URL);
   if (dbPassword !== null && (DEV_DEFAULTS.databasePasswords as readonly string[]).includes(dbPassword)) {
