@@ -75,16 +75,17 @@ describe.skipIf(!isRecorded(config.cassetteDir, DEMO_MODEL.model))("seedEvalDemo
           await tx.queueDb.executeSql(
             `select r.split, r.status, c.name, c.frozen_at is not null as frozen,
                   (select count(*)::int from eval_results e where e.eval_run_id = r.id and e.error_reason = 'cassette_missing') as missing
-           from eval_runs r join pipeline_configs c on c.id = r.config_id order by r.created_at`,
+           from eval_runs r join pipeline_configs c on c.id = r.config_id order by r.split, c.version`,
           )
         ).rows,
     );
+    // The runs share one transaction (and so one created_at): compare them by split and config version.
     expect(runs).toEqual([
+      { split: "calib", status: "done", name: expect.any(String), frozen: false, missing: 0 },
       { split: "dev", status: "done", name: expect.any(String), frozen: false, missing: 0 },
       ...(deepseek
         ? [{ split: "dev", status: "done", name: "DeepSeek Flash candidate", frozen: false, missing: 0 }]
         : []),
-      { split: "calib", status: "done", name: expect.any(String), frozen: false, missing: 0 },
       { split: "test", status: "done", name: "Demo config (frozen)", frozen: true, missing: 0 },
     ]);
   });
