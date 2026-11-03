@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",
+    "@ai-triage/evals": "workspace:*",
     "@ai-triage/schemas": "workspace:*",
     "better-auth": "1.7.15",
     "drizzle-orm": "^0.45.4",

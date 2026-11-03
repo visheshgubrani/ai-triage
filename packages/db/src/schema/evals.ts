@@ -215,7 +215,7 @@ export const evalResults = pgTable(
     predictedFields: jsonb("predicted_fields"),
     fieldScores: jsonb("field_scores"),
     /** The classifier's self_confidence: the number compared against the category's threshold. */
-    score: numeric("score", { precision: 4, scale: 3 }),
+    score: numeric("score", { precision: 4, scale: 3, mode: "number" }),
     decision: text("decision", { enum: DECISIONS }),
     /** Gate and route reasons, as on `extractions.decision_reasons`. */
     reasons: text("reasons").array().notNull().default(emptyTextArray()),
