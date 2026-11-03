@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { auditDraw, type RouteInput, route } from "./route";
+import { approvedPayload, auditDraw, proposeAction, type RouteInput, route } from "./route";
 
 const base: RouteInput = {
   gateReasons: [],
@@ -54,5 +54,26 @@ describe("route", () => {
     const share = draws.filter((d) => d < 0.1).length / draws.length;
     expect(share).toBeGreaterThan(0.07);
     expect(share).toBeLessThan(0.13);
+  });
+
+  it("freezes the same payload shape for automatic and reviewer approvals", () => {
+    const at = new Date("2026-11-03T12:00:00Z");
+    const auto = approvedPayload(route(base).proposedAction, "auto", at);
+    // The shape route has always frozen for auto-approvals (phase 2), key for key.
+    expect(JSON.stringify(auto)).toBe(
+      JSON.stringify({
+        type: "webhook",
+        event: "document.approved",
+        document_id: "d",
+        extraction_id: "e",
+        category: "invoice",
+        fields: { total: 5 },
+        approved_by: "auto",
+        approved_at: "2026-11-03T12:00:00.000Z",
+      }),
+    );
+    const reviewer = { type: "user" as const, id: "u", email: "r@x.test" };
+    const edited = approvedPayload(proposeAction({ ...base.action, extractionId: "e2" }), reviewer, at);
+    expect(edited).toMatchObject({ extraction_id: "e2", approved_by: reviewer, fields: { total: 5 } });
   });
 });

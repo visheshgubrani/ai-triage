@@ -4,9 +4,9 @@ import {
   buildPipelineConfig,
   createBoss,
   createPool,
-  enqueueStage,
   getDocumentDetail,
   type PgBoss,
+  startRun,
   withTenantTx,
 } from "@ai-triage/db";
 import { newTenant, testDbUrls } from "@ai-triage/db/testing";
@@ -586,20 +586,9 @@ describe("reclassify runs", () => {
     const t = await setup();
     const documentId = await t.ingestText(TEXT.invoice);
     await t.drain();
-    const oldRun = (await t.detail(documentId))?.document.currentRunId ?? "";
-    const [run] = await t.rows<{ id: string }>(
-      `insert into processing_runs (tenant_id, document_id, config_id, trigger, forced_category)
-       select tenant_id, document_id, config_id, 'reclassify', 'invoice' from processing_runs where id = $1 returning id`,
-      [oldRun],
-    );
-    const runId = run?.id ?? "";
-    await t.rows("update processing_runs set status = 'superseded', superseded_by = $1 where id = $2", [runId, oldRun]);
-    await t.rows("update documents set current_run_id = $1, processing_status = 'classified' where id = $2", [
-      runId,
-      documentId,
-    ]);
+    const configId = (await t.detail(documentId))?.run?.configId ?? "";
     await withTenantTx(pool, t.tenantId, (tx) =>
-      enqueueStage(boss, tx, "extract", { tenantId: t.tenantId, documentId, runId }),
+      startRun(tx, boss, { documentId, configId, trigger: "reclassify", forcedCategory: "invoice" }),
     );
     await t.drain();
     expect(await t.detail(documentId)).toMatchObject({

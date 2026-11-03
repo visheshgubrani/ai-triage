@@ -102,6 +102,8 @@ export const QUEUES = {
   /** Dead-letter queue of the four stage queues: marks the run failed once retries are exhausted. */
   failed: "doc.failed",
   deliver: "action.deliver",
+  /** Dead-letter queue of `action.deliver`: marks the action failed once retries are exhausted. */
+  deliveryFailed: "action.failed",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -146,7 +148,14 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
   [QUEUES.extract]: stage(4, 900),
   [QUEUES.route]: stage(3, 120),
   [QUEUES.failed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
-  [QUEUES.deliver]: { retryLimit: 8, retryDelay: 30, retryBackoff: true, expireInSeconds: 60 },
+  [QUEUES.deliver]: {
+    retryLimit: 8,
+    retryDelay: 30,
+    retryBackoff: true,
+    expireInSeconds: 60,
+    deadLetter: QUEUES.deliveryFailed,
+  },
+  [QUEUES.deliveryFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
 };
 
 /** Payload of every pipeline stage job (and of its dead-letter copy). */
@@ -155,6 +164,47 @@ export interface StageJob {
   documentId: string;
   runId: string;
 }
+
+/** Payload of an `action.deliver` job (and of its dead-letter copy). The action id is the Idempotency-Key. */
+export interface DeliverJob {
+  tenantId: string;
+  actionId: string;
+}
+
+// ── Review and delivery ──────────────────────────────────────────────────────────────────────
+
+/**
+ * A claim lasts this long unless the reviewer's page extends it. An expired claim counts as no
+ * claim everywhere (claim, inbox, decisions), so there is no reaper (docs/architecture.md §7).
+ */
+export const LEASE_SECONDS = 600;
+/** How often an open review page extends its lease while the tab is visible. */
+export const HEARTBEAT_SECONDS = 60;
+
+/** Machine-readable reasons a review request was refused (409 or 422), shown as `code` in ErrorResponse. */
+export const REVIEW_ERROR_CODES = [
+  "task_resolved",
+  "reprocessing",
+  "claim_lost",
+  "claimed_by_other",
+  "stale_revision",
+  "action_not_allowed",
+  "invalid_fields",
+  "invalid_category",
+  "not_redeliverable",
+] as const;
+export type ReviewErrorCode = (typeof REVIEW_ERROR_CODES)[number];
+
+/** Headers of a webhook delivery. Receivers dedupe on the Idempotency-Key, which is the action id. */
+export const WEBHOOK_HEADERS = {
+  idempotencyKey: "Idempotency-Key",
+  event: "X-Triage-Event",
+  /** `t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>` */
+  signature: "X-Triage-Signature",
+} as const;
+export const WEBHOOK_EVENT = "document.approved";
+/** How far a receiver should let the signed timestamp drift before rejecting a delivery. */
+export const WEBHOOK_TOLERANCE_SECONDS = 300;
 
 // ── Documents and categories ─────────────────────────────────────────────────────────────────
 

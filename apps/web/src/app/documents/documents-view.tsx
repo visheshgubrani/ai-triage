@@ -2,9 +2,10 @@
 
 import type { DocumentList, DocumentSummary } from "@ai-triage/contracts";
 import Link from "next/link";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { type FormEvent, useCallback, useState } from "react";
+import { Badge, stateOf } from "@/components/badge";
 import { browserApi } from "@/lib/api";
-import { Badge, stateOf } from "./status";
+import { usePolling } from "@/lib/use-polling";
 
 const POLL_MS = 5000;
 
@@ -33,8 +34,8 @@ export function DocumentsView() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(async () => {
-    const res = await browserApi.documents.$get();
+  const load = useCallback(async (signal?: AbortSignal) => {
+    const res = await browserApi.documents.$get(undefined, { init: { signal } });
     const status: number = res.status;
     if (status !== 200) {
       setError(status === 401 ? "Sign in to see your documents." : `Could not load documents (${status}).`);
@@ -44,11 +45,7 @@ export function DocumentsView() {
     setDocuments(((await res.json()) as DocumentList).documents);
   }, []);
 
-  useEffect(() => {
-    void load();
-    const timer = setInterval(() => void load(), POLL_MS);
-    return () => clearInterval(timer);
-  }, [load]);
+  usePolling(load, POLL_MS);
 
   async function onUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();

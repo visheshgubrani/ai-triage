@@ -250,3 +250,5 @@ export async function completeUpload(
   await withTenantTx(deps.pool, tenantId, (tx) => markUploadCompleted(tx, uploadId));
   return result;
 }
+
+export { type EmailViewData, readEmailView, sanitizeEmailHtml } from "./email-view";

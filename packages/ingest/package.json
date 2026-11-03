@@ -13,6 +13,10 @@
   "dependencies": {
     "@ai-triage/core": "workspace:*",
     "@ai-triage/db": "workspace:*",
-    "@ai-triage/storage": "workspace:*"
+    "@ai-triage/storage": "workspace:*",
+    "sanitize-html": "^2.18.1"
+  },
+  "devDependencies": {
+    "@types/sanitize-html": "^2.16.2"
   }
 }

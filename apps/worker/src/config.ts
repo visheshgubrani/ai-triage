@@ -24,4 +24,5 @@ export const workerConfig = (env: NodeJS.ProcessEnv = process.env) => ({
   maxPdfPages: Number(env.MAX_PDF_PAGES ?? 100),
   maxFileBytes: Number(env.MAX_FILE_MB ?? 20) * 2 ** 20,
   llmConcurrency: Number(env.WORKER_LLM_CONCURRENCY ?? 4),
+  webhookTimeoutMs: Number(env.WEBHOOK_TIMEOUT_MS ?? 10_000),
 });

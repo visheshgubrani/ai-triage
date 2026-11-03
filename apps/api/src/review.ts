@@ -1,0 +1,220 @@
+import type { DecisionRequest, DecisionResponse } from "@ai-triage/contracts";
+import { ACTIONS_BY_TASK_KIND, OTHER_CATEGORY, QUEUES, type ReviewErrorCode } from "@ai-triage/core";
+import { approvedPayload, checkUserRevision, proposeAction } from "@ai-triage/core/pipeline";
+import { fieldDiff } from "@ai-triage/core/review";
+import {
+  createAction,
+  type ExtractionRow,
+  enqueue,
+  getActiveConfig,
+  insertDecision,
+  insertUserExtraction,
+  loadClassification,
+  loadExtraction,
+  loadRun,
+  loadSchemaVersion,
+  lockTaskForDecision,
+  ReviewError,
+  resolveTask,
+  setAwaitingExtraction,
+  setCurrentExtraction,
+  setReviewOutcome,
+  startRun,
+  type TenantTx,
+  withTenantTx,
+} from "@ai-triage/db";
+import type { AppDeps } from "./deps";
+import type { TenantContext } from "./tenant";
+
+/** 409: the task or document moved on, so reload. 422: the request can never apply to this task. */
+export const REVIEW_ERROR_STATUS: Record<ReviewErrorCode, 409 | 422> = {
+  task_resolved: 409,
+  reprocessing: 409,
+  claim_lost: 409,
+  claimed_by_other: 409,
+  stale_revision: 409,
+  not_redeliverable: 409,
+  action_not_allowed: 422,
+  invalid_fields: 422,
+  invalid_category: 422,
+};
+
+type Fields = Record<string, unknown>;
+type JsonSchema = Parameters<typeof checkUserRevision>[0]["schemaVersion"]["jsonSchema"];
+const asFields = (value: unknown): Fields => (value && typeof value === "object" ? (value as Fields) : {});
+
+/**
+ * Applies a reviewer's decision to a task, all in one transaction (docs/architecture.md §5): the
+ * document row and then the task row are locked, the claim is checked, and the action must be one
+ * the task's kind allows. Returns null when the task isn't visible to the tenant.
+ */
+export function decide(
+  deps: AppDeps,
+  actor: TenantContext,
+  taskId: string,
+  body: DecisionRequest,
+): Promise<DecisionResponse | null> {
+  return withTenantTx(deps.pool, actor.tenantId, async (tx) => {
+    const now = deps.now();
+    const locked = await lockTaskForDecision(tx, {
+      taskId,
+      userId: actor.user.id,
+      claimToken: body.claimToken,
+      now,
+    });
+    if (!locked) return null;
+    const { task, document } = locked;
+    if (!ACTIONS_BY_TASK_KIND[task.kind].includes(body.action)) {
+      throw new ReviewError("action_not_allowed", `A ${task.kind} task can't be resolved with ${body.action}.`);
+    }
+    const note = body.note?.trim() || null;
+    const result = { documentId: document.id, extractionId: null, actionId: null, runId: null };
+
+    switch (body.action) {
+      case "approve":
+      case "edit_approve": {
+        if (body.extractionId !== task.extractionId || body.extractionId !== document.currentExtractionId) {
+          throw new ReviewError("stale_revision", "The extraction changed since you opened it. Reload to continue.");
+        }
+        const base = await loadExtraction(tx, body.extractionId);
+        if (!base) throw new Error(`extraction ${body.extractionId} not found`);
+        const edit = body.action === "edit_approve" ? await editRevision(tx, actor, base, body.fields) : null;
+        const approved = edit?.revision ?? base;
+        const payload = approvedPayload(
+          proposeAction({
+            documentId: document.id,
+            extractionId: approved.id,
+            category: approved.category,
+            values: asFields(approved.fields),
+          }),
+          { type: "user", id: actor.user.id, email: actor.user.email },
+          now,
+        );
+        const actionId = await createAction(tx, { documentId: document.id, extractionId: approved.id, payload });
+        await enqueue(deps.boss, tx, QUEUES.deliver, { tenantId: actor.tenantId, actionId }, { id: actionId });
+        await setReviewOutcome(tx, document.id, { reviewStatus: "approved", deliveryStatus: "pending" });
+        await resolveTask(tx, task.id, now);
+        const decisionId = await insertDecision(tx, {
+          task,
+          reviewerId: actor.user.id,
+          // An edit that changed nothing approves the revision as it was.
+          outcome: edit ? "edit_approve" : "approve",
+          extractionId: approved.id,
+          before: edit ? base.fields : null,
+          after: edit ? approved.fields : null,
+          diff: edit?.diff ?? null,
+          note,
+        });
+        return {
+          ...result,
+          decisionId,
+          outcome: edit ? "edit_approve" : "approve",
+          extractionId: approved.id,
+          actionId,
+        };
+      }
+
+      case "reclassify": {
+        const config = await getActiveConfig(tx);
+        const current = task.extractionId
+          ? (await loadExtraction(tx, task.extractionId))?.category
+          : document.currentRunId
+            ? (await loadClassification(tx, document.currentRunId))?.category
+            : undefined;
+        const allowed = config?.categories.some((c) => c.category === body.category) ?? false;
+        if (!config || !allowed || body.category === OTHER_CATEGORY || body.category === current) {
+          throw new ReviewError("invalid_category", `Can't reclassify to "${body.category}".`, {
+            categories: (config?.categories ?? []).map((c) => c.category),
+          });
+        }
+        const runId = await startRun(tx, deps.boss, {
+          documentId: document.id,
+          configId: config.id,
+          trigger: "reclassify",
+          forcedCategory: body.category,
+        });
+        await setAwaitingExtraction(tx, task.id);
+        const decisionId = await insertDecision(tx, {
+          task,
+          reviewerId: actor.user.id,
+          outcome: "reclassify",
+          extractionId: task.extractionId,
+          before: { category: current ?? null },
+          after: { category: body.category },
+          note,
+        });
+        return { ...result, decisionId, outcome: "reclassify", runId };
+      }
+
+      case "reject": {
+        await setReviewOutcome(tx, document.id, { reviewStatus: "rejected" });
+        await resolveTask(tx, task.id, now);
+        const decisionId = await insertDecision(tx, {
+          task,
+          reviewerId: actor.user.id,
+          outcome: "reject",
+          extractionId: task.extractionId,
+          note,
+        });
+        return { ...result, decisionId, outcome: "reject" };
+      }
+
+      case "retry": {
+        const config = await getActiveConfig(tx);
+        if (!config) throw new Error("the tenant has no active pipeline config");
+        // A failed reclassify run is retried as one: the reviewer's category still stands.
+        const failed = document.currentRunId ? (await loadRun(tx, document.currentRunId))?.run : null;
+        const runId = await startRun(
+          tx,
+          deps.boss,
+          failed?.trigger === "reclassify" && failed.forcedCategory
+            ? {
+                documentId: document.id,
+                configId: config.id,
+                trigger: "reclassify",
+                forcedCategory: failed.forcedCategory,
+              }
+            : { documentId: document.id, configId: config.id, trigger: "retry" },
+        );
+        // The new run opens its own task if it needs a human; it may also auto-approve.
+        await resolveTask(tx, task.id, now);
+        await setReviewOutcome(tx, document.id, { reviewStatus: "not_required" });
+        const decisionId = await insertDecision(tx, { task, reviewerId: actor.user.id, outcome: "retry", note });
+        return { ...result, decisionId, outcome: "retry", runId };
+      }
+    }
+  });
+}
+
+/**
+ * Turns edited values into a new revision (author `user`, parent = the revision shown), after checking
+ * them against the full schema. Returns null when nothing changed.
+ */
+async function editRevision(tx: TenantTx, actor: TenantContext, base: ExtractionRow, fields: Fields) {
+  const diff = fieldDiff(asFields(base.fields), fields);
+  if (diff.length === 0) return null;
+  const schemaVersion = await loadSchemaVersion(tx, base.schemaVersionId);
+  const check = checkUserRevision({
+    category: base.category,
+    schemaVersion: {
+      id: schemaVersion.id,
+      version: schemaVersion.version,
+      jsonSchema: schemaVersion.jsonSchema as JsonSchema,
+    },
+    values: fields,
+  });
+  if (check.validationIssues.length > 0) {
+    throw new ReviewError("invalid_fields", "Some fields don't match the schema.", {
+      issues: check.validationIssues.map(({ field, path, message }) => ({ field, path, message })),
+    });
+  }
+  const revision = await insertUserExtraction(tx, {
+    base,
+    userId: actor.user.id,
+    fields,
+    validationErrors: [],
+    gateResults: check.gateResults,
+  });
+  await setCurrentExtraction(tx, base.documentId, revision.id);
+  return { revision, diff };
+}

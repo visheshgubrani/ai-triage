@@ -13,6 +13,7 @@ import {
   type StageJob,
 } from "@ai-triage/core";
 import {
+  approvedPayload,
   buildClassifyRequest,
   buildExtractRequest,
   classifyCategories,
@@ -321,7 +322,7 @@ export async function routeStage(deps: PipelineDeps, job: StageJob): Promise<voi
     });
     if (autoApproved) {
       // The payload is frozen now; the action id is the webhook's Idempotency-Key (phase 3 delivers it).
-      const payload = { ...proposedAction, approved_by: "auto", approved_at: deps.now().toISOString() };
+      const payload = approvedPayload(proposedAction, "auto", deps.now());
       const actionId = await createAction(tx, {
         documentId: job.documentId,
         extractionId: input.extraction.id,

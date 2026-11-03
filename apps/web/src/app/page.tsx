@@ -1,8 +1,8 @@
-import { HealthResponse, MeResponse } from "@ai-triage/contracts";
-import { cookies } from "next/headers";
+import { HealthResponse } from "@ai-triage/contracts";
 import Link from "next/link";
+import { getMe } from "@/components/header";
+import { SignOutButton } from "@/components/sign-out-button";
 import { api } from "@/lib/api";
-import { SignOutButton } from "./sign-out-button";
 
 export const dynamic = "force-dynamic";
 
@@ -15,23 +15,15 @@ async function getHealth(): Promise<HealthResponse | null> {
   }
 }
 
-/** Server-side call to the API, forwarding the browser's session cookie. */
-async function getMe(): Promise<MeResponse | null> {
-  const cookie = (await cookies()).toString();
-  try {
-    const res = await api.me.$get(undefined, { headers: { cookie } });
-    if (!res.ok) return null;
-    return MeResponse.parse(await res.json());
-  } catch {
-    return null;
-  }
-}
-
 const sections = [
   { name: "Documents", detail: "Incoming documents and their routing decisions", href: "/documents" },
-  { name: "Review queue", detail: "Low-confidence items awaiting a human (phase 3)" },
+  {
+    name: "Review queue",
+    detail: "Items awaiting a human: approve, edit, reclassify, reject or retry",
+    href: "/review",
+  },
   { name: "Evals", detail: "Accuracy per category, cost and latency per request (phase 4)" },
-];
+] as { name: string; detail: string; href?: string }[];
 
 export default async function Home() {
   const [health, me] = await Promise.all([getHealth(), getMe()]);
@@ -39,7 +31,8 @@ export default async function Home() {
     <main className="mx-auto max-w-3xl px-4 py-16">
       <h1 className="text-3xl font-semibold tracking-tight">AI Triage</h1>
       <p className="mt-2 text-neutral-600 dark:text-neutral-400">
-        The pipeline runs: ingest, parse, classify, extract and route. The review queue and evals come next.
+        Documents are classified and extracted, uncertain ones wait for a reviewer, and approvals go out as signed
+        webhooks. Evals come next.
       </p>
 
       <section className="mt-8 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">

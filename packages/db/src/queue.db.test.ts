@@ -56,7 +56,7 @@ describe("withTenantTx + pg-boss", () => {
 });
 
 describe("queue options", () => {
-  it("applies QUEUE_OPTIONS, with stage queues dead-lettering into doc.failed", async () => {
+  it("applies QUEUE_OPTIONS: stage queues dead-letter into doc.failed, deliveries into action.failed", async () => {
     for (const name of [QUEUES.parse, QUEUES.classify, QUEUES.extract, QUEUES.route]) {
       expect(await boss.getQueue(name)).toMatchObject({
         retryLimit: QUEUE_OPTIONS[name].retryLimit,
@@ -64,6 +64,10 @@ describe("queue options", () => {
         deadLetter: QUEUES.failed,
       });
     }
-    expect((await boss.getQueue(QUEUES.deliver))?.deadLetter ?? null).toBeNull();
+    expect(await boss.getQueue(QUEUES.deliver)).toMatchObject({
+      retryLimit: QUEUE_OPTIONS[QUEUES.deliver].retryLimit,
+      deadLetter: QUEUES.deliveryFailed,
+    });
+    expect((await boss.getQueue(QUEUES.deliveryFailed))?.deadLetter ?? null).toBeNull();
   });
 });

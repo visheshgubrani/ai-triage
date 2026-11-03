@@ -135,6 +135,12 @@ export async function normalizeEml(bytes: Uint8Array): Promise<NormalizedEmail> 
   };
 }
 
+/** The HTML body of a raw .eml, if it has one (for display; the pipeline reads the text). */
+export async function emlHtml(bytes: Uint8Array): Promise<string | null> {
+  const mail = await simpleParser(Buffer.from(bytes), { skipImageLinks: true });
+  return typeof mail.html === "string" && mail.html.trim() ? mail.html : null;
+}
+
 /**
  * The email body as the model and the evidence check see it. Recipients are left out on purpose:
  * they differ per tenant (inbound address), and the request must hash the same in every tenant.

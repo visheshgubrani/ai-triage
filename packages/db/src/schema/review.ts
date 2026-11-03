@@ -48,10 +48,11 @@ export const reviewTasks = pgTable(
     // A claim is all-or-nothing, and only a claimed task holds one.
     check(
       "review_tasks_claim_check",
-      sql`(${t.status} = 'claimed') = (${t.claimToken} is not null and ${t.claimedBy} is not null and ${t.leaseExpiresAt} is not null)`,
+      sql`(${t.status} = 'claimed') = (${t.claimToken} is not null) and (${t.claimToken} is null) = (${t.claimedBy} is null) and (${t.claimToken} is null) = (${t.leaseExpiresAt} is null)`,
     ),
     uniqueIndex("review_tasks_one_open_per_document_key").on(t.documentId).where(sql`${t.status} <> 'resolved'`),
     index("review_tasks_queue_idx").on(t.tenantId, t.status, t.createdAt),
+    index("review_tasks_lease_idx").on(t.tenantId, t.leaseExpiresAt),
     foreignKey({
       name: "review_tasks_document_fk",
       columns: [t.tenantId, t.documentId],
@@ -65,6 +66,11 @@ export const reviewTasks = pgTable(
   ],
 );
 
+/**
+ * One row per reviewer decision: the audit trail of the review queue (insert-only, 0006 trigger).
+ * `task_kind` is the task's kind when decided (a task's kind can change while it's open), and
+ * `extraction_id` is the revision decided on, or the one an edit produced.
+ */
 export const reviewDecisions = pgTable(
   "review_decisions",
   {
@@ -72,6 +78,8 @@ export const reviewDecisions = pgTable(
     tenantId: tenantId(),
     reviewTaskId: uuid("review_task_id").notNull(),
     documentId: uuid("document_id").notNull(),
+    taskKind: text("task_kind", { enum: REVIEW_TASK_KINDS }).notNull(),
+    extractionId: uuid("extraction_id"),
     reviewerId: uuid("reviewer_id")
       .notNull()
       .references(() => users.id),
@@ -85,6 +93,8 @@ export const reviewDecisions = pgTable(
   (t) => [
     tenantKey("review_decisions", t),
     oneOf("review_decisions_outcome_check", t.outcome, REVIEW_ACTIONS),
+    oneOf("review_decisions_task_kind_check", t.taskKind, REVIEW_TASK_KINDS),
+    index("review_decisions_document_idx").on(t.tenantId, t.documentId, t.createdAt),
     foreignKey({
       name: "review_decisions_task_fk",
       columns: [t.tenantId, t.reviewTaskId],
@@ -95,11 +105,17 @@ export const reviewDecisions = pgTable(
       columns: [t.tenantId, t.documentId],
       foreignColumns: [documents.tenantId, documents.id],
     }),
+    foreignKey({
+      name: "review_decisions_extraction_fk",
+      columns: [t.tenantId, t.documentId, t.extractionId],
+      foreignColumns: [extractions.tenantId, extractions.documentId, extractions.id],
+    }),
   ],
 );
 
 /**
- * Outbox of approved actions. `payload` is frozen at approval; `id` doubles as the webhook
+ * Outbox of approved actions. `payload` is frozen at approval (only the delivery columns may change,
+ * 0006 trigger); `id` doubles as the webhook
  * `Idempotency-Key`. One action per approved revision. `document_id` is required, and eval items
  * never create documents, so an eval run can't produce an action (invariant 7).
  */
@@ -121,6 +137,7 @@ export const actions = pgTable(
   (t) => [
     tenantKey("actions", t),
     unique("actions_extraction_id_key").on(t.extractionId),
+    index("actions_status_idx").on(t.tenantId, t.status, t.updatedAt),
     oneOf("actions_status_check", t.status, ACTION_STATUSES),
     foreignKey({
       name: "actions_document_fk",

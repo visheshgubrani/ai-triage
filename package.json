@@ -14,7 +14,7 @@
     "test:unit": "vitest run --project unit",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "infra:up": "docker compose up -d --wait postgres storage && docker compose run --rm storage-init",
+    "infra:up": "docker compose up -d --wait postgres storage webhook-catcher && docker compose run --rm storage-init",
     "infra:down": "docker compose down",
     "db:generate": "pnpm --filter @ai-triage/db generate",
     "db:migrate": "pnpm --filter @ai-triage/db migrate",
@@ -22,10 +22,12 @@
     "api-key:create": "pnpm --filter @ai-triage/db api-key:create",
     "ingest": "pnpm --filter @ai-triage/api ingest",
     "fixtures:generate": "pnpm --filter @ai-triage/fixtures generate",
-    "cassettes:record": "pnpm --filter @ai-triage/worker cassettes:record"
+    "cassettes:record": "pnpm --filter @ai-triage/worker cassettes:record",
+    "e2e": "playwright test"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
+    "@playwright/test": "1.64.1",
     "@types/node": "^24.19.2",
     "tsx": "^4.23.15",
     "turbo": "^2.11.10",

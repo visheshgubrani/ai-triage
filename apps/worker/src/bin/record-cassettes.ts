@@ -10,7 +10,12 @@ import {
   createPool,
   createTenant,
   DEMO_CATEGORY_SETTINGS,
+  DEMO_MODEL,
+  getActiveConfig,
+  loadClassification,
+  loadDocument,
   MODEL_PRICE_SEED,
+  startRun,
   withTenantTx,
 } from "@ai-triage/db";
 import { loadManifest } from "@ai-triage/fixtures";
@@ -33,7 +38,8 @@ import { drainTenantJobs } from "../pipeline/drain";
 // Runs every fixture through the real pipeline against the live model API and saves each response
 // as a cassette (fixtures/cassettes), so replay mode (the default, and CI) never needs a key.
 // This SPENDS MONEY. By default only requests without a cassette are sent; --all re-records all.
-// It uses a fresh scratch tenant each run, with its own daily budget cap.
+// It uses a fresh scratch tenant each run, with its own daily budget cap. Stop any running worker
+// (`pnpm dev`) first: it shares the job queues and would replay this run's jobs instead.
 
 const { values } = parseArgs({
   options: {
@@ -41,7 +47,7 @@ const { values } = parseArgs({
     all: { type: "boolean" },
     cap: { type: "string", default: "25" },
     // Both stages use this model, at low effort (or its only effort). The default is the demo's model.
-    model: { type: "string", default: "claude-opus-5-5" },
+    model: { type: "string", default: DEMO_MODEL.model },
   },
 });
 const config = workerConfig();
@@ -99,23 +105,48 @@ try {
       };
 
   const storage = createStorage(storageConfigFromEnv());
+  const documents = new Map<string, string>();
   for (const item of manifest.items) {
-    await ingestFixture({ pool, boss, storage }, tenantId, item, config.fixturesDir, {
+    const { documentId } = await ingestFixture({ pool, boss, storage }, tenantId, item, config.fixturesDir, {
       maxFileBytes: config.maxFileBytes,
     });
+    documents.set(item.id, documentId);
   }
-  await drainTenantJobs(
-    {
-      pool,
-      boss,
-      storage,
-      llm: createDbLlmGateway({ pool, mode: "record", transport }),
-      limits: { maxPdfPages: config.maxPdfPages },
-      auditDraw,
-      now: () => new Date(),
-    },
-    tenantId,
-  );
+  const deps = {
+    pool,
+    boss,
+    storage,
+    llm: createDbLlmGateway({ pool, mode: "record", transport }),
+    limits: { maxPdfPages: config.maxPdfPages },
+    auditDraw,
+    now: () => new Date(),
+  };
+  await drainTenantJobs(deps, tenantId);
+
+  // A reviewer reclassifying a misclassified fixture to its label sends a forced-category extract
+  // request; record those too, so that natural reclassify works in the replay demo.
+  const reclassified = await withTenantTx(pool, tenantId, async (tx) => {
+    const active = await getActiveConfig(tx);
+    if (!active) throw new Error("recorder tenant has no active config");
+    let n = 0;
+    for (const item of manifest.items) {
+      const documentId = documents.get(item.id);
+      const document = documentId ? await loadDocument(tx, documentId) : null;
+      if (!document?.currentRunId || item.expectedCategory === "other") continue;
+      const predicted = (await loadClassification(tx, document.currentRunId))?.category;
+      if (!predicted || predicted === item.expectedCategory) continue;
+      await startRun(tx, boss, {
+        documentId: document.id,
+        configId: active.id,
+        trigger: "reclassify",
+        forcedCategory: item.expectedCategory,
+      });
+      n++;
+    }
+    return n;
+  });
+  console.log(`reclassify pass: ${reclassified} misclassified fixture(s) re-extracted with their labeled category`);
+  if (reclassified > 0) await drainTenantJobs(deps, tenantId);
 
   const summary = await withTenantTx(pool, tenantId, async (tx) => {
     const calls = await tx.queueDb.executeSql(
@@ -138,11 +169,22 @@ try {
   console.log(
     `llm calls: ${summary.calls.calls} (${summary.calls.live} live), actual spend $${summary.calls.spent.toFixed(4)}`,
   );
-  await writeFile(
-    join(config.cassetteDir, "recorded.json"),
-    `${JSON.stringify({ recordedAt: new Date().toISOString(), fixtures: manifest.items.length, liveCalls: summary.calls.live, spentUsd: Number(summary.calls.spent.toFixed(4)) }, null, 2)}\n`,
-  );
-  console.log(`done: cassettes are in ${config.cassetteDir}; commit them (and recorded.json).`);
+  // Record mode never misses a cassette, so a miss means another worker in replay mode (a running
+  // `pnpm dev`) took these jobs from the shared queues. Don't mark the set as recorded.
+  const stolen = summary.failed.filter((f) => String((f as { error?: unknown }).error).startsWith("cassette_missing"));
+  if (stolen.length > 0) {
+    console.error(
+      `\n${stolen.length} document(s) failed with cassette_missing, which record mode never causes: another worker ` +
+        "(probably `pnpm dev`) processed this run's jobs in replay mode. Stop it and re-run; cassettes recorded so far are kept.",
+    );
+    process.exitCode = 1;
+  } else {
+    await writeFile(
+      join(config.cassetteDir, "recorded.json"),
+      `${JSON.stringify({ recordedAt: new Date().toISOString(), fixtures: manifest.items.length, liveCalls: summary.calls.live, spentUsd: Number(summary.calls.spent.toFixed(4)) }, null, 2)}\n`,
+    );
+    console.log(`done: cassettes are in ${config.cassetteDir}; commit them (and recorded.json).`);
+  }
 } finally {
   await boss.stop({ graceful: true });
   await pool.end();

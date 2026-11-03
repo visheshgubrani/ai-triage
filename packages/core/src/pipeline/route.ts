@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { dropNulls, type FieldValues } from "@ai-triage/schemas";
-import type { AutomationMode, Decision, RouteReason, RunTrigger } from "../index";
+import { type AutomationMode, type Decision, type RouteReason, type RunTrigger, WEBHOOK_EVENT } from "../index";
 
 export interface RoutePolicy {
   threshold: number;
@@ -11,11 +11,42 @@ export interface RoutePolicy {
 /** What an approval would send. Production freezes it into `actions.payload`; evals only store it. */
 export interface ProposedAction {
   type: "webhook";
-  event: "document.approved";
+  event: typeof WEBHOOK_EVENT;
   document_id: string;
   extraction_id: string;
   category: string;
   fields: FieldValues;
+}
+
+/** Who approved: route on its own, or a reviewer. */
+export type ApprovedBy = "auto" | { type: "user"; id: string; email: string };
+
+/** `actions.payload`, frozen at approval and sent as the webhook body. */
+export interface ActionPayload extends ProposedAction {
+  approved_by: ApprovedBy;
+  approved_at: string;
+}
+
+/** The action for one extraction revision. Null fields are left out of the payload. */
+export function proposeAction(input: {
+  documentId: string;
+  extractionId: string;
+  category: string;
+  values: FieldValues;
+}): ProposedAction {
+  return {
+    type: "webhook",
+    event: WEBHOOK_EVENT,
+    document_id: input.documentId,
+    extraction_id: input.extractionId,
+    category: input.category,
+    fields: dropNulls(input.values),
+  };
+}
+
+/** The payload to freeze when an action is approved, automatically or by a reviewer. */
+export function approvedPayload(action: ProposedAction, approvedBy: ApprovedBy, at: Date): ActionPayload {
+  return { ...action, approved_by: approvedBy, approved_at: at.toISOString() };
 }
 
 export interface RouteInput {
@@ -50,14 +81,7 @@ export function route(input: RouteInput): RouteResult {
   else if (input.score < input.policy.threshold) add("below_threshold");
   if (input.policy.automation !== "auto_when_confident") add("automation_off");
 
-  const proposedAction: ProposedAction = {
-    type: "webhook",
-    event: "document.approved",
-    document_id: input.action.documentId,
-    extraction_id: input.action.extractionId,
-    category: input.action.category,
-    fields: dropNulls(input.action.values),
-  };
+  const proposedAction = proposeAction(input.action);
   if (reasons.length > 0) return { decision: "review", audit: false, reasons, proposedAction };
   if (input.auditDraw < input.policy.auditRate) {
     return { decision: "auto", audit: true, reasons: ["audit_sample"], proposedAction };
