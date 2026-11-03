@@ -32,3 +32,11 @@ jobs:
       # Unit tests plus DB tests (RLS, constraints, queue atomicity, auth, storage, pipeline in replay).
       - run: pnpm test
       - run: pnpm build
+
+  # The quickstart image (`docker compose up --build`) must keep building. Built only, not pushed.
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose build init

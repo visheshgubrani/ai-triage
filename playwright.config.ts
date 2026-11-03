@@ -17,5 +17,7 @@ export default defineConfig({
     video: WALKTHROUGH_VIDEO ? { mode: "on", size: { width: 1280, height: 800 } } : "off",
     ...devices["Desktop Chrome"],
     viewport: { width: 1280, height: 800 },
+    // Slowed down when recording, so the video can be followed.
+    launchOptions: { slowMo: WALKTHROUGH_VIDEO ? 350 : 0 },
   },
 });
