@@ -6,6 +6,8 @@ import {
   listExpiredDocuments,
   type PgBoss,
   type Pool,
+  pruneMailboxMessages,
+  pruneOAuthStates,
   pruneRateLimits,
   purgeDocument,
   recordAudit,
@@ -16,7 +18,8 @@ import {
 import type { Storage } from "@ai-triage/storage";
 
 // Daily housekeeping (docs/security.md, M7): purge documents past each tenant's retention, drop
-// uploads that were never completed, and prune rate-limit windows. Storage deletions run as
+// uploads that were never completed, prune rate-limit windows, finished OAuth round trips and old
+// mailbox ledger rows. Storage deletions run as
 // `storage.delete` jobs, enqueued in the transaction that removed the rows.
 
 export interface MaintenanceDeps {
@@ -73,6 +76,10 @@ export async function runMaintenance(deps: MaintenanceDeps): Promise<void> {
   for (const { id } of rows) {
     await sweepRetention(deps, id);
     await dropAbandonedUploads(deps, id);
+    await withTenantTx(deps.pool, id, async (tx) => {
+      await pruneOAuthStates(tx, deps.now());
+      await pruneMailboxMessages(tx, deps.now());
+    });
   }
   // The longest window is an hour, so a day-old window is dead.
   await pruneRateLimits(createDb(deps.pool), new Date(deps.now().getTime() - DAY_MS));

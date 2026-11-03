@@ -1,12 +1,14 @@
 import { auditDraw, egressPolicyFromEnv } from "@ai-triage/core/pipeline";
 import { assertAppRole, assertSafeStartup, createBoss, createPool, keyRingFromEnv } from "@ai-triage/db";
 import { callModeOf, createTransport, getLlmMode } from "@ai-triage/llm";
+import { googleConfigFromEnv } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { workerConfig } from "./config";
 import { createGuardedFetch } from "./delivery/egress";
 import { registerDelivery } from "./delivery/register";
 import { registerEvals } from "./evals/register";
 import { createDbLlmGateway } from "./llm";
+import { registerMailbox } from "./mailbox/register";
 import { registerMaintenance } from "./maintenance/register";
 import { registerPipeline } from "./pipeline/register";
 
@@ -55,7 +57,30 @@ await registerDelivery(boss, {
 
 await registerMaintenance(boss, { pool, boss, storage, now: () => new Date() });
 
-console.log(`worker started (llm mode: ${mode}${mode === "replay" ? `, cassettes: ${config.cassetteDir}` : ""})`);
+// Gmail mailbox sync: Google's endpoints are fixed (not tenant-chosen), so the plain fetch is used.
+const google = googleConfigFromEnv(process.env);
+await registerMailbox(
+  boss,
+  {
+    pool,
+    boss,
+    storage,
+    keys: keyRingFromEnv(process.env),
+    google: google ? { config: google, fetch } : null,
+    limits: {
+      maxFileBytes: config.maxFileBytes,
+      syncBatch: config.mailboxSyncBatch,
+      inboundPerHour: config.inboundPerHour,
+    },
+    now,
+  },
+  { fetchConcurrency: config.mailboxConcurrency },
+);
+
+console.log(
+  `worker started (llm mode: ${mode}${mode === "replay" ? `, cassettes: ${config.cassetteDir}` : ""}; ` +
+    `gmail sync: ${google ? "on" : "off, no GOOGLE_CLIENT_ID"})`,
+);
 
 const shutdown = async () => {
   await boss.stop({ graceful: true });

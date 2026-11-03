@@ -28,4 +28,6 @@ export const workerConfig = (env: NodeJS.ProcessEnv = process.env) => ({
   webhookTimeoutMs: Number(env.WEBHOOK_TIMEOUT_MS ?? 10_000),
   mailboxConcurrency: Number(env.WORKER_MAILBOX_CONCURRENCY ?? 4),
   mailboxSyncBatch: Number(env.MAILBOX_SYNC_BATCH ?? 200),
+  // The api's inbound email limit (postmarkPerTenant, 500 an hour), shared by Gmail sync.
+  inboundPerHour: Math.ceil(500 * (Number(env.RATE_LIMIT_SCALE) > 0 ? Number(env.RATE_LIMIT_SCALE) : 1)),
 });

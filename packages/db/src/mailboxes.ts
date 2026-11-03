@@ -1,8 +1,19 @@
 import { randomUUID } from "node:crypto";
-import { type MailboxProvider, type MailboxStatus, OAUTH_STATE_TTL_SECONDS, type OAuthPurpose } from "@ai-triage/core";
-import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import {
+  type MailboxFetchJob,
+  type MailboxMessageReason,
+  type MailboxMessageStatus,
+  type MailboxProvider,
+  type MailboxStatus,
+  OAUTH_STATE_TTL_SECONDS,
+  type OAuthPurpose,
+  QUEUES,
+} from "@ai-triage/core";
+import { and, desc, eq, gt, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import type pg from "pg";
+import { deterministicJobId, enqueue, type PgBoss } from "./boss";
 import { decryptSecret, encryptSecret, type KeyRing } from "./crypto";
+import type { Db } from "./index";
 import { mailboxConnections, mailboxMessages, oauthStates } from "./schema";
 import { type TenantTx, withTenantTx } from "./tenant-tx";
 
@@ -322,5 +333,185 @@ export async function reencryptMailboxTokens(tx: TenantTx, keys: KeyRing): Promi
       .set({ refreshTokenEnc: again(row.refreshTokenEnc), accessTokenEnc: again(row.accessTokenEnc) })
       .where(eq(mailboxConnections.id, row.id));
   }
+  return rows.length;
+}
+
+// ── Sync (the worker) ───────────────────────────────────────────────────────────────────────
+
+/** Mailboxes due for a sync, across tenants: the cron poll runs before any tenant is known. */
+export async function dueMailboxes(db: Db, now: Date): Promise<{ tenantId: string; id: string }[]> {
+  const { rows } = await db.execute<{ tenant_id: string; id: string }>(
+    sql`select tenant_id, id from public.due_mailbox_connections(${now.toISOString()}::timestamptz)`,
+  );
+  return rows.map((r) => ({ tenantId: r.tenant_id, id: r.id }));
+}
+
+export interface SyncState {
+  status: MailboxStatus;
+  email: string;
+  labelId: string;
+  historyId: string | null;
+  cursorVersion: number;
+  backfillDays: number | null;
+  lastSyncedAt: Date | null;
+  createdAt: Date;
+}
+
+export async function syncState(tx: TenantTx, id: string): Promise<SyncState | null> {
+  const [row] = await tx.db
+    .select({
+      status: mailboxConnections.status,
+      email: mailboxConnections.email,
+      labelId: mailboxConnections.labelId,
+      historyId: mailboxConnections.historyId,
+      cursorVersion: mailboxConnections.cursorVersion,
+      backfillDays: mailboxConnections.backfillDays,
+      lastSyncedAt: mailboxConnections.lastSyncedAt,
+      createdAt: mailboxConnections.createdAt,
+    })
+    .from(mailboxConnections)
+    .where(eq(mailboxConnections.id, id));
+  return (row as SyncState | undefined) ?? null;
+}
+
+/** The fetch job of one message: a repeated sync of the same message sends no second job. */
+export const mailboxFetchJobId = (connectionId: string, messageId: string) =>
+  deterministicJobId("mailbox-fetch", connectionId, messageId);
+
+export interface SyncCommit {
+  connectionId: string;
+  /** The cursor_version the sync read; the commit is refused if another sync moved it since. */
+  expectedVersion: number;
+  historyId: string;
+  messageIds: string[];
+  /** The connect-time import ran: don't run it again. */
+  backfillDone: boolean;
+  now: Date;
+  nextSyncAt: Date;
+}
+
+/**
+ * Commits one sync (invariant 3): advances the cursor first (a compare-and-set on cursor_version,
+ * which also locks the row), then adds the new messages to the ledger and enqueues a fetch for each
+ * one the ledger hadn't seen, all in one transaction. A message seen again (history repeats them;
+ * a resync relists them) gets no second row or job. Refused, it changes nothing.
+ */
+export async function commitSync(
+  tx: TenantTx,
+  boss: PgBoss,
+  input: SyncCommit,
+): Promise<{ committed: boolean; queued: number }> {
+  const [advanced] = await tx.db
+    .update(mailboxConnections)
+    .set({
+      historyId: input.historyId,
+      cursorVersion: sql`${mailboxConnections.cursorVersion} + 1`,
+      lastSyncedAt: input.now,
+      nextSyncAt: input.nextSyncAt,
+      lastError: null,
+      lastErrorAt: null,
+      ...(input.backfillDone ? { backfillDays: null } : {}),
+    })
+    .where(
+      and(
+        eq(mailboxConnections.id, input.connectionId),
+        eq(mailboxConnections.cursorVersion, input.expectedVersion),
+        eq(mailboxConnections.status, "active"),
+      ),
+    )
+    .returning({ id: mailboxConnections.id });
+  if (!advanced) return { committed: false, queued: 0 };
+  if (input.messageIds.length === 0) return { committed: true, queued: 0 };
+
+  const added = await tx.db
+    .insert(mailboxMessages)
+    .values(
+      input.messageIds.map((providerMessageId) => ({
+        tenantId: tx.tenantId,
+        connectionId: input.connectionId,
+        providerMessageId,
+      })),
+    )
+    .onConflictDoNothing({ target: [mailboxMessages.connectionId, mailboxMessages.providerMessageId] })
+    .returning({ messageId: mailboxMessages.providerMessageId });
+  for (const { messageId } of added) {
+    const job: MailboxFetchJob = { tenantId: tx.tenantId, connectionId: input.connectionId, messageId };
+    await enqueue(boss, tx, QUEUES.mailboxFetch, job, { id: mailboxFetchJobId(input.connectionId, messageId) });
+  }
+  return { committed: true, queued: added.length };
+}
+
+/** A sync that couldn't finish: say why (generically) and when to try again. The cursor stays. */
+export async function recordSyncProblem(tx: TenantTx, id: string, message: string, now: Date, retryAt: Date) {
+  await tx.db
+    .update(mailboxConnections)
+    .set({ lastError: message, lastErrorAt: now, nextSyncAt: retryAt })
+    .where(eq(mailboxConnections.id, id));
+}
+
+/** What a fetch job needs to know before downloading: is the mailbox still connected, is the message pending. */
+export async function fetchState(tx: TenantTx, connectionId: string, messageId: string) {
+  const [row] = await tx.db
+    .select({ connectionStatus: mailboxConnections.status, messageStatus: mailboxMessages.status })
+    .from(mailboxMessages)
+    .innerJoin(mailboxConnections, eq(mailboxConnections.id, mailboxMessages.connectionId))
+    .where(and(eq(mailboxMessages.connectionId, connectionId), eq(mailboxMessages.providerMessageId, messageId)));
+  return row
+    ? {
+        connectionStatus: row.connectionStatus as MailboxStatus,
+        messageStatus: row.messageStatus as MailboxMessageStatus,
+      }
+    : null;
+}
+
+export interface MessageOutcome {
+  status: MailboxMessageStatus;
+  reason?: MailboxMessageReason | null;
+  documentId?: string | null;
+  sizeBytes?: number | null;
+  receivedAt?: Date | null;
+}
+
+/** Records what became of a message. A final status is never overwritten by a late retry. */
+export async function markMailboxMessage(
+  tx: TenantTx,
+  connectionId: string,
+  messageId: string,
+  outcome: MessageOutcome,
+): Promise<void> {
+  await tx.db
+    .update(mailboxMessages)
+    .set({
+      status: outcome.status,
+      reason: outcome.reason ?? null,
+      ...(outcome.documentId !== undefined ? { documentId: outcome.documentId } : {}),
+      ...(outcome.sizeBytes !== undefined ? { sizeBytes: outcome.sizeBytes } : {}),
+      ...(outcome.receivedAt !== undefined ? { receivedAt: outcome.receivedAt } : {}),
+    })
+    .where(
+      and(
+        eq(mailboxMessages.connectionId, connectionId),
+        eq(mailboxMessages.providerMessageId, messageId),
+        inArray(mailboxMessages.status, ["queued", "deferred"]),
+      ),
+    );
+}
+
+/**
+ * How long the ledger keeps a finished message. Longer than any resync window (a resync looks back
+ * at most MAILBOX_RESYNC_MAX_DAYS), so a purged message's tombstone outlives every chance to relist it.
+ */
+export const MAILBOX_LEDGER_DAYS = 30;
+
+export async function pruneMailboxMessages(tx: TenantTx, now: Date): Promise<number> {
+  const rows = await tx.db
+    .delete(mailboxMessages)
+    .where(
+      and(
+        lt(mailboxMessages.createdAt, new Date(now.getTime() - MAILBOX_LEDGER_DAYS * 86_400_000)),
+        notInArray(mailboxMessages.status, ["queued", "deferred"]),
+      ),
+    )
+    .returning({ id: mailboxMessages.id });
   return rows.length;
 }

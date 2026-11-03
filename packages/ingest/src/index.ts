@@ -17,6 +17,7 @@ import {
   type PgBoss,
   type Pool,
   resolveInboundAddress,
+  type TenantTx,
   withTenantTx,
 } from "@ai-triage/db";
 import { type Storage, storageKeys } from "@ai-triage/storage";
@@ -140,11 +141,24 @@ export async function ingestEmail(
   deps: IngestDeps,
   tenantId: string,
   email: NormalizedEmail,
-  input: { source: DocumentSource; postmark?: PostmarkInbound; eml?: Uint8Array },
+  input: {
+    source: DocumentSource;
+    postmark?: PostmarkInbound;
+    eml?: Uint8Array;
+    /**
+     * Runs in the transaction that creates the document (or, for a duplicate, in one of its own),
+     * so the caller's own record of the ingest commits with it (the mailbox ledger does).
+     */
+    within?: (tx: TenantTx, result: IngestResult) => Promise<void>;
+  },
 ): Promise<IngestResult> {
   const externalId = emailExternalId(email, input);
   const dup = await existing(deps, tenantId, input.source, externalId);
-  if (dup) return dup;
+  if (dup) {
+    const within = input.within;
+    if (within) await withTenantTx(deps.pool, tenantId, (tx) => within(tx, dup));
+    return dup;
+  }
 
   const keys = storageKeys.email(tenantId);
   const { attachments, json } = await writeStoredEmail(deps.storage, keys, email);
@@ -161,16 +175,18 @@ export async function ingestEmail(
   if (input.eml) await deps.storage.put(keys.eml, input.eml, DOCUMENT_MIMES.eml);
 
   const sizeBytes = json.byteLength + attachments.reduce((sum, a) => sum + a.size, 0);
-  return withTenantTx(deps.pool, tenantId, (tx) =>
-    ingestDocument(tx, deps.boss, {
+  return withTenantTx(deps.pool, tenantId, async (tx) => {
+    const result = await ingestDocument(tx, deps.boss, {
       source: input.source,
       externalId,
       sourceKey: keys.email,
       title: emailTitle(email),
       mime: EMAIL_SOURCE_MIME,
       sizeBytes,
-    }),
-  );
+    });
+    await input.within?.(tx, result);
+    return result;
+  });
 }
 
 /** Postmark inbound webhook: routes by recipient address. Unknown recipients are ignored. */

@@ -326,6 +326,8 @@ export const MAILBOX_MESSAGE_REASONS = [
   "too_large",
   "too_many_attachments",
   "unreadable",
+  /** The mailbox was disconnected before the message was downloaded. */
+  "disconnected",
   /** `failed`: downloading or ingesting kept failing. */
   "retries_exhausted",
 ] as const;
@@ -337,6 +339,11 @@ export type OAuthPurpose = (typeof OAUTH_PURPOSES)[number];
 
 /** How long an OAuth round trip may take before its state expires. */
 export const OAUTH_STATE_TTL_SECONDS = 600;
+/**
+ * When a mailbox's history cursor expired (unsynced for about a week), the next sync lists recent
+ * mail instead, looking back at most this far.
+ */
+export const MAILBOX_RESYNC_MAX_DAYS = 7;
 /** A connect may import recent mail too: at most this many days, and this many messages. */
 export const MAILBOX_BACKFILL_MAX_DAYS = 7;
 export const MAILBOX_BACKFILL_MAX_MESSAGES = 200;

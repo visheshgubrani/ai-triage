@@ -297,6 +297,9 @@ importers:
       '@ai-triage/llm':
         specifier: workspace:*
         version: link:../../packages/llm
+      '@ai-triage/mailbox':
+        specifier: workspace:*
+        version: link:../../packages/mailbox
       '@ai-triage/schemas':
         specifier: workspace:*
         version: link:../../packages/schemas
