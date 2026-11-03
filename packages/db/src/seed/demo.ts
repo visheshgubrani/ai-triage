@@ -2,6 +2,7 @@ import type { MemberRole } from "@ai-triage/core";
 import { eq } from "drizzle-orm";
 import type pg from "pg";
 import { getActiveConfig } from "../configs";
+import type { KeyRing } from "../crypto";
 import { createDb } from "../index";
 import { buildPipelineConfig, DEMO_CATEGORY_SETTINGS, DEMO_MODEL } from "../pipeline-config";
 import { tenants } from "../schema";
@@ -61,9 +62,14 @@ export async function seedPipelineConfig(appPool: pg.Pool, demo: DemoSeed): Prom
  * Points the demo tenant's webhook at the local catcher (DEMO_WEBHOOK_URL / DEMO_WEBHOOK_SECRET), so
  * approvals show up there. Leaves a webhook an admin already configured alone.
  */
-export async function seedDemoWebhook(appPool: pg.Pool, demo: DemoSeed, webhook: { url: string; secret: string }) {
+export async function seedDemoWebhook(
+  appPool: pg.Pool,
+  demo: DemoSeed,
+  webhook: { url: string; secret: string },
+  keys: KeyRing,
+) {
   await withTenantTx(appPool, demo.tenantId, async (tx) => {
-    if ((await getWebhookSettings(tx)).url) return;
-    await setWebhook(tx, webhook);
+    if ((await getWebhookSettings(tx, keys)).url) return;
+    await setWebhook(tx, keys, webhook);
   });
 }

@@ -1,5 +1,8 @@
 import { DEMO_USERS, runSeed } from "../seed";
+import { assertDemoSeedAllowed } from "../startup";
 import { requireEnv } from "./env";
+
+assertDemoSeedAllowed(process.env);
 
 const { DEMO_WEBHOOK_URL: url, DEMO_WEBHOOK_SECRET: secret } = process.env;
 await runSeed(

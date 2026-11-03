@@ -1,6 +1,6 @@
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { auditDraw } from "@ai-triage/core/pipeline";
+import { auditDraw, egressPolicy } from "@ai-triage/core/pipeline";
 import {
   buildPipelineConfig,
   createBoss,
@@ -8,6 +8,7 @@ import {
   DEMO_CATEGORY_SETTINGS,
   DEMO_MODEL,
   getDocumentDetail,
+  keyRingFromEnv,
   type PgBoss,
   setWebhook,
   withTenantTx,
@@ -19,6 +20,7 @@ import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { workerConfig } from "../config";
 import { drainDeliveries } from "../delivery/drain";
+import { createGuardedFetch } from "../delivery/egress";
 import { verifyWebhook } from "../delivery/sign";
 import { ingestFixture } from "../fixtures";
 import { createDbLlmGateway } from "../llm";
@@ -59,7 +61,13 @@ describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
         const signature = req.headers["x-triage-signature"];
         delivered.push({
           key: String(req.headers["idempotency-key"]),
-          valid: verifyWebhook(secret, typeof signature === "string" ? signature : null, body, new Date()),
+          valid: verifyWebhook(
+            secret,
+            typeof signature === "string" ? signature : null,
+            String(req.headers["idempotency-key"]),
+            body,
+            new Date(),
+          ),
         });
         res.writeHead(200).end();
       });
@@ -73,7 +81,7 @@ describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
     await withTenantTx(pool, tenantId, async (tx) => {
       await buildPipelineConfig(tx, { classify: DEMO_MODEL, extract: DEMO_MODEL, categories });
       const { port } = receiver.address() as AddressInfo;
-      await setWebhook(tx, { url: `http://127.0.0.1:${port}/hook`, secret });
+      await setWebhook(tx, keyRingFromEnv({}), { url: `http://127.0.0.1:${port}/hook`, secret });
     });
     for (const item of manifest.items) {
       docs.set(
@@ -93,7 +101,17 @@ describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
       },
       tenantId,
     );
-    await drainDeliveries({ pool, boss, fetch, now: () => new Date(), timeoutMs: 5000 }, tenantId);
+    await drainDeliveries(
+      {
+        pool,
+        boss,
+        keys: keyRingFromEnv({}),
+        fetch: createGuardedFetch(egressPolicy(["127.0.0.1"])),
+        now: () => new Date(),
+        timeoutMs: 5000,
+      },
+      tenantId,
+    );
   }, 300_000);
   afterAll(async () => {
     await new Promise((resolve) => receiver.close(resolve));

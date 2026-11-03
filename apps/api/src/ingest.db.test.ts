@@ -4,7 +4,7 @@ import { createApiKey, getDocumentDetail, insertUpload, revokeApiKey, stageJobId
 import { DEMO_TENANT } from "@ai-triage/db/seed";
 import { newTenant } from "@ai-triage/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createTestApp, POSTMARK } from "./test-app";
+import { createTestApp, POSTMARK, WEB_ORIGIN } from "./test-app";
 
 // The ingestion paths end to end against Postgres and RustFS: upload (presign → PUT → complete),
 // the Postmark webhook and the REST API. Each creates a document, run #1 and a parse job.
@@ -25,7 +25,7 @@ afterAll(t.close);
 
 const json = (cookie: string, body: unknown) => ({
   method: "POST",
-  headers: { cookie, "content-type": "application/json" },
+  headers: { cookie, origin: WEB_ORIGIN, "content-type": "application/json" },
   body: JSON.stringify(body),
 });
 
@@ -40,13 +40,12 @@ async function upload(cookie: string, bytes: Uint8Array, mime = "text/plain", si
   expect(res.status).toBe(201);
   const created = (await res.json()) as { uploadId: string; url: string; headers: Record<string, string> };
   const put = await fetch(created.url, { method: "PUT", headers: created.headers, body: bytes });
-  expect(put.status).toBe(200);
-  return created.uploadId;
+  return { uploadId: created.uploadId, putStatus: put.status };
 }
 
 describe("uploads", () => {
   it("presign → PUT → complete creates the document, its run and a parse job; completing again is a duplicate", async () => {
-    const uploadId = await upload(admin, new TextEncoder().encode(`Order ${randomUUID()} never arrived.`));
+    const { uploadId } = await upload(admin, new TextEncoder().encode(`Order ${randomUUID()} never arrived.`));
     const done = await app.request(`/uploads/${uploadId}/complete`, json(admin, {}));
     expect(done.status).toBe(201);
     const { documentId, duplicate } = (await done.json()) as { documentId: string; duplicate: boolean };
@@ -67,7 +66,7 @@ describe("uploads", () => {
   });
 
   it("can't complete another tenant's upload", async () => {
-    const uploadId = await upload(admin, new TextEncoder().encode(`secret ${randomUUID()}`));
+    const { uploadId } = await upload(admin, new TextEncoder().encode(`secret ${randomUUID()}`));
     const otherTenant = await newTenant(pool);
     const outsider = await t.memberCookie(otherTenant, "admin");
     const res = await app.request(`/uploads/${uploadId}/complete`, json(outsider, {}));
@@ -75,8 +74,10 @@ describe("uploads", () => {
   });
 
   it("rejects a size mismatch, an expired upload, a missing object and a bad type", async () => {
+    // The size is signed into the upload URL, so storage itself refuses another size.
     const mismatch = await upload(admin, new TextEncoder().encode("short"), "text/plain", 100);
-    expect((await app.request(`/uploads/${mismatch}/complete`, json(admin, {}))).status).toBe(422);
+    expect(mismatch.putStatus).not.toBe(200);
+    expect((await app.request(`/uploads/${mismatch.uploadId}/complete`, json(admin, {}))).status).toBe(409);
 
     const userId = (await one<{ id: string }>("select id from users limit 1")).id;
     const expired = await withTenantTx(pool, demoId, (tx) =>

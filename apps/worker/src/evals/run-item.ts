@@ -8,6 +8,7 @@ import {
   PipelineError,
   parseClassifyOutput,
   parseExtractOutput,
+  senderPolicy,
 } from "@ai-triage/core/pipeline";
 import {
   commitEvalResult,
@@ -21,7 +22,7 @@ import {
 } from "@ai-triage/db";
 import { errorGrade, gradeItem } from "@ai-triage/evals";
 import type { JsonSchema } from "@ai-triage/schemas";
-import { loadBlobs, loadCategoryOptions, parseSource, stageModel } from "../pipeline/source";
+import { loadBlobs, loadCategoryOptions, loadSender, parseSource, stageModel } from "../pipeline/source";
 import type { EvalDeps } from "./deps";
 
 // One eval item of one run (docs/architecture.md §8): the pipeline's own parse, requests, output
@@ -125,6 +126,12 @@ async function evaluate(deps: EvalDeps, job: EvalItemJob, input: EvalItemInput, 
       auditDraw: 1,
       // No document or extraction exists; the ids only label the stored (never sent) proposed action.
       ids: { documentId: item.id, extractionId: resultId },
+      sender: await loadSender(deps.storage, {
+        sourceKey: item.sourceKey,
+        mime: item.sourceMime,
+        title: item.sourceTitle,
+      }),
+      senderPolicy: senderPolicy(config.policy),
     });
     return {
       predictedCategory,

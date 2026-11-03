@@ -12,16 +12,19 @@ const KEEP = 100;
 /** @type {object[]} */
 const received = [];
 
-function verify(header, body, now) {
+// Signature v2: HMAC-SHA256 of "<t>.<Idempotency-Key>.<raw body>"; one v2 per secret during a rotation.
+function verify(header, idempotencyKey, body, now) {
   if (!SECRET) return "no secret configured";
   if (!header) return "missing";
-  const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=", 2)));
-  const t = Number(parts.t);
-  if (!Number.isFinite(t) || !parts.v1) return "malformed";
+  const pairs = header.split(",").map((kv) => kv.split("=", 2));
+  const t = Number(pairs.find(([k]) => k === "t")?.[1]);
+  const signatures = pairs.filter(([k, v]) => k === "v2" && v).map(([, v]) => Buffer.from(v, "hex"));
+  if (!Number.isFinite(t) || signatures.length === 0 || !idempotencyKey) return "malformed";
   if (Math.abs(now / 1000 - t) > TOLERANCE_SECONDS) return "timestamp outside tolerance";
-  const expected = createHmac("sha256", SECRET).update(`${parts.t}.${body}`).digest();
-  const given = Buffer.from(parts.v1, "hex");
-  return given.length === expected.length && timingSafeEqual(given, expected) ? "valid" : "invalid";
+  const expected = createHmac("sha256", SECRET).update(`${t}.${idempotencyKey}.${body}`).digest();
+  return signatures.some((given) => given.length === expected.length && timingSafeEqual(given, expected))
+    ? "valid"
+    : "invalid";
 }
 
 const escapeHtml = (s) =>
@@ -77,7 +80,7 @@ const server = createServer((req, res) => {
       status,
       idempotencyKey: req.headers["idempotency-key"] ?? null,
       event: req.headers["x-triage-event"] ?? null,
-      signature: verify(req.headers["x-triage-signature"], raw, Date.now()),
+      signature: verify(req.headers["x-triage-signature"], req.headers["idempotency-key"], raw, Date.now()),
       body,
     });
     received.length = Math.min(received.length, KEEP);

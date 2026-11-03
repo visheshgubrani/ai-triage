@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { apiKeys } from "./schema";
 import type { TenantTx } from "./tenant-tx";
@@ -33,12 +33,19 @@ export async function resolveApiKey(db: Db, key: string): Promise<{ tenantId: st
  * Creates an API key for the tenant in `tx`. Only its SHA-256 is stored, so the plaintext is
  * returned once. Format: `tri_<8 hex>_<32 base64url>`; the first part is the display prefix.
  */
-export async function createApiKey(tx: TenantTx, input: { name: string; createdBy?: string }) {
+export async function createApiKey(tx: TenantTx, input: { name: string; createdBy?: string; expiresAt?: Date | null }) {
   const prefix = `tri_${randomBytes(4).toString("hex")}`;
   const key = `${prefix}_${randomBytes(24).toString("base64url")}`;
   const [row] = await tx.db
     .insert(apiKeys)
-    .values({ tenantId: tx.tenantId, name: input.name, prefix, keyHash: hashApiKey(key), createdBy: input.createdBy })
+    .values({
+      tenantId: tx.tenantId,
+      name: input.name,
+      prefix,
+      keyHash: hashApiKey(key),
+      createdBy: input.createdBy,
+      expiresAt: input.expiresAt ?? null,
+    })
     .returning({ id: apiKeys.id });
   if (!row) throw new Error("api key insert returned no row");
   return { id: row.id, key, prefix };
@@ -55,4 +62,20 @@ export async function revokeApiKey(tx: TenantTx, keyId: string): Promise<boolean
 
 export async function touchApiKey(tx: TenantTx, keyId: string): Promise<void> {
   await tx.db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, keyId));
+}
+
+/** The tenant's keys, newest first (never the key or its hash). */
+export async function listApiKeys(tx: TenantTx) {
+  return tx.db
+    .select({
+      id: apiKeys.id,
+      name: apiKeys.name,
+      prefix: apiKeys.prefix,
+      createdAt: apiKeys.createdAt,
+      lastUsedAt: apiKeys.lastUsedAt,
+      expiresAt: apiKeys.expiresAt,
+      revokedAt: apiKeys.revokedAt,
+    })
+    .from(apiKeys)
+    .orderBy(desc(apiKeys.createdAt));
 }

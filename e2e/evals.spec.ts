@@ -49,6 +49,7 @@ test("evals: runs, calibration, Freeze, test, diff", async ({ page }) => {
     active: boolean;
   }[];
   const refused = await page.request.post(`${API}/evals/runs`, {
+    headers: { origin: new URL(page.url()).origin },
     data: { datasetId, split: "test", configId: configs.find((c) => c.active)?.id },
   });
   expect(refused.status()).toBe(422);

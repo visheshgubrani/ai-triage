@@ -44,3 +44,13 @@ export async function addMembership(db: Db, userId: string, tenantId: string, ro
     .values({ organizationId: tenantId, userId, role })
     .onConflictDoNothing({ target: [memberships.organizationId, memberships.userId] });
 }
+
+/** Whether the user has TOTP turned on, and the tenants they belong to (for audit events). */
+export async function userSecurityState(db: Db, userId: string) {
+  const [user] = await db.select({ twoFactorEnabled: users.twoFactorEnabled }).from(users).where(eq(users.id, userId));
+  const tenants = await db
+    .select({ tenantId: memberships.organizationId })
+    .from(memberships)
+    .where(eq(memberships.userId, userId));
+  return { twoFactorEnabled: user?.twoFactorEnabled ?? false, tenantIds: tenants.map((t) => t.tenantId) };
+}

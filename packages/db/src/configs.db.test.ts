@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   ConfigError,
+  createCandidateConfig,
   createConfigVersion,
   freezeConfig,
   getActiveConfig,
@@ -128,5 +129,21 @@ describe("pipeline configs", () => {
     const active = await inTenant((tx) => getActiveConfig(tx));
     expect(active?.id).toBe(config.id);
     expect(active?.categories).toHaveLength(2);
+  });
+});
+
+describe("createCandidateConfig sender policy", () => {
+  it("sets policy.sender on the candidate and leaves the parent's policy alone", async () => {
+    const { input } = await inTenant((tx) => insertConfigFixture(tx));
+    const parent = await inTenant((tx) => createConfigVersion(tx, input));
+    const candidate = await inTenant((tx) =>
+      createCandidateConfig(tx, {
+        parentId: parent.id,
+        name: "require sender auth",
+        sender: { require: true, trustedAuthServIds: ["MX.Google.com"] },
+      }),
+    );
+    expect(candidate.policy).toMatchObject({ sender: { require: true, trustedAuthServIds: ["mx.google.com"] } });
+    expect((parent.policy as { sender?: unknown }).sender).toBeUndefined();
   });
 });

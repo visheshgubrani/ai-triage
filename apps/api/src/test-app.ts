@@ -1,3 +1,4 @@
+import { egressPolicy } from "@ai-triage/core/pipeline";
 import {
   addMembership,
   createAuth,
@@ -5,19 +6,34 @@ import {
   createDb,
   createPool,
   ensurePasswordUser,
+  keyRingFromEnv,
   type PgBoss,
 } from "@ai-triage/db";
 import { DEMO_PASSWORD } from "@ai-triage/db/seed";
 import { testDbUrls } from "@ai-triage/db/testing";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { createApp } from "./app";
+import { type RateLimits, rateLimitsFromEnv } from "./rate-limit";
 
 // Builds the real app against the scratch test database and the local storage service.
 
 export const WEB_ORIGIN = "http://localhost:3000";
 export const POSTMARK = { user: "postmark", password: "test-postmark-password" };
 
-export async function createTestApp(options: { maxFileBytes?: number; allowHttpWebhooks?: boolean } = {}) {
+/**
+ * Test DNS: every name resolves to a public address, except names starting with "private.", which
+ * resolve into 10/8 (to exercise the SSRF check).
+ */
+const testResolve = async (hostname: string) => [hostname.startsWith("private.") ? "10.0.0.7" : "93.184.215.14"];
+
+export async function createTestApp(
+  options: {
+    maxFileBytes?: number;
+    webhookAllowedHosts?: string[];
+    rateLimits?: RateLimits;
+    requireAdmin2fa?: boolean;
+  } = {},
+) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
   let fixedNow: Date | null = null;
   const { appUrl } = testDbUrls();
@@ -41,8 +57,16 @@ export async function createTestApp(options: { maxFileBytes?: number; allowHttpW
     limits: { maxFileBytes: options.maxFileBytes ?? 20 * 2 ** 20 },
     postmark: POSTMARK,
     webOrigin: WEB_ORIGIN,
+    hsts: false,
+    trustedProxies: [],
     now: () => fixedNow ?? new Date(),
-    webhooks: { allowHttp: options.allowHttpWebhooks ?? false },
+    webhookEgress: { policy: egressPolicy(options.webhookAllowedHosts ?? []), resolve: testResolve },
+    keys: keyRingFromEnv({}),
+    // Every test file signs in as the demo users from the same (unknown) address, and the counters
+    // live in the shared test database: limits stay out of the way unless a test sets its own.
+    inboundDomain: null,
+    requireAdmin2fa: options.requireAdmin2fa ?? false,
+    rateLimits: options.rateLimits ?? rateLimitsFromEnv({ RATE_LIMIT_SCALE: "10000" }),
     llmMode: "replay",
   });
 

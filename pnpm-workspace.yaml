@@ -4,3 +4,6 @@ packages:
   - fixtures
 allowBuilds:
   esbuild: true
+# Supply chain (docs/security.md): don't install a version published less than a day ago, so a
+# hijacked release is usually caught and pulled before it can land here. In minutes.
+minimumReleaseAge: 1440

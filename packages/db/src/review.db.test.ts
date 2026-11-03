@@ -9,10 +9,12 @@ import {
   createAction,
   createBoss,
   createPool,
+  encryptLegacyWebhookSecrets,
   getWebhookSettings,
   heartbeat,
   inboxCounts,
   insertDecision,
+  keyRingFromEnv,
   listInbox,
   lockTaskForDecision,
   markDeliveryFailed,
@@ -24,14 +26,24 @@ import {
   setWebhook,
   stageJobId,
   startRun,
+  webhookTarget,
   withTenantTx,
 } from "./index";
-import { actions, documents, extractions, processingRuns, reviewDecisions, reviewTasks } from "./schema";
+import {
+  actions,
+  documents,
+  extractions,
+  processingRuns,
+  reviewDecisions,
+  reviewTasks,
+  tenantSettings,
+} from "./schema";
 import type { TenantTx } from "./tenant-tx";
 import { expectPgError, newTenant, PG, seedReviewTask, testDbUrls, testUser } from "./testing";
 
 const { appUrl } = testDbUrls();
 const app = createPool(appUrl);
+const KEYS = keyRingFromEnv({});
 let boss: PgBoss;
 let alice: string;
 let bob: string;
@@ -282,16 +294,47 @@ describe("delivery and settings", () => {
     expect(jobs[0]?.id).not.toBe(actionId);
   });
 
-  it("creates a webhook secret once, and shows only a hint of it", async () => {
+  it("creates a webhook secret once, stores it encrypted, and shows only a hint of it", async () => {
     const tenantId = await newTenant(app);
-    const first = await inTenant(tenantId, (tx) => setWebhook(tx, { url: "https://example.test/hook" }));
+    const first = await inTenant(tenantId, (tx) => setWebhook(tx, KEYS, { url: "https://example.test/hook" }));
     expect(first.secret).toMatch(/^whsec_/);
-    const second = await inTenant(tenantId, (tx) => setWebhook(tx, { url: "https://example.test/other" }));
+    const second = await inTenant(tenantId, (tx) => setWebhook(tx, KEYS, { url: "https://example.test/other" }));
     expect(second.secret).toBeNull();
-    const settings = await inTenant(tenantId, getWebhookSettings);
-    expect(settings).toEqual({ url: "https://example.test/other", secretSet: true, secretHint: expect.any(String) });
+    const settings = await inTenant(tenantId, (tx) => getWebhookSettings(tx, KEYS));
+    expect(settings).toEqual({
+      url: "https://example.test/other",
+      secretSet: true,
+      secretHint: expect.any(String),
+      previousSecretValidUntil: null,
+    });
     expect(first.secret?.startsWith(settings.secretHint?.slice(0, -1) ?? "?")).toBe(true);
-    const rotated = await inTenant(tenantId, rotateWebhookSecret);
-    expect(rotated).not.toBe(first.secret);
+    // At rest: ciphertext only, nothing in the legacy plaintext column.
+    const [row] = await inTenant(tenantId, (tx) => tx.db.select().from(tenantSettings));
+    expect(row?.webhookSecret).toBeNull();
+    expect(row?.webhookSecretEnc).toMatch(/^v1:/);
+    expect(row?.webhookSecretEnc).not.toContain(first.secret ?? "?");
+  });
+
+  it("signs with the old secret too for a grace period after a rotation", async () => {
+    const tenantId = await newTenant(app);
+    const now = new Date("2026-11-03T12:00:00Z");
+    const { secret: old } = await inTenant(tenantId, (tx) => setWebhook(tx, KEYS, { url: "https://example.test/h" }));
+    const rotated = await inTenant(tenantId, (tx) => rotateWebhookSecret(tx, KEYS, now));
+    expect(rotated).not.toBe(old);
+    const during = await inTenant(tenantId, (tx) => webhookTarget(tx, KEYS, new Date(now.getTime() + 3_600_000)));
+    expect(during.secrets).toEqual([rotated, old]);
+    const after = await inTenant(tenantId, (tx) => webhookTarget(tx, KEYS, new Date(now.getTime() + 25 * 3_600_000)));
+    expect(after.secrets).toEqual([rotated]);
+  });
+
+  it("encrypts plaintext secrets left by older versions (db:migrate)", async () => {
+    const tenantId = await newTenant(app);
+    await inTenant(tenantId, (tx) =>
+      tx.db.update(tenantSettings).set({ webhookUrl: "https://example.test/h", webhookSecret: "whsec_old" }),
+    );
+    expect(await encryptLegacyWebhookSecrets(app, KEYS)).toBeGreaterThanOrEqual(1);
+    expect((await inTenant(tenantId, (tx) => webhookTarget(tx, KEYS, new Date()))).secrets).toEqual(["whsec_old"]);
+    const [row] = await inTenant(tenantId, (tx) => tx.db.select().from(tenantSettings));
+    expect(row?.webhookSecret).toBeNull();
   });
 });

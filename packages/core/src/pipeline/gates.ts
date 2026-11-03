@@ -20,6 +20,10 @@ export interface GateInput {
   validationIssues: readonly ValidationIssue[];
   evidence: EvidenceResult;
   rules: readonly RuleResult[];
+  /** A phrase in the document that addresses the triage system (findInjection), or null. */
+  injection: string | null;
+  /** False only for email the config requires to be authenticated and that isn't. */
+  senderAuthenticated: boolean;
 }
 
 const isEmpty = (v: unknown) =>
@@ -28,6 +32,8 @@ const isEmpty = (v: unknown) =>
 export function runGates(input: GateInput): GateFailure[] {
   if (input.category === OTHER_CATEGORY) return [{ code: "category_other" }];
   const failures: GateFailure[] = [];
+  if (input.injection) failures.push({ code: "injection_suspected", detail: input.injection });
+  if (!input.senderAuthenticated) failures.push({ code: "sender_unauthenticated" });
 
   const invalid = new Map<string, string>();
   for (const issue of input.validationIssues) {

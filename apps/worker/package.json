@@ -11,7 +11,8 @@
     "seed:documents": "tsx --env-file-if-exists=../../.env src/bin/seed-documents.ts",
     "seed:evals": "tsx --env-file-if-exists=../../.env src/bin/seed-evals.ts",
     "eval:import": "tsx --env-file-if-exists=../../.env src/bin/eval-import.ts",
-    "cassettes:record": "tsx --env-file-if-exists=../../.env src/bin/record-cassettes.ts"
+    "cassettes:record": "tsx --env-file-if-exists=../../.env src/bin/record-cassettes.ts",
+    "tenant:delete": "tsx --env-file-if-exists=../../.env src/bin/tenant-delete.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",
@@ -22,7 +23,8 @@
     "@ai-triage/llm": "workspace:*",
     "@ai-triage/schemas": "workspace:*",
     "@ai-triage/storage": "workspace:*",
-    "pg-boss": "^12.38.0"
+    "pg-boss": "^12.38.0",
+    "undici": "^7.30.1"
   },
   "devDependencies": {
     "pdf-lib": "^1.17.1",

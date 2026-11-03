@@ -20,7 +20,7 @@ import {
 } from "@ai-triage/db";
 import { newTenant, SAMPLE_INVOICE_FIELDS, seedReviewTask } from "@ai-triage/db/testing";
 import { afterAll, describe, expect, it } from "vitest";
-import { createTestApp } from "./test-app";
+import { createTestApp, WEB_ORIGIN } from "./test-app";
 
 // Evals over HTTP (docs/architecture.md §8, §10): "Add to eval set" on approvals, runs and their
 // refusals (test needs a frozen config), Freeze from calib, configs, and the production tab.
@@ -67,7 +67,7 @@ const get = (path: string, cookie: string) => app.request(path, { headers: { coo
 const post = (path: string, cookie: string, body: unknown = {}) =>
   app.request(path, {
     method: "POST",
-    headers: { cookie, "content-type": "application/json" },
+    headers: { cookie, origin: WEB_ORIGIN, "content-type": "application/json" },
     body: JSON.stringify(body),
   });
 

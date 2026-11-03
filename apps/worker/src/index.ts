@@ -1,11 +1,13 @@
-import { auditDraw } from "@ai-triage/core/pipeline";
-import { assertAppRole, createBoss, createPool } from "@ai-triage/db";
+import { auditDraw, egressPolicyFromEnv } from "@ai-triage/core/pipeline";
+import { assertAppRole, assertSafeStartup, createBoss, createPool, keyRingFromEnv } from "@ai-triage/db";
 import { callModeOf, createTransport, getLlmMode } from "@ai-triage/llm";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { workerConfig } from "./config";
+import { createGuardedFetch } from "./delivery/egress";
 import { registerDelivery } from "./delivery/register";
 import { registerEvals } from "./evals/register";
 import { createDbLlmGateway } from "./llm";
+import { registerMaintenance } from "./maintenance/register";
 import { registerPipeline } from "./pipeline/register";
 
 const connectionString = process.env.DATABASE_URL;
@@ -17,6 +19,7 @@ const mode = getLlmMode();
 // `pnpm db:migrate`, so this instance never migrates (see packages/db/src/boss.ts).
 const pool = createPool(connectionString);
 await assertAppRole(pool);
+await assertSafeStartup(pool, process.env, "worker");
 
 // Workers need a direct (non-pooled) connection: see docs/architecture.md §3.
 const boss = createBoss(connectionString);
@@ -40,7 +43,17 @@ await registerEvals(
   { concurrency: config.evalConcurrency },
 );
 // Signed webhooks for approved actions. These deps have no LLM or storage: delivery only posts.
-await registerDelivery(boss, { pool, boss, fetch, now: () => new Date(), timeoutMs: config.webhookTimeoutMs });
+// Webhook URLs are tenant-chosen, so every connection goes through the SSRF guard.
+await registerDelivery(boss, {
+  pool,
+  boss,
+  keys: keyRingFromEnv(process.env),
+  fetch: createGuardedFetch(egressPolicyFromEnv(process.env)),
+  now: () => new Date(),
+  timeoutMs: config.webhookTimeoutMs,
+});
+
+await registerMaintenance(boss, { pool, boss, storage, now: () => new Date() });
 
 console.log(`worker started (llm mode: ${mode}${mode === "replay" ? `, cassettes: ${config.cassetteDir}` : ""})`);
 

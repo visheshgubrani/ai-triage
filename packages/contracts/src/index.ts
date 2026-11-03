@@ -1,5 +1,8 @@
 import {
   ACTION_STATUSES,
+  API_ERROR_CODES,
+  AUDIT_ACTIONS,
+  AUDIT_ACTOR_TYPES,
   AUTOMATION_MODES,
   DECISIONS,
   DELIVERY_STATUSES,
@@ -48,6 +51,9 @@ export const MeResponse = z.object({
   user: z.object({ id: z.string(), email: z.string(), name: z.string() }),
   tenant: z.object({ id: z.string(), name: z.string(), slug: z.string() }),
   role: MemberRole,
+  twoFactorEnabled: z.boolean(),
+  /** An admin who must turn on 2FA before admin settings work (REQUIRE_ADMIN_2FA). */
+  twoFactorRequired: z.boolean(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
@@ -61,9 +67,11 @@ export type Issue = z.infer<typeof Issue>;
  */
 export const ErrorResponse = z.object({
   error: z.string(),
-  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES]).optional(),
+  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES, ...API_ERROR_CODES]).optional(),
   issues: z.array(Issue).optional(),
   details: z.record(z.string(), z.unknown()).optional(),
+  /** Set on 500s: quote it when reporting a problem; the server log carries the same id. */
+  requestId: z.string().optional(),
 });
 export type ErrorResponse = z.infer<typeof ErrorResponse>;
 
@@ -376,6 +384,8 @@ export const WebhookSettings = z.object({
   secretSet: z.boolean(),
   /** The secret's first characters, to recognise it. The full secret is shown only when created. */
   secretHint: z.string().nullable(),
+  /** After a rotation: until when deliveries are also signed with the previous secret. */
+  previousSecretValidUntil: isoDate.nullable(),
 });
 export type WebhookSettings = z.infer<typeof WebhookSettings>;
 
@@ -390,6 +400,83 @@ export type WebhookSettingsRequest = z.infer<typeof WebhookSettingsRequest>;
 /** PUT /settings/webhook and POST /settings/webhook/rotate. `secret` is set only when one was created. */
 export const WebhookSettingsResponse = z.object({ settings: WebhookSettings, secret: z.string().nullable() });
 export type WebhookSettingsResponse = z.infer<typeof WebhookSettingsResponse>;
+
+// ── Inbound email ───────────────────────────────────────────────────────────────────────────
+
+/** GET /settings/inbound and POST /settings/inbound/rotate: where to forward mail for this tenant. */
+export const InboundSettings = z.object({ addresses: z.array(z.string()) });
+export type InboundSettings = z.infer<typeof InboundSettings>;
+
+// ── API keys ───────────────────────────────────────────────────────────────────────────────
+
+export const ApiKeySummary = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  /** `tri_xxxxxxxx`: enough to recognise a key, never enough to use it. */
+  prefix: z.string(),
+  createdAt: isoDate,
+  lastUsedAt: isoDate.nullable(),
+  expiresAt: isoDate.nullable(),
+  revokedAt: isoDate.nullable(),
+});
+export type ApiKeySummary = z.infer<typeof ApiKeySummary>;
+
+export const ApiKeyList = z.object({ keys: z.array(ApiKeySummary) });
+export type ApiKeyList = z.infer<typeof ApiKeyList>;
+
+export const ApiKeyRequest = z.object({
+  name: z.string().trim().min(1).max(100),
+  /** Omitted: the key never expires. */
+  expiresInDays: z.number().int().min(1).max(3650).optional(),
+});
+export type ApiKeyRequest = z.infer<typeof ApiKeyRequest>;
+
+/** POST /settings/api-keys: the key itself, shown this once. */
+export const ApiKeyCreated = z.object({ key: z.string(), apiKey: ApiKeySummary });
+export type ApiKeyCreated = z.infer<typeof ApiKeyCreated>;
+
+// ── Retention ──────────────────────────────────────────────────────────────────────────────
+
+/** GET/PUT /settings/retention: finished documents older than this are purged daily (null: kept). */
+export const RetentionSettings = z.object({ retentionDays: z.number().int().min(1).max(3650).nullable() });
+export type RetentionSettings = z.infer<typeof RetentionSettings>;
+
+// ── LLM budget ──────────────────────────────────────────────────────────────────────────────
+
+/** GET/PUT /settings/budget: the daily cap (USD) and today's (UTC) live spend. */
+export const BudgetSettings = z.object({
+  day: z.string(),
+  capUsd: z.number(),
+  spentUsd: z.number(),
+  reservedUsd: z.number(),
+});
+export type BudgetSettings = z.infer<typeof BudgetSettings>;
+
+export const BudgetRequest = z.object({ capUsd: z.number().min(0).max(100_000) });
+export type BudgetRequest = z.infer<typeof BudgetRequest>;
+
+// ── Audit log ───────────────────────────────────────────────────────────────────────────────
+
+export const AuditEvent = z.object({
+  id: z.uuid(),
+  actorType: z.enum(AUDIT_ACTOR_TYPES),
+  actorId: z.string().nullable(),
+  actorLabel: z.string().nullable(),
+  action: z.enum(AUDIT_ACTIONS),
+  targetType: z.string().nullable(),
+  targetId: z.string().nullable(),
+  details: z.record(z.string(), z.unknown()),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  requestId: z.string().nullable(),
+  createdAt: isoDate,
+});
+export type AuditEvent = z.infer<typeof AuditEvent>;
+
+export const AuditQuery = z.object({ cursor: z.string().max(200).optional() });
+
+export const AuditEventList = z.object({ events: z.array(AuditEvent), nextCursor: z.string().nullable() });
+export type AuditEventList = z.infer<typeof AuditEventList>;
 
 // ── Evals ────────────────────────────────────────────────────────────────────────────────────
 // Request bodies are Zod (validated); responses are typed with the metric shapes from @ai-triage/evals.
@@ -471,6 +558,16 @@ export const CandidateConfigRequest = z.object({
   classify: StageChange.optional(),
   extract: StageChange.optional(),
   categories: z.array(CategoryChange).max(50).optional(),
+  /**
+   * Require authenticated email (DMARC, or DKIM) to auto-approve, trusting Authentication-Results
+   * only from these receiving servers (e.g. `mx.google.com`). Omitted: the parent's policy.
+   */
+  sender: z
+    .object({
+      require: z.boolean(),
+      trustedAuthServIds: z.array(z.string().trim().min(1).max(253)).max(20),
+    })
+    .optional(),
 });
 export type CandidateConfigRequest = z.infer<typeof CandidateConfigRequest>;
 

@@ -1,8 +1,20 @@
 import { callModeOf, getLlmMode } from "@ai-triage/core";
-import { assertAppRole, createAuth, createBoss, createDb, createPool } from "@ai-triage/db";
+import { egressPolicyFromEnv } from "@ai-triage/core/pipeline";
+import {
+  assertAppRole,
+  assertSafeStartup,
+  createAuth,
+  createBoss,
+  createDb,
+  createPool,
+  keyRingFromEnv,
+} from "@ai-triage/db";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
+import { parseTrustedProxies } from "./client-ip";
+import { rateLimitsFromEnv } from "./rate-limit";
+import { systemResolve } from "./webhook-url";
 
 const port = Number(process.env.API_PORT ?? 8787);
 const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
@@ -13,13 +25,14 @@ if (!databaseUrl) throw new Error("DATABASE_URL is not set (see .env.example)");
 
 const pool = createPool(databaseUrl);
 await assertAppRole(pool);
+await assertSafeStartup(pool, process.env, "api");
 const db = createDb(pool);
-const auth = createAuth({
-  db,
-  secret,
-  baseURL: process.env.BETTER_AUTH_URL ?? `http://localhost:${port}`,
-  trustedOrigins: [webOrigin],
-});
+const baseURL = process.env.BETTER_AUTH_URL ?? `http://localhost:${port}`;
+const trustedProxies = (process.env.TRUSTED_PROXIES ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+const auth = createAuth({ db, secret, baseURL, trustedOrigins: [webOrigin], trustedProxies });
 
 // The api only enqueues (inside tenant transactions); the worker supervises and runs jobs.
 const boss = createBoss(databaseUrl, { supervise: false, schedule: false });
@@ -42,8 +55,17 @@ const app = createApp({
   limits: { maxFileBytes: Number(process.env.MAX_FILE_MB ?? 20) * 2 ** 20 },
   postmark: postmarkUser && postmarkPassword ? { user: postmarkUser, password: postmarkPassword } : null,
   webOrigin,
+  hsts: baseURL.startsWith("https://"),
+  trustedProxies: parseTrustedProxies(trustedProxies.join(",")),
   now: () => new Date(),
-  webhooks: { allowHttp: process.env.WEBHOOK_ALLOW_HTTP === "true" },
+  webhookEgress: { policy: egressPolicyFromEnv(process.env), resolve: systemResolve },
+  keys: keyRingFromEnv(process.env),
+  rateLimits: rateLimitsFromEnv(process.env),
+  inboundDomain: process.env.INBOUND_DOMAIN || null,
+  // On unless turned off explicitly, or for the local demo (whose admin has a published password anyway).
+  requireAdmin2fa: process.env.REQUIRE_ADMIN_2FA
+    ? process.env.REQUIRE_ADMIN_2FA === "true"
+    : process.env.TRIAGE_DEMO !== "true",
   llmMode: callModeOf(getLlmMode()),
 });
 

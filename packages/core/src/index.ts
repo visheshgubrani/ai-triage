@@ -122,6 +122,10 @@ export const QUEUES = {
   evalItem: "eval.item",
   /** Dead-letter queue of `eval.item`: stores an error result once retries are exhausted. */
   evalFailed: "eval.failed",
+  /** Daily housekeeping (cron): retention purges, expired uploads, old rate-limit windows. */
+  maintenance: "system.maintenance",
+  /** Deletes a purged document's objects, after the purge committed (the outbox for storage). */
+  storageDelete: "storage.delete",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -183,7 +187,19 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
     deadLetter: QUEUES.evalFailed,
   },
   [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
+  [QUEUES.maintenance]: { retryLimit: 3, retryDelay: 60, retryBackoff: true, expireInSeconds: 900 },
+  [QUEUES.storageDelete]: { retryLimit: 10, retryDelay: 30, retryBackoff: true, expireInSeconds: 300 },
 };
+
+/** When the maintenance job runs (cron, UTC). */
+export const MAINTENANCE_CRON = "15 3 * * *";
+
+/** Payload of `storage.delete`: objects and key prefixes, all inside `t/{tenantId}/`. */
+export interface StorageDeleteJob {
+  tenantId: string;
+  keys: string[];
+  prefixes: string[];
+}
 
 /** Payload of every pipeline stage job (and of its dead-letter copy). */
 export interface StageJob {
@@ -241,11 +257,44 @@ export const EVAL_ERROR_CODES = [
 ] as const;
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 
+/** Request-level refusals shared by every route (docs/security.md), shown as `code` in ErrorResponse. */
+export const API_ERROR_CODES = ["bad_origin", "unreadable_file", "rate_limited", "two_factor_required"] as const;
+export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
+/** Who did something recorded in the audit log: a member, a tenant API key, or the system (CLI, cron). */
+export const AUDIT_ACTOR_TYPES = ["user", "api_key", "system"] as const;
+export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
+
+/**
+ * Security-relevant changes recorded in `audit_events` (docs/security.md). Review decisions have
+ * their own trail (`review_decisions`) and aren't repeated here.
+ */
+export const AUDIT_ACTIONS = [
+  "settings.webhook_updated",
+  "settings.webhook_secret_rotated",
+  "settings.budget_updated",
+  "settings.retention_updated",
+  "settings.inbound_rotated",
+  "api_key.created",
+  "api_key.revoked",
+  "action.redelivered",
+  "config.created",
+  "config.frozen",
+  "config.activated",
+  "eval_run.created",
+  "eval_item.retired",
+  "document.purged",
+  "retention.swept",
+  "auth.two_factor_enabled",
+  "auth.two_factor_disabled",
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
 /** Headers of a webhook delivery. Receivers dedupe on the Idempotency-Key, which is the action id. */
 export const WEBHOOK_HEADERS = {
   idempotencyKey: "Idempotency-Key",
   event: "X-Triage-Event",
-  /** `t=<unix seconds>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>` */
+  /** `t=<unix seconds>,v2=<hex HMAC-SHA256(secret, "<t>.<idempotency key>.<body>")>[,v2=…]` */
   signature: "X-Triage-Signature",
 } as const;
 export const WEBHOOK_EVENT = "document.approved";
@@ -290,6 +339,10 @@ export const GATE_CODES = [
   "evidence_unverifiable",
   "rule_failed",
   "category_other",
+  /** The text addresses the triage system (deterministic patterns, pipeline/untrusted.ts). */
+  "injection_suspected",
+  /** Email that the config requires to be authenticated (SPF/DKIM/DMARC) and isn't. */
+  "sender_unauthenticated",
 ] as const;
 export type GateCode = (typeof GATE_CODES)[number];
 

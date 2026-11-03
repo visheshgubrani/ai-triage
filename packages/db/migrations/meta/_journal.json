@@ -64,6 +64,69 @@
       "when": 1793696858559,
       "tag": "0008_eval_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793707317533,
+      "tag": "0009_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793707318330,
+      "tag": "0010_audit_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793707972597,
+      "tag": "0011_webhook_secret_enc",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793708529163,
+      "tag": "0012_rate_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793709460226,
+      "tag": "0013_two_factor",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793709491672,
+      "tag": "0014_api_key_expires",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1793709492339,
+      "tag": "0015_api_key_expiry",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793709922585,
+      "tag": "0016_purge",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793709938521,
+      "tag": "0017_retention",
+      "breakpoints": true
     }
   ]
 }

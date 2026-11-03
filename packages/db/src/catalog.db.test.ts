@@ -45,7 +45,7 @@ describe("catalog", () => {
     expect(bad.map((r) => r.conname)).toEqual([]);
   });
 
-  it(`grants ${APP_GROUP_ROLE} read/write on every table except read-only model_prices`, async () => {
+  it(`grants ${APP_GROUP_ROLE} read/write on every table except read-only model_prices and append-only audit_events`, async () => {
     const { rows } = await owner.query<{ relname: string; sel: boolean; ins: boolean; upd: boolean; del: boolean }>(
       `select c.relname,
               has_table_privilege($1, c.oid, 'SELECT') as sel, has_table_privilege($1, c.oid, 'INSERT') as ins,
@@ -56,17 +56,18 @@ describe("catalog", () => {
     );
     for (const r of rows) {
       const writable = r.relname !== "model_prices";
+      const appendOnly = r.relname === "audit_events";
       expect({ table: r.relname, sel: r.sel, ins: r.ins, upd: r.upd, del: r.del }).toEqual({
         table: r.relname,
         sel: true,
         ins: writable,
-        upd: writable,
-        del: writable,
+        upd: writable && !appendOnly,
+        del: writable && !appendOnly,
       });
     }
   });
 
-  it("limits app_resolver to SELECT on the two lookup tables, through definer functions only", async () => {
+  it("limits app_resolver and app_purger to their definer functions", async () => {
     const { rows: policies } = await owner.query<{ table: string; cmd: string; roles: string[] }>(`
       select c.relname as table, p.polcmd as cmd, array(select rolname::text from pg_roles where oid = any(p.polroles)) as roles
       from pg_policy p join pg_class c on c.oid = p.polrelid
@@ -88,6 +89,8 @@ describe("catalog", () => {
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.prosecdef order by p.proname`);
     expect(functions).toEqual([
+      // The one way past the immutability guards (0016_purge.sql).
+      { name: "purge_document", owner: "app_purger", config: ["search_path=public, pg_temp"], public_exec: false },
       { name: "resolve_api_key", owner: "app_resolver", config: ["search_path=public, pg_temp"], public_exec: false },
       {
         name: "resolve_inbound_address",
@@ -98,7 +101,7 @@ describe("catalog", () => {
     ]);
 
     const { rows: members } = await owner.query(
-      "select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid where r.rolname = 'app_resolver'",
+      "select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid where r.rolname in ('app_resolver', 'app_purger')",
     );
     expect(members).toEqual([]);
   });

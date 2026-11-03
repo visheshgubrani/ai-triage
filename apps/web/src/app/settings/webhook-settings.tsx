@@ -44,7 +44,7 @@ export function WebhookSettingsView() {
   }
 
   async function rotate() {
-    if (!window.confirm("Rotate the signing secret? Receivers must switch to the new one.")) return;
+    if (!window.confirm("Rotate the signing secret? The old one keeps working for 24 hours.")) return;
     const res = await browserApi.settings.webhook.rotate.$post();
     if (!res.ok) return setMessage({ error: true, text: (await readError(res)).error });
     const body = await res.json();
@@ -92,6 +92,12 @@ export function WebhookSettingsView() {
           </span>
           {settings?.secretSet && <Button onClick={() => void rotate()}>Rotate</Button>}
         </div>
+        {settings?.previousSecretValidUntil && (
+          <p className="mt-2 text-neutral-600 dark:text-neutral-400">
+            Deliveries are also signed with the previous secret until{" "}
+            {new Date(settings.previousSecretValidUntil).toLocaleString()}, so receivers can switch over.
+          </p>
+        )}
         {secret && (
           <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950">
             <p className="text-amber-900 dark:text-amber-200">Copy this secret now; it won't be shown again.</p>
@@ -108,12 +114,14 @@ export function WebhookSettingsView() {
         <ul className="list-disc space-y-1 pl-5 text-neutral-600 dark:text-neutral-400">
           <li>
             Headers: <code>Idempotency-Key</code> (the action id), <code>X-Triage-Event: document.approved</code> and{" "}
-            <code>X-Triage-Signature: t=&lt;unix&gt;,v1=&lt;hex&gt;</code>.
+            <code>X-Triage-Signature: t=&lt;unix&gt;,v2=&lt;hex&gt;</code> (one <code>v2</code> per secret during a
+            rotation).
           </li>
           <li>
-            Verify: HMAC-SHA256 of <code>&lt;t&gt;.&lt;raw body&gt;</code> with the secret equals <code>v1</code>, and{" "}
-            <code>t</code> is within 5 minutes.
+            Verify: HMAC-SHA256 of <code>&lt;t&gt;.&lt;Idempotency-Key&gt;.&lt;raw body&gt;</code> with your secret
+            equals any <code>v2</code>, and <code>t</code> is within 5 minutes.
           </li>
+          <li>Webhook URLs must be public https; private receivers need the operator's WEBHOOK_ALLOWED_HOSTS.</li>
           <li>Delivery is at least once: dedupe on the Idempotency-Key. Answer 2xx to accept.</li>
           <li>
             5xx, 408, 425, 429, timeouts and network errors are retried with backoff; other 4xx and redirects fail at

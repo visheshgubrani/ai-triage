@@ -1,40 +1,194 @@
-import { type ErrorResponse, WebhookSettingsRequest, type WebhookSettingsResponse } from "@ai-triage/contracts";
-import { getWebhookSettings, rotateWebhookSecret, setWebhook, withTenantTx } from "@ai-triage/db";
+import {
+  type ApiKeyCreated,
+  type ApiKeyList,
+  ApiKeyRequest,
+  type ApiKeySummary,
+  type AuditEventList,
+  AuditQuery,
+  BudgetRequest,
+  type BudgetSettings,
+  type ErrorResponse,
+  type InboundSettings,
+  RetentionSettings,
+  WebhookSettingsRequest,
+  type WebhookSettingsResponse,
+} from "@ai-triage/contracts";
+import {
+  createApiKey,
+  getBudget,
+  getRetentionDays,
+  getWebhookSettings,
+  listApiKeys,
+  listAuditEvents,
+  listInboundAddresses,
+  recordAudit,
+  revokeApiKey,
+  rotateInboundAddress,
+  rotateWebhookSecret,
+  setBudgetCap,
+  setRetentionDays,
+  setWebhook,
+  withTenantTx,
+} from "@ai-triage/db";
 import { Hono } from "hono";
+import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
+import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
+import { webhookUrlProblem } from "../webhook-url";
+import { idParam } from "./documents";
+
+const iso = (d: Date | null) => d?.toISOString() ?? null;
+const toKeySummary = (k: Awaited<ReturnType<typeof listApiKeys>>[number]): ApiKeySummary => ({
+  ...k,
+  createdAt: k.createdAt.toISOString(),
+  lastUsedAt: iso(k.lastUsedAt),
+  expiresAt: iso(k.expiresAt),
+  revokedAt: iso(k.revokedAt),
+});
 
 /**
- * The tenant's webhook target (admins only). Deliveries go only here (docs/architecture.md §3). The
- * signing secret is returned once, when it is created or rotated.
+ * Tenant settings (admins only). The webhook target: deliveries go only here (docs/architecture.md
+ * §3), and the signing secret is returned once, when it is created or rotated. The audit log of
+ * security-relevant changes (docs/security.md).
  */
 export const settingsRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth), requireRole("admin"))
+    .use(requireTenant(deps), requireRole("admin"), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/webhook", async (c) => {
-      const settings = await withTenantTx(deps.pool, c.var.tenant.tenantId, getWebhookSettings);
+      const settings = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        getWebhookSettings(tx, deps.keys, deps.now()),
+      );
       return c.json(settings, 200);
     })
     .put("/webhook", validate("json", WebhookSettingsRequest), async (c) => {
       const { url } = c.req.valid("json");
-      if (url && !url.startsWith("https://") && !deps.webhooks.allowHttp) {
+      // Deliveries must not reach the operator's network (SSRF): public https hosts only, unless
+      // the operator allowlisted the host (WEBHOOK_ALLOWED_HOSTS).
+      const problem = url ? await webhookUrlProblem(url, deps.webhookEgress) : null;
+      if (problem) {
         const body: ErrorResponse = {
-          error: "The webhook URL must use https.",
-          issues: [{ field: "url", path: "/url", message: "must use https (http is allowed only in development)" }],
+          error: `The webhook URL ${problem}.`,
+          issues: [{ field: "url", path: "/url", message: problem }],
         };
         return c.json(body, 400);
       }
       const body: WebhookSettingsResponse = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
-        const { secret } = await setWebhook(tx, { url });
-        return { settings: await getWebhookSettings(tx), secret };
+        const { secret } = await setWebhook(tx, deps.keys, { url });
+        await recordAudit(tx, userActor(c, deps), {
+          action: "settings.webhook_updated",
+          details: { url, secretCreated: secret !== null },
+        });
+        return { settings: await getWebhookSettings(tx, deps.keys, deps.now()), secret };
       });
       return c.json(body, 200);
     })
     .post("/webhook/rotate", async (c) => {
       const body: WebhookSettingsResponse = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
-        const secret = await rotateWebhookSecret(tx);
-        return { settings: await getWebhookSettings(tx), secret };
+        const secret = await rotateWebhookSecret(tx, deps.keys, deps.now());
+        await recordAudit(tx, userActor(c, deps), { action: "settings.webhook_secret_rotated" });
+        return { settings: await getWebhookSettings(tx, deps.keys, deps.now()), secret };
       });
+      return c.json(body, 200);
+    })
+    .get("/api-keys", async (c) => {
+      const keys = await withTenantTx(deps.pool, c.var.tenant.tenantId, listApiKeys);
+      const body: ApiKeyList = { keys: keys.map(toKeySummary) };
+      return c.json(body, 200);
+    })
+    .post("/api-keys", validate("json", ApiKeyRequest), async (c) => {
+      const { name, expiresInDays } = c.req.valid("json");
+      const expiresAt = expiresInDays ? new Date(deps.now().getTime() + expiresInDays * 86_400_000) : null;
+      const body = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx): Promise<ApiKeyCreated> => {
+        const created = await createApiKey(tx, { name, expiresAt, createdBy: c.var.tenant.user.id });
+        await recordAudit(tx, userActor(c, deps), {
+          action: "api_key.created",
+          target: { type: "api_key", id: created.id },
+          details: { name, prefix: created.prefix, expiresAt: expiresAt?.toISOString() ?? null },
+        });
+        const summary = (await listApiKeys(tx)).find((k) => k.id === created.id);
+        if (!summary) throw new Error("created key not found");
+        return { key: created.key, apiKey: toKeySummary(summary) };
+      });
+      return c.json(body, 201);
+    })
+    .post("/api-keys/:id/revoke", idParam, async (c) => {
+      const id = c.req.valid("param").id;
+      const revoked = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const done = await revokeApiKey(tx, id);
+        if (done)
+          await recordAudit(tx, userActor(c, deps), { action: "api_key.revoked", target: { type: "api_key", id } });
+        return done;
+      });
+      if (!revoked) return c.json({ error: "Not found" }, 404);
+      return c.json({ revoked }, 200);
+    })
+    .get("/inbound", async (c) => {
+      const body: InboundSettings = {
+        addresses: await withTenantTx(deps.pool, c.var.tenant.tenantId, listInboundAddresses),
+      };
+      return c.json(body, 200);
+    })
+    .post("/inbound/rotate", async (c) => {
+      const body = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx): Promise<InboundSettings | null> => {
+        if (!deps.inboundDomain && (await listInboundAddresses(tx)).length === 0) return null;
+        const { from, to } = await rotateInboundAddress(tx, deps.inboundDomain ?? undefined);
+        await recordAudit(tx, userActor(c, deps), { action: "settings.inbound_rotated", details: { from, to } });
+        return { addresses: [to] };
+      });
+      if (!body) {
+        const error: ErrorResponse = { error: "No inbound domain is configured (INBOUND_DOMAIN)." };
+        return c.json(error, 409);
+      }
+      return c.json(body, 200);
+    })
+    .get("/retention", async (c) => {
+      const body: RetentionSettings = {
+        retentionDays: await withTenantTx(deps.pool, c.var.tenant.tenantId, getRetentionDays),
+      };
+      return c.json(body, 200);
+    })
+    .put("/retention", validate("json", RetentionSettings), async (c) => {
+      const { retentionDays } = c.req.valid("json");
+      await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const before = await getRetentionDays(tx);
+        await setRetentionDays(tx, retentionDays);
+        await recordAudit(tx, userActor(c, deps), {
+          action: "settings.retention_updated",
+          details: { fromDays: before, toDays: retentionDays },
+        });
+      });
+      const body: RetentionSettings = { retentionDays };
+      return c.json(body, 200);
+    })
+    .get("/budget", async (c) => {
+      const body: BudgetSettings = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        getBudget(tx, deps.now()),
+      );
+      return c.json(body, 200);
+    })
+    .put("/budget", validate("json", BudgetRequest), async (c) => {
+      const { capUsd } = c.req.valid("json");
+      const body: BudgetSettings = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const before = await getBudget(tx, deps.now());
+        await setBudgetCap(tx, capUsd, deps.now());
+        await recordAudit(tx, userActor(c, deps), {
+          action: "settings.budget_updated",
+          details: { fromUsd: before.capUsd, toUsd: capUsd },
+        });
+        return getBudget(tx, deps.now());
+      });
+      return c.json(body, 200);
+    })
+    .get("/audit", validate("query", AuditQuery), async (c) => {
+      const { cursor } = c.req.valid("query");
+      const page = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        listAuditEvents(tx, { cursor, limit: 50 }),
+      );
+      const body: AuditEventList = {
+        events: page.events.map((e) => ({ ...e, createdAt: e.createdAt.toISOString() })),
+        nextCursor: page.nextCursor,
+      };
       return c.json(body, 200);
     });

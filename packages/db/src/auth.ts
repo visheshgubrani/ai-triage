@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization } from "better-auth/plugins";
+import { organization, twoFactor } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements } from "better-auth/plugins/organization/access";
 import { asc, eq } from "drizzle-orm";
@@ -29,9 +29,11 @@ export interface AuthOptions {
   baseURL: string;
   /** Origins allowed to call the auth endpoints (the web app). */
   trustedOrigins: string[];
+  /** Proxies whose X-Forwarded-For is believed (TRUSTED_PROXIES), for session IPs. */
+  trustedProxies?: string[];
 }
 
-export function createAuth({ db, secret, baseURL, trustedOrigins }: AuthOptions) {
+export function createAuth({ db, secret, baseURL, trustedOrigins, trustedProxies = [] }: AuthOptions) {
   return betterAuth({
     appName: "AI Triage",
     secret,
@@ -40,12 +42,22 @@ export function createAuth({ db, secret, baseURL, trustedOrigins }: AuthOptions)
     database: drizzleAdapter(db, { provider: "pg", schema }),
     // The adapter finds tables by these export names in ./schema.
     user: { modelName: "users" },
-    session: { modelName: "sessions" },
     account: { modelName: "accounts" },
     verification: { modelName: "verifications" },
-    // Leave id out of inserts so Postgres fills uuid defaults; tenant_id columns are uuid.
-    advanced: { database: { generateId: "uuid" } },
-    emailAndPassword: { enabled: true, disableSignUp: true },
+    advanced: {
+      // Leave id out of inserts so Postgres fills uuid defaults; tenant_id columns are uuid.
+      database: { generateId: "uuid" },
+      // Secure cookies whenever the API is served over https, whatever NODE_ENV says.
+      useSecureCookies: baseURL.startsWith("https://"),
+      ipAddress: { trustedProxies },
+    },
+    // The api rate-limits /api/auth itself, in Postgres and keyed on the trusted client IP
+    // (apps/api/src/rate-limit.ts). Better Auth's limiter is per process, and without a proxy header
+    // it would put every client in one bucket.
+    rateLimit: { enabled: false },
+    // Sliding 7-day sessions, refreshed at most daily (Better Auth's defaults, stated on purpose).
+    session: { modelName: "sessions", expiresIn: 7 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
+    emailAndPassword: { enabled: true, disableSignUp: true, minPasswordLength: 12 },
     databaseHooks: {
       session: {
         create: {
@@ -63,6 +75,9 @@ export function createAuth({ db, secret, baseURL, trustedOrigins }: AuthOptions)
       },
     },
     plugins: [
+      // TOTP with backup codes (docs/security.md, M6). Better Auth encrypts the TOTP secret with
+      // BETTER_AUTH_SECRET; the api requires it for admin-only routes when REQUIRE_ADMIN_2FA is on.
+      twoFactor({ issuer: "AI Triage", schema: { twoFactor: { modelName: "twoFactors" } } }),
       organization({
         ac,
         roles,

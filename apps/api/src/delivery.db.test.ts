@@ -4,7 +4,7 @@ import { QUEUES } from "@ai-triage/core";
 import { buildPipelineConfig, createAction, markDeliveryFailed, withTenantTx } from "@ai-triage/db";
 import { newTenant, seedReviewTask } from "@ai-triage/db/testing";
 import { afterAll, describe, expect, it } from "vitest";
-import { createTestApp } from "./test-app";
+import { createTestApp, WEB_ORIGIN } from "./test-app";
 
 // The outbox views (Delivery failures, Redeliver) and the admin-only webhook settings.
 
@@ -15,7 +15,7 @@ afterAll(t.close);
 const send = (method: string, path: string, cookie: string, body?: unknown) =>
   app.request(path, {
     method,
-    headers: { cookie, "content-type": "application/json" },
+    headers: { cookie, origin: WEB_ORIGIN, "content-type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 
@@ -84,13 +84,43 @@ describe("webhook settings", () => {
     });
   });
 
-  it("refuses http URLs here (no WEBHOOK_ALLOW_HTTP), bad URLs, and non-admins", async () => {
+  it("refuses URLs that could reach a private network (SSRF), and non-admins", async () => {
     const tenantId = await newTenant(pool);
     const admin = await t.memberCookie(tenantId, "admin");
-    expect((await send("PUT", "/settings/webhook", admin, { url: "http://hooks.example.test/x" })).status).toBe(400);
-    expect((await send("PUT", "/settings/webhook", admin, { url: "ftp://hooks.example.test/x" })).status).toBe(400);
+    const refused = async (url: string) => {
+      const res = await send("PUT", "/settings/webhook", admin, { url });
+      return { status: res.status, error: ((await res.json()) as { error: string }).error };
+    };
+    expect(await refused("http://hooks.example.test/x")).toEqual({
+      status: 400,
+      error: expect.stringMatching(/https/),
+    });
+    expect((await refused("ftp://hooks.example.test/x")).status).toBe(400);
+    for (const url of [
+      "https://169.254.169.254/latest",
+      "https://127.0.0.1/x",
+      "https://[::1]/x",
+      "https://10.1.2.3/x",
+    ]) {
+      expect(await refused(url)).toEqual({ status: 400, error: expect.stringMatching(/private or reserved/) });
+    }
+    // A public-looking name that resolves into 10/8 (the test DNS does this for "private.").
+    expect(await refused("https://private.hooks.example.test/x")).toEqual({
+      status: 400,
+      error: expect.stringMatching(/resolves to a private/),
+    });
+    expect((await refused("https://user:pw@hooks.example.test/x")).status).toBe(400);
+    expect((await refused("https://hooks.example.test:22/x")).status).toBe(400);
     const reviewer = await t.memberCookie(tenantId, "reviewer");
     expect((await send("GET", "/settings/webhook", reviewer)).status).toBe(403);
     expect((await send("PUT", "/settings/webhook", reviewer, { url: "https://x.test" })).status).toBe(403);
+  });
+
+  it("shows the rotation grace period", async () => {
+    const tenantId = await newTenant(pool);
+    const admin = await t.memberCookie(tenantId, "admin");
+    await send("PUT", "/settings/webhook", admin, { url: "https://hooks.example.test/triage" });
+    const rotated = (await (await send("POST", "/settings/webhook/rotate", admin)).json()) as WebhookSettingsResponse;
+    expect(rotated.settings.previousSecretValidUntil).not.toBeNull();
   });
 });

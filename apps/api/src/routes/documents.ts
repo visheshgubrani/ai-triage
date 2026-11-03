@@ -7,13 +7,23 @@ import type {
   SourceUrlResponse,
 } from "@ai-triage/contracts";
 import { EMAIL_SOURCE_MIME } from "@ai-triage/core";
-import { getDocumentDetail, listDocuments, loadDocument, loadPart, withTenantTx } from "@ai-triage/db";
+import {
+  getDocumentDetail,
+  listDocuments,
+  loadDocument,
+  loadPart,
+  purgeDocument,
+  recordAudit,
+  withTenantTx,
+} from "@ai-triage/db";
 import { readEmailView } from "@ai-triage/ingest";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
-import { requireTenant, type TenantEnv } from "../tenant";
+import { limitUserWrites } from "../rate-limit";
+import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 
 /** A malformed id is just a document that doesn't exist. */
 export const idParam = zValidator("param", z.object({ id: z.uuid() }), (result, c) => {
@@ -148,7 +158,7 @@ const partParam = zValidator("param", z.object({ id: z.uuid(), index: z.coerce.n
 /** Document views for any member of the tenant, including the sources the review page shows. */
 export const documentRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth))
+    .use(requireTenant(deps), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/", async (c) => {
       const rows = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDocuments(tx, { limit: 100 }));
       const body: DocumentList = { documents: rows.map(summary) };
@@ -161,13 +171,31 @@ export const documentRoutes = (deps: AppDeps) =>
       if (!found) return c.json({ error: "Not found" }, 404);
       return c.json(detail(found, deps.now()), 200);
     })
+    // Deletes the document and everything derived from it (docs/security.md, privacy). Admins only;
+    // the audit event keeps the id and a hash of the external id, never content.
+    .delete("/:id", requireRole("admin"), idParam, async (c) => {
+      const id = c.req.valid("param").id;
+      const purged = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const done = await purgeDocument(tx, deps.boss, id);
+        if (done) {
+          await recordAudit(tx, userActor(c, deps), {
+            action: "document.purged",
+            target: { type: "document", id },
+            details: done,
+          });
+        }
+        return done;
+      });
+      if (!purged) return c.json({ error: "Not found" }, 404);
+      return c.json({ deleted: true }, 200);
+    })
     .get("/:id/source", idParam, async (c) => {
       const document = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
         loadDocument(tx, c.req.valid("param").id),
       );
       if (!document) return c.json({ error: "Not found" }, 404);
       const body: SourceUrlResponse = {
-        url: await deps.storage.presignGet(document.sourceKey, 300, document.title),
+        url: await deps.storage.presignGet(document.sourceKey, 300, { mime: document.mime, filename: document.title }),
       };
       return c.json(body, 200);
     })
@@ -184,7 +212,7 @@ export const documentRoutes = (deps: AppDeps) =>
       const part = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => loadPart(tx, id, index));
       if (!part?.storageKey) return c.json({ error: "Not found" }, 404);
       const body: FileUrlResponse = {
-        url: await deps.storage.presignGet(part.storageKey, 300, part.label),
+        url: await deps.storage.presignGet(part.storageKey, 300, { mime: part.mime, filename: part.label }),
         mime: part.mime,
         label: part.label,
       };

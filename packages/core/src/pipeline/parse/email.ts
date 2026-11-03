@@ -25,6 +25,11 @@ export interface NormalizedEmail {
   /** Plain-text body; derived from the HTML body when there is no text part. */
   text: string;
   attachments: EmailAttachment[];
+  /**
+   * Authentication-Results header values, topmost first, as received. Never shown to the model;
+   * the sender gate trusts only those from the tenant's trusted servers (pipeline/untrusted.ts).
+   */
+  authResults: string[];
 }
 
 export interface StoredAttachment {
@@ -44,6 +49,8 @@ export interface StoredEmail {
   date: string | null;
   text: string;
   attachments: StoredAttachment[];
+  /** Absent in emails stored before it was recorded (treated as none). */
+  authResults?: string[];
 }
 
 /** The subset of Postmark's inbound webhook payload this app reads. */
@@ -76,14 +83,20 @@ function formatAddress(email: string | null, name: string | null): string | null
   return name ? `${name} <${email}>` : email;
 }
 
+/** Joins a folded header onto one line. */
+const unfold = (value: string) => value.replace(/\r?\n[ \t]+/g, " ").trim();
+
 export function normalizePostmark(payload: PostmarkInbound): NormalizedEmail {
   const header = (name: string) =>
     payload.Headers?.find((h) => h.Name.toLowerCase() === name.toLowerCase())?.Value ?? null;
-  const recipients = [
-    payload.OriginalRecipient,
-    ...(payload.ToFull ?? []).map((t) => t.Email),
-    ...(payload.CcFull ?? []).map((t) => t.Email),
-  ]
+  // The envelope recipient decides the tenant when Postmark gives it; To and Cc are headers the
+  // sender wrote, so they are used only without one.
+  const original = clean(payload.OriginalRecipient);
+  const recipients = (
+    original
+      ? [original]
+      : [...(payload.ToFull ?? []).map((t) => t.Email), ...(payload.CcFull ?? []).map((t) => t.Email)]
+  )
     .map((r) => clean(r)?.toLowerCase())
     .filter((r): r is string => !!r);
   return {
@@ -96,6 +109,9 @@ export function normalizePostmark(payload: PostmarkInbound): NormalizedEmail {
     date: clean(payload.Date),
     recipients: [...new Set(recipients)],
     text: clean(payload.TextBody) ?? (payload.HtmlBody ? htmlToText(payload.HtmlBody) : ""),
+    authResults: (payload.Headers ?? [])
+      .filter((h) => h.Name.toLowerCase() === "authentication-results")
+      .map((h) => unfold(h.Value)),
     attachments: (payload.Attachments ?? []).map((a, i) => {
       const content = new Uint8Array(Buffer.from(a.Content ?? "", "base64"));
       return {
@@ -125,6 +141,9 @@ export async function normalizeEml(bytes: Uint8Array): Promise<NormalizedEmail> 
       ...new Set([...addresses(mail.to), ...addresses(mail.cc)].map((r) => r.toLowerCase()).filter(Boolean)),
     ],
     text: clean(mail.text) ?? (mail.html ? htmlToText(mail.html) : ""),
+    authResults: mail.headerLines
+      .filter((h) => h.key === "authentication-results")
+      .map((h) => unfold(h.line.replace(/^authentication-results:\s*/i, ""))),
     attachments: mail.attachments.map((a, i) => ({
       filename: clean(a.filename) ?? `attachment-${i + 1}`,
       mime: a.contentType.toLowerCase(),

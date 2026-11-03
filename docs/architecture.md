@@ -74,6 +74,8 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 - **The quickstart is `docker compose up --build`.** A one-shot `init` service runs migrations, creates the storage bucket and seeds the demo tenant (around 60 synthetic documents and a labeled dataset with splits), and it is idempotent. `api`, `worker` and `web` wait for it with `depends_on: condition: service_completed_successfully`. The demo runs in **replay mode**, so the evals page is populated and no API key is needed.
 - **`LLM_MODE` is explicit.** `replay` (the default) serves cassettes from `fixtures/cassettes`, keyed by request hash. **A missing cassette is a hard error** (`CassetteMissError`, naming the hash and the record command), never a silent fallback to a paid call. `record` calls the live API and writes cassettes. `live` has to be set on purpose.
 - The contributor dev loop is `docker compose up -d postgres storage` followed by `pnpm dev`. `pnpm ingest <file>` pushes an .eml, PDF or JSON file through the real ingestion path.
+- **Web in Docker:** server components call the API at `API_INTERNAL_URL` (compose: `http://api:8787`); the browser uses `NEXT_PUBLIC_API_URL`, inlined at build time.
+- **Fixtures** are generated once and committed, and cassettes are keyed by the exact request bytes, so fixtures don't change casually. Providers, modes and recording are in [llm.md](llm.md).
 - The README carries the architecture diagram, an evals screenshot, a "design decisions" section and a "known limits" section (repeat model calls, what evidence matching proves, injection).
 
 ---
@@ -89,7 +91,7 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 - **Storage:** the client never supplies a key. `POST /uploads` creates an `uploads` row with a server key (`t/{tenant}/u/{uuid}`), an expiry and a presigned PUT. `POST /uploads/:id/complete` checks the row belongs to the tenant, HEADs the object to confirm size and mime, then creates the document. Downloads go through `GET /documents/:id/source`: the RLS-checked lookup returns a short-lived presigned GET.
 - Review decisions and actions resolve every referenced id inside the tenant transaction. Webhook targets come only from tenant settings.
 - **Short transactions:** read under the tenant context and commit, call Claude with no transaction open, then commit the result with revision checks.
-- Auth: Better Auth with the organizations plugin, whose organization *is* the `tenants` table (`modelName` renames: `users`, `sessions`, `accounts`, `verifications`, `tenants`, `memberships`, `invitations`, all with uuid ids). These auth tables are global (no RLS) and keep BA's `organization_id` naming. Roles are `admin`, `reviewer` and `viewer`. Public sign-up and user-created organizations are disabled. Tenants are created by `createTenant()` (tenant, settings and inbound address in one transaction). A new session lands in the user's first tenant, and the API re-checks membership on every request.
+- Auth: Better Auth with the organizations plugin, whose organization *is* the `tenants` table (`modelName` renames: `users`, `sessions`, `accounts`, `verifications`, `tenants`, `memberships`, `invitations`, all with uuid ids). These auth tables are global (no RLS) and keep BA's `organization_id` naming. Roles are `admin`, `reviewer` and `viewer`. Public sign-up and user-created organizations are disabled. The API mounts only the Better Auth endpoints the web uses (sign-in/out, session, password, sessions list/revoke, TOTP 2FA); admin-only routes require the admin's 2FA when `REQUIRE_ADMIN_2FA` is on. Tenants are created by `createTenant()` (tenant, settings and inbound address in one transaction). A new session lands in the user's first tenant, and the API re-checks membership on every request.
 
 ---
 
@@ -98,7 +100,7 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 | Table | Notes |
 |---|---|
 | `tenants`, `users`, `sessions`, `accounts`, `verifications`, `memberships`, `invitations` | Better Auth's tables (global, no RLS); `memberships.role` ∈ admin/reviewer/viewer |
-| `tenant_settings` | PK `tenant_id`: `active_config_id`, webhook URL and secret, `daily_llm_cap_usd` |
+| `tenant_settings` | PK `tenant_id`: `active_config_id`, webhook URL, the signing secret **encrypted** (`webhook_secret_enc`, AES-256-GCM with the tenant id as AAD) and the previous one during a rotation's grace period, `daily_llm_cap_usd` |
 | `api_keys` | `key_hash` unique, `prefix`, `revoked_at` |
 | `inbound_addresses` | `address` unique → tenant |
 | `uploads` | server-issued `storage_key`, expected size/mime, `expires_at`, `completed_at` |
@@ -114,6 +116,8 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 | `review_tasks` | document, `kind` (`review`/`audit`/`processing_failed`/`unclassified`), `extraction_id` (**nullable**; a CHECK requires it when kind is `review` or `audit`), reasons, status (`pending`/`claimed`/`awaiting_extraction`/`resolved`), `claimed_by`, **`claim_token`**, `lease_expires_at` |
 | `review_decisions` | reviewer, outcome, `task_kind` (the task's kind when decided), `extraction_id` (the revision decided on, or the one an edit produced), `before`, `after`, diff, note. **Insert-only** (trigger): the review queue's audit trail |
 | `actions` | document (NOT NULL), **`extraction_id`** (unique), **frozen `payload`** (a trigger allows only the delivery columns to change), status, attempts, `last_error`. The action `id` is the `Idempotency-Key` |
+| `tenant_settings.retention_days` | Finished documents older than this are purged by the nightly `system.maintenance` job (null keeps them). Deletion goes only through `purge_document()` (0016_purge.sql), owned by `app_purger`, the one role the immutability guards let delete |
+| `audit_events` | Security-relevant changes per tenant: actor (user / API key / system), action (`AUDIT_ACTIONS`), target, `details` (never secrets), ip, user agent, request id. Written in the same transaction as the change; **insert-only** (no UPDATE/DELETE grant, plus a trigger). Review decisions keep their own trail |
 | `model_prices` | per model and prompt-size tier (`prompt_tokens_above`): per-MTok input, output, 5m and 1h cache write, cache read; batch multiplier; `effective_from`. Global and read-only for the app |
 | `llm_budget_days` | `(tenant_id, day)` → `cap_usd`, `spent_usd`, `reserved_usd` |
 | `eval_datasets`, `eval_items` | immutable source snapshot (`source_key`, `source_mime`, `source_title`, stored exactly as a document's source), `content_key` (derived like `external_id`; unique per dataset among active items), `expected_category`, `expected_fields`, **`split` (`dev`/`calib`/`test`)**, origin and `origin_ref`, tags, `retired_at` (set once; items are otherwise immutable). No link to `documents` |
@@ -134,7 +138,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 **Each stage handler (parse → classify → extract → route) follows the same three steps:**
 1. **Read.** In a short transaction, load the run and its inputs. Stop if the run is superseded or the stage is already done.
 2. **Call.** If a successful attempt already exists for `(context, stage)`, reuse it. Otherwise reserve budget (live mode only; see below), call Claude, and **insert the attempt row, response included, in its own small transaction right away**. This narrows repeat calls but can't remove them: if the worker crashes between Claude returning and that insert, the retry calls Claude again. The README says so plainly: *repeated model calls are possible, and saved responses are reused whenever available.* Every attempt is kept for cost accounting.
-3. **Commit.** In one transaction: advance status with `WHERE current_run_id = $run AND processing_status = $expected` (first: it locks the document row), write the stage result, update pointers such as `current_extraction_id` (after the insert, since that FK isn't deferrable), mark the attempt used as `canonical`, then enqueue the next job through the same client. If the guard matches nothing, the run is stale and the handler exits. Stage results are unique per run and stage, and actions are unique per approved revision, so a repeated model call can never produce a second extraction or a second action.
+3. **Commit.** In one transaction: advance status with `WHERE current_run_id = $run AND processing_status = $expected` (first: it locks the document row), write the stage result, update pointers such as `current_extraction_id` (after the insert, since that FK isn't deferrable), mark the attempt used as `canonical`, then enqueue the next job through the same client (stage jobs have deterministic ids, `stageJobId`, so a duplicate send is a no-op). If the guard matches nothing, the run is stale and the handler exits. Stage results are unique per run and stage, and actions are unique per approved revision, so a repeated model call can never produce a second extraction or a second action.
 
 **Parse.**
 - Email bodies become plain text with offsets. DOCX goes through `mammoth`.
@@ -161,6 +165,8 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 | Reject | `review_status=rejected`, which is terminal. No action is created and `delivery_status` stays `none` |
 | Delivery exhausts its retries | `delivery_status=failed`. The item shows in a "Delivery failures" filter with manual **Redeliver** (same idempotency key). The review outcome doesn't change |
 
+**Failure classes:** a `PipelineError` (bad file, refusal, `max_tokens`, missing cassette, budget, …) fails the run at once. Anything else is retried by pg-boss per `QUEUE_OPTIONS`, then dead-lettered to `doc.failed`. `failRun` is guarded on the failing stage's input status, so a stale job can't fail a newer run.
+
 **Actions by task kind** (enforced by the API, not only the UI):
 | Task kind | Available actions |
 |---|---|
@@ -168,20 +174,21 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 | `unclassified` | Reclassify, Reject |
 | `review`, `audit` | Approve, Edit & approve, Reclassify, Reject |
 
-**Approval check (one transaction):** the document row and then the task row are locked (the worker's order, so they can't deadlock). The task must be claimed by this user, `claim_token` must match, the lease must be valid, and `extraction_id` must equal `documents.current_extraction_id`. Any mismatch returns 409 with a `code` and the UI reloads; an action outside the task kind's list returns 422. An expired browser tab can't approve. Every decision goes through `POST /review/tasks/:id/decisions`.
+**Approval check (one transaction):** the document row and then the task row are locked (the worker's order, so they can't deadlock). The task must be claimed by this user, `claim_token` must match, the lease must be valid, and `extraction_id` must equal `documents.current_extraction_id`. Any mismatch returns 409 with a `code` and the UI reloads; an action outside the task kind's list returns 422. An expired browser tab can't approve. Every decision goes through `POST /review/tasks/:id/decisions` (`apps/api/src/review.ts`). Refusals are `ReviewError(code)`: 409 when the state moved on (`claim_lost`, `stale_revision`, `task_resolved`, `reprocessing`, `claimed_by_other`, `not_redeliverable`), 422 when the request can never apply (`action_not_allowed`, `invalid_fields`, `invalid_category`).
 
-**Delivery:** a POST of the frozen payload with `Idempotency-Key` (the action id), `X-Triage-Event` and `X-Triage-Signature: t=<unix>,v1=<hex HMAC-SHA256(secret, "<t>.<body>")>`, at least once, with no transaction open during the call. Redirects aren't followed.
+**Delivery:** a POST of the frozen payload with `Idempotency-Key` (the action id), `X-Triage-Event` and `X-Triage-Signature: t=<unix>,v2=<hex HMAC-SHA256(secret, "<t>.<idempotency key>.<body>")>` (one `v2` per secret during a rotation), at least once, with no transaction open during the call. Redirects aren't followed.
 - A 2xx delivers it. A missing URL or secret, a 3xx, or a 4xx other than 408/425/429 fails the action at once.
 - Anything else (5xx, 408/425/429, timeouts, network errors) counts an attempt and is retried by pg-boss with backoff, then dead-lettered to `action.failed`, which marks it failed.
 - **Redeliver** (failed or delivered actions) re-enqueues with a fresh job id and the same Idempotency-Key; `actions` keeps one row.
-- The webhook URL and secret come only from tenant settings (admins; `https:` unless `WEBHOOK_ALLOW_HTTP=true`). The secret is shown once, when created or rotated. The README documents the receiver contract.
+- The webhook URL and secret come only from tenant settings (admins). The secret is shown once, when created or rotated; a rotation keeps the old one signing for 24 h.
+- **SSRF guard** (`checkWebhookUrl`, `isAllowedAddress` in `@ai-triage/core/pipeline`): https only, no credentials, port 443/8443/>1023, and every resolved address public unicast. The API checks DNS when the URL is saved; the worker's fetch resolves through a guarded lookup at every connection (DNS rebinding). `WEBHOOK_ALLOWED_HOSTS` (hostnames or CIDRs) admits private receivers; `TRIAGE_DEMO` admits localhost and the catcher. A blocked URL fails the delivery at once; network errors are stored generically ("connection failed"), and at most 4 KiB of a response is read. The README documents the receiver contract.
 
 **Claude calls (`@anthropic-ai/sdk`):**
 - `messages.create` with `output_config.format` json_schema, sent the stripped schema. Ajv then validates the **full** schema.
 - Model and effort come from the config. The default is `claude-opus-5-5` at `effort: "low"` for classify and `"low"`/`"medium"` for extract, and the evals page compares alternatives such as `claude-sonnet-5-5` and `claude-haiku-5-5`.
 - `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`), with a `stop_reason` check before reading content.
 - The system prompt (instructions, category definitions, few-shot examples) is cached; the document comes after it.
-- **Budget:** a daily cap per tenant, reserved atomically before each live call:
+- **Budget:** a daily cap per tenant (admins edit it in Settings; today's row takes the new cap at once), reserved atomically before each live call:
   ```sql
   UPDATE llm_budget_days SET reserved_usd = reserved_usd + $worst_case
   WHERE spent_usd + reserved_usd + $worst_case <= cap_usd RETURNING …
@@ -206,6 +213,8 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
   - **Evidence check:** `text` means the quote must appear in the source (normalized), with offsets stored for highlighting. `pdf_text` means it must appear on the cited page. `unverifiable` means the item always goes to review.
   - A built-in category rule fails (for example, invoice line items must sum to the total).
   - The category is `other`.
+  - **Injection suspected:** the text addresses the triage system (a short, documented set of patterns in `pipeline/untrusted.ts`, such as "ignore … instructions" or a forged `<part>` tag). Part delimiters inside document text are also escaped before sending.
+  - **Sender unauthenticated** (when the config's `policy.sender.require` is on): no DMARC (or DKIM) pass in an Authentication-Results header from a receiving server the config trusts.
 - **Score = the classification's `self_confidence`.** It is the only number compared against a threshold. Extraction quality is handled by the gates, not by multiplying scores together.
 - **Decision:** auto only if every gate passes, `score ≥ threshold[category]`, and the category's `automation` is `auto_when_confident`, and the run wasn't triggered by a reclassify. The default is `review_all`, so automation is opt-in per category.
 - **A correct auto-approval (one definition, used everywhere):** the right category **and** every required field correct under its comparator. Category accuracy alone never counts as a correct approval.
@@ -216,9 +225,9 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 ## 7. Review queue UI
 
-- **Claim next:** `FOR UPDATE SKIP LOCKED` over pending tasks and expired leases, returning a new `claim_token`. Opening a task claims it (or shows it read-only while someone else's lease lives). The lease is 10 minutes; the page renews it every minute while the tab is visible, so a hidden tab's claim lapses. An expired lease counts as no claim everywhere, so nothing needs to reap it.
+- **Claim next:** `FOR UPDATE SKIP LOCKED` over pending tasks and expired leases, returning a new `claim_token`. Opening a task claims it (or shows it read-only while someone else's lease lives). The lease is 10 minutes; the page renews it every minute while the tab is visible, so a hidden tab's claim lapses. An expired lease counts as no claim everywhere, so nothing needs to reap it. Lease time comes from `AppDeps.now`, which tests pin.
 - **Inbox:** filters for kind, reason, category and age, with counts. Separate views for "Delivery failures" and "Processing failed". Polls every 5 s.
-- **Detail view:** the source is on the left (email HTML, sanitized by the API and shown in a sandboxed iframe with a CSP that blocks remote loads; PDFs in the browser's own viewer with `#page=` jumps; plus a text view with evidence highlighted). On the right is a form rendered from the schema version, with gate failures marked on the affected fields. Actions are **Approve**, **Edit & approve**, **Reclassify**, **Reject** and **Retry**, with keyboard shortcuts.
+- **Detail view:** the source is on the left (email HTML, sanitized by the API and shown in a sandboxed iframe with a CSP that blocks remote loads; PDFs in the browser's own viewer with `#page=` jumps; plus a text view with evidence highlighted). On the right is a form rendered from the schema version, with gate failures marked on the affected fields (jsonb doesn't keep key order, so the detail API rebuilds a built-in category's schema from its template for the form's field order). Actions are **Approve**, **Edit & approve**, **Reclassify**, **Reject** and **Retry**, with keyboard shortcuts.
 - Every decision writes an insert-only `review_decisions` row, which is the audit trail. An **"Add to eval set"** toggle (on for edits) creates an eval item from a copy of the source, in the split the user picks, defaulting to dev (phase 4).
 
 ---
@@ -231,7 +240,19 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
   2. Run the candidate config on **calib**, open the per-category **threshold sweep** (threshold vs auto rate vs precision, each with n and a Wilson lower bound) and the **reliability table** (score bucket vs accuracy and n), pick thresholds, then **Freeze** to create an immutable config version.
   3. Runs on **test** are allowed only for frozen configs, and those results are the headline numbers.
 - **Runs** are realtime and concurrency-limited, so latency reflects production. The API inserts the run and one `eval.item` job per active item of the split in one transaction. Each item runs the pipeline's own parse, request builders, output parsing and `evaluateExtraction()` over its snapshot (no audit sampling), is graded, and commits its result and canonical attempts in one transaction; the last item finishes the run. Because items store their source exactly as documents do, eval requests are byte-identical to production's and replay from the same cassettes. A worker whose LLM mode differs from the run's fails the run rather than spending (or replaying) unexpectedly. They call the same `packages/core`, but the eval runner is **built without the actions store or the delivery queue**, so no code path reaches a webhook. And because `actions` requires a `documents` row, the database would refuse one anyway. Results persist only to `eval_results`.
-- **Metrics:**
+- **Runner guards:**
+  - The runner gets `EvalDeps` (`pool`, `storage`, `llm`, `limits`, `llmMode`, `now`), with no boss, actions or delivery. A type test pins those keys, and a source scan rejects `createAction`, `enqueue` and delivery imports under `apps/worker/src/evals/`.
+  - Each item commits its result under a `FOR NO KEY UPDATE` lock on the run, and marks its attempts canonical only if the result was stored.
+- **Eval items mirror documents:**
+  - `source_key` / `source_mime` / `source_title` are stored exactly as ingestion stores a document's source: `EMAIL_SOURCE_MIME` for emails, one object per attachment, and the file name verbatim (it goes on the wire as a PDF title). Both paths parse through `parseSource`.
+  - Schemas come from `category_schema_versions`, never from templates, because jsonb key order feeds the extract prompt.
+  - Parse replaces lone surrogates, and `parseClassifyOutput` rounds the score to 3 decimals, as the database round trip does.
+- **Freeze and activation:**
+  - `createEvalRun` refuses a test run on an unfrozen config (`config_not_frozen`), and the `eval_runs_test_split` trigger backs it up.
+  - Freeze creates a child version with `createCandidateConfig` + `freezeConfig`. It never uses `buildPipelineConfig`, which activates.
+  - Activation requires a frozen config.
+- **Seeds:** `pnpm db:seed` ends with `seed:evals`, which builds the Main dataset from the fixtures and runs dev, calib and test (plus a DeepSeek candidate when its cassettes are recorded). `pnpm eval:import` adds labeled files from JSONL.
+- **Metrics** (grades are stored on each result when it's written, so old runs keep the grades they were given):
   - Classification: accuracy, per-category precision, recall and F1, and a confusion matrix.
   - Extraction: per-field accuracy using typed comparators (exact, normalized string, parsed date, amount within 0.01, set F1 over the keys the label states, and presence only for free text written in the model's own words), over items whose category was predicted right, and a fully-correct-document rate over all items. A missing label key means the right answer is null.
   - Errors count as wrong and as review. An item labeled `other` is right when predicted `other`, and never auto-approves.
@@ -252,7 +273,20 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 3. **Review (done):** the inbox, detail view, claim token, approve/edit/reclassify/reject/retry, extraction revisions, audit sampling, the actions outbox, signed delivery, the failures views, and a local webhook catcher.
 4. **Evals (done):** datasets and splits, the review UI's "Add to eval set", realtime runs, metrics, the threshold sweep with reliability table and Freeze, test-split gating, run diff, the production tab with replay labeling, and the README: screenshots plus the **demo walkthrough** (§10) as a short GIF.
 
-**Later:** a generic audit-event log (settings changes, redeliveries), webhook secrets encrypted at rest and URL SSRF filtering, a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Gmail/Outlook sync, per-tenant fairness and budgets, a retention purge, SSE, OpenTelemetry, and dual-run agreement.
+5. **Security (done):** the threat model and controls are in [security.md](security.md). Milestones:
+   - M0: a lean AGENTS.md and the security docs.
+   - M1: HTTP edge (headers, CSP, Origin checks, body limits, safe startup config).
+   - M2: an audit log.
+   - M3: outbound webhooks (SSRF guard, encrypted secrets, rotation grace, signature v2).
+   - M4: rate limits and an editable budget.
+   - M5: untrusted content (served file types, upload and email limits, parser limits, injection and sender-authentication gates).
+   - M6: TOTP 2FA, sessions and API key management.
+   - M7: deletion and retention.
+   - M8: supply chain, CI and container.
+6. **Reliability (planned):** real mail volume and variety (hundreds of email types), per-tenant fairness, observability, backpressure.
+7. **Google Workspace / Gmail (planned):** mailbox sync instead of forwarding, and Sign in with Google, which shares the OAuth client.
+
+**Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Outlook sync, a members UI (invitations, role changes), erasing eval items, SSE, OpenTelemetry, and dual-run agreement.
 
 ---
 

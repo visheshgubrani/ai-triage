@@ -1,7 +1,7 @@
 import { QUEUES } from "@ai-triage/core";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { enqueue, type PgBoss } from "./boss";
-import { actions, documents, extractions, tenantSettings } from "./schema";
+import { actions, documents, extractions } from "./schema";
 import type { TenantTx } from "./tenant-tx";
 
 // The actions outbox (docs/architecture.md §5): delivery reads an action and the tenant's webhook
@@ -10,14 +10,10 @@ import type { TenantTx } from "./tenant-tx";
 
 export type ActionRow = typeof actions.$inferSelect;
 
-/** The action and where to send it, or null if the action isn't visible. */
-export async function loadDelivery(tx: TenantTx, actionId: string) {
+/** The action, or null if it isn't visible. Where to send it comes from webhookTarget() (settings.ts). */
+export async function loadDelivery(tx: TenantTx, actionId: string): Promise<ActionRow | null> {
   const [action] = await tx.db.select().from(actions).where(eq(actions.id, actionId));
-  if (!action) return null;
-  const [settings] = await tx.db
-    .select({ url: tenantSettings.webhookUrl, secret: tenantSettings.webhookSecret })
-    .from(tenantSettings);
-  return { action, url: settings?.url ?? null, secret: settings?.secret ?? null };
+  return action ?? null;
 }
 
 /** Counts a failed attempt that will be retried. */

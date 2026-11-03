@@ -180,6 +180,7 @@ describe("happy paths", () => {
         from: "billing@globex.test",
         date: "Mon, 2 Nov 2026 09:00:00 +0000",
         recipients: [],
+        authResults: [],
         text: "SCENARIO pdf-invoice\nPlease find the invoice attached.",
         attachments: [
           { filename: "GX-2026-114.pdf", mime: "application/pdf", size: pdf.length, contentId: null, content: pdf },
@@ -221,6 +222,7 @@ describe("happy paths", () => {
         from: "billing@globex.test",
         date: "Mon, 2 Nov 2026 09:00:00 +0000",
         recipients: [],
+        authResults: [],
         text: "SCENARIO pdf-invoice\nPlease find the invoice attached.",
         attachments: [
           { filename: "GX-2026-114.pdf", mime: "application/pdf", size: pdf.length, contentId: null, content: pdf },

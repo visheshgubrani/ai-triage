@@ -4,6 +4,7 @@ import {
   check,
   date,
   foreignKey,
+  integer,
   numeric,
   pgTable,
   primaryKey,
@@ -24,8 +25,16 @@ export const tenantSettings = pgTable(
       .references(() => tenants.id),
     activeConfigId: uuid("active_config_id"),
     webhookUrl: text("webhook_url"),
+    /** Legacy plaintext column: `db:migrate` encrypts any value into webhook_secret_enc and clears it. */
     webhookSecret: text("webhook_secret"),
+    /** The signing secret, encrypted (crypto.ts: AES-256-GCM, the tenant id as AAD). */
+    webhookSecretEnc: text("webhook_secret_enc"),
+    /** The secret before the last rotation, still signed with until `webhook_secret_prev_until`. */
+    webhookSecretPrevEnc: text("webhook_secret_prev_enc"),
+    webhookSecretPrevUntil: timestamp("webhook_secret_prev_until", { withTimezone: true }),
     dailyLlmCapUsd: numeric("daily_llm_cap_usd", { precision: 12, scale: 4 }).notNull().default("5"),
+    /** Finished documents older than this many days are purged daily; null keeps them forever. */
+    retentionDays: integer("retention_days"),
     updatedAt: updatedAt(),
   },
   (t) => [
@@ -63,6 +72,8 @@ export const apiKeys = pgTable(
     keyHash: text("key_hash").notNull().unique(),
     createdBy: uuid("created_by").references(() => users.id),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** Optional: the resolver refuses the key after this (0015_api_key_expiry.sql). */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: createdAt(),
   },

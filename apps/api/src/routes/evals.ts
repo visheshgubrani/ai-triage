@@ -28,13 +28,16 @@ import {
   loadRunCalls,
   loadRunResults,
   productionMetrics,
+  recordAudit,
   retireEvalItem,
   withTenantTx,
 } from "@ai-triage/db";
 import { diffRuns, reliabilityTable, runMetrics, thresholdSweep } from "@ai-triage/evals";
 import { Hono } from "hono";
+import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
 import { toConfigSummary, toEvalItem, toEvalRun } from "../evals";
+import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
 import { idParam } from "./documents";
@@ -48,7 +51,7 @@ const DAY_MS = 86_400_000;
 export const evalRoutes = (deps: AppDeps) => {
   const admin = requireRole("admin");
   return new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth))
+    .use(requireTenant(deps), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/datasets", async (c) => {
       const datasets = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDatasets(tx));
       const body: EvalDatasetList = {
@@ -65,9 +68,13 @@ export const evalRoutes = (deps: AppDeps) => {
       return c.json(body, 200);
     })
     .post("/items/:id/retire", admin, idParam, async (c) => {
-      const retired = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
-        retireEvalItem(tx, c.req.valid("param").id, deps.now()),
-      );
+      const id = c.req.valid("param").id;
+      const retired = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const done = await retireEvalItem(tx, id, deps.now());
+        if (done)
+          await recordAudit(tx, userActor(c, deps), { action: "eval_item.retired", target: { type: "eval_item", id } });
+        return done;
+      });
       if (!retired) return c.json({ error: "Not found" }, 404);
       return c.json({ retired }, 200);
     })
@@ -76,7 +83,9 @@ export const evalRoutes = (deps: AppDeps) => {
         getEvalItem(tx, c.req.valid("param").id),
       );
       if (!item) return c.json({ error: "Not found" }, 404);
-      const body: SourceUrlResponse = { url: await deps.storage.presignGet(item.sourceKey, 300, item.sourceTitle) };
+      const body: SourceUrlResponse = {
+        url: await deps.storage.presignGet(item.sourceKey, 300, { mime: item.sourceMime, filename: item.sourceTitle }),
+      };
       return c.json(body, 200);
     })
     .get("/runs", validate("query", EvalRunsQuery), async (c) => {
@@ -88,9 +97,20 @@ export const evalRoutes = (deps: AppDeps) => {
     })
     .post("/runs", admin, validate("json", EvalRunRequest), async (c) => {
       const input = c.req.valid("json");
-      const body: EvalRunCreated = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
-        createEvalRun(tx, deps.boss, { ...input, llmMode: deps.llmMode, createdBy: c.var.tenant.user.id }),
-      );
+      const body: EvalRunCreated = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const created = await createEvalRun(tx, deps.boss, {
+          ...input,
+          llmMode: deps.llmMode,
+          createdBy: c.var.tenant.user.id,
+        });
+        // A live run spends money, so who started it is worth keeping.
+        await recordAudit(tx, userActor(c, deps), {
+          action: "eval_run.created",
+          target: { type: "eval_run", id: created.runId },
+          details: { split: input.split, configId: input.configId, llmMode: deps.llmMode },
+        });
+        return created;
+      });
       return c.json(body, 201);
     })
     .get("/runs/:id", idParam, async (c) => {
@@ -115,9 +135,16 @@ export const evalRoutes = (deps: AppDeps) => {
     })
     .post("/runs/:id/freeze", admin, idParam, validate("json", FreezeRequest), async (c) => {
       const input = c.req.valid("json");
-      const config = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
-        freezeCalibratedConfig(tx, { runId: c.req.valid("param").id, ...input, createdBy: c.var.tenant.user.id }),
-      );
+      const runId = c.req.valid("param").id;
+      const config = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const frozen = await freezeCalibratedConfig(tx, { runId, ...input, createdBy: c.var.tenant.user.id });
+        await recordAudit(tx, userActor(c, deps), {
+          action: "config.frozen",
+          target: { type: "config", id: frozen.id },
+          details: { fromRun: runId },
+        });
+        return frozen;
+      });
       const body: ConfigResponse = { config: toConfigSummary(config) };
       return c.json(body, 201);
     })
