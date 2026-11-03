@@ -91,6 +91,8 @@ export default function InvitePage() {
   async function signOut() {
     await authClient.signOut();
     setSignedInAs(null);
+    // The header is a server component: re-render it signed out.
+    router.refresh();
   }
 
   return (

@@ -86,6 +86,7 @@ export async function createTestApp(
     rateLimits: options.rateLimits ?? rateLimitsFromEnv({ RATE_LIMIT_SCALE: "10000" }),
     llmMode: "replay",
     google,
+    googleSignIn: google !== null,
     googleFetch: options.googleFetch ?? (() => Promise.reject(new Error("no Google in this test"))),
     apiBaseUrl: "http://localhost:8787",
   });

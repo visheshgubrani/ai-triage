@@ -66,3 +66,15 @@ An **Internal** app has none of these limits, which is why a self-hosted single-
 - **Skipped mail.** Drafts, sent mail, spam, trash and chat messages are ignored. Mail over the size or attachment limits is skipped with a reason, which the mailbox page shows.
 - **Sender authentication.** For synced mail, the `sender_unauthenticated` gate is **on by default**. It reads only the results Google's servers wrote (DMARC, or DKIM when there is no DMARC), never headers a sender could forge. Mail between users of the same Workspace often carries no results, so it goes to review. A config can turn the gate off (`sender.mailbox.require: false`).
 - **Disconnecting** revokes the token at Google and deletes it here. Documents already ingested stay. If Google refuses a token (revoked by the user, a password reset, or a Testing-mode expiry), the mailbox stops syncing and shows **Reconnect**.
+
+## 6. Try it without a Google project
+
+A fake Google, `packages/mailbox/src/testing/fake-google.ts` answers the OAuth and Gmail calls mailbox sync makes, and its consent screen agrees at once as `ap@demo-workspace.test`. The Docker quickstart runs it (the `fake-google` service). For `pnpm dev`:
+
+```bash
+pnpm fake-google        # http://localhost:9040
+```
+
+Then start the app with `GOOGLE_CLIENT_ID=demo-fake-google GOOGLE_CLIENT_SECRET=demo-fake-google-secret GOOGLE_OAUTH_URL=http://localhost:9040 GOOGLE_API_URL=http://localhost:9040` (through turbo, add `--env-mode=loose`, or put them in `.env`). Deliver mail with `curl --data-binary @some.eml http://localhost:9040/fake/deliver`; `pnpm e2e` includes `e2e/gmail.spec.ts`, which does all of this.
+
+Sign in with Google isn't faked: Better Auth always talks to the real Google, so against the fake it is hidden (and so are Google-only invitations and the Workspace domain). Production refuses the fake's URLs unless `TRIAGE_DEMO=true`.

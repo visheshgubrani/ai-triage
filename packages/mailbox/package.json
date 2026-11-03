@@ -9,7 +9,8 @@
     "./testing": "./src/testing/fake-google.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "fake-google": "tsx --env-file-if-exists=../../.env src/testing/serve.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",

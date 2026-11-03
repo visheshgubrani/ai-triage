@@ -6,6 +6,29 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["dev"],
       "port": 3000
+    },
+    {
+      "name": "dev-fake-google",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "GOOGLE_CLIENT_ID=demo-fake-google",
+        "GOOGLE_CLIENT_SECRET=demo-fake-google-secret",
+        "GOOGLE_OAUTH_URL=http://localhost:9040",
+        "GOOGLE_API_URL=http://localhost:9040",
+        "pnpm",
+        "exec",
+        "turbo",
+        "run",
+        "dev",
+        "--env-mode=loose"
+      ],
+      "port": 3000
+    },
+    {
+      "name": "fake-google",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["fake-google"],
+      "port": 9040
     }
   ]
 }

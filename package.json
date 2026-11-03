@@ -24,6 +24,7 @@
     "tenant:create": "pnpm --filter @ai-triage/db tenant:create",
     "tenant:delete": "pnpm --filter @ai-triage/worker tenant:delete",
     "ingest": "pnpm --filter @ai-triage/api ingest",
+    "fake-google": "pnpm --filter @ai-triage/mailbox fake-google",
     "fixtures:generate": "pnpm --filter @ai-triage/fixtures generate",
     "cassettes:record": "pnpm --filter @ai-triage/worker cassettes:record",
     "eval:import": "pnpm --filter @ai-triage/worker eval:import",

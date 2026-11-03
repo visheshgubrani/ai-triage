@@ -9,7 +9,7 @@ import {
   createPool,
   keyRingFromEnv,
 } from "@ai-triage/db";
-import { googleConfigFromEnv } from "@ai-triage/mailbox";
+import { googleConfigFromEnv, isRealGoogle } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
@@ -34,7 +34,8 @@ const trustedProxies = (process.env.TRUSTED_PROXIES ?? "")
   .map((s) => s.trim())
   .filter(Boolean);
 const google = googleConfigFromEnv(process.env);
-const auth = createAuth({ db, secret, baseURL, webOrigin, trustedProxies, google });
+const googleSignIn = google !== null && isRealGoogle(google);
+const auth = createAuth({ db, secret, baseURL, webOrigin, trustedProxies, google: googleSignIn ? google : null });
 
 // The api only enqueues (inside tenant transactions); the worker supervises and runs jobs.
 const boss = createBoss(databaseUrl, { supervise: false, schedule: false });
@@ -70,6 +71,7 @@ const app = createApp({
     : process.env.TRIAGE_DEMO !== "true",
   llmMode: callModeOf(getLlmMode()),
   google,
+  googleSignIn,
   googleFetch: fetch,
   apiBaseUrl: baseURL,
 });

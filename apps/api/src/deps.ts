@@ -40,6 +40,8 @@ export interface AppDeps {
   llmMode: LlmCallMode;
   /** The Google OAuth client (GOOGLE_CLIENT_ID / SECRET), for sign-in and mailboxes; null: Google is off. */
   google: GoogleConfig | null;
+  /** Sign in with Google is offered (a real Google client; never against the demo's fake). */
+  googleSignIn: boolean;
   /** How mailbox code reaches Google (tests pass a fake). Better Auth's sign-in uses the global fetch. */
   googleFetch: typeof fetch;
   /** The API's public URL (BETTER_AUTH_URL), for OAuth redirect URIs. */

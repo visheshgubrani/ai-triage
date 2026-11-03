@@ -89,7 +89,7 @@ export function createApp(deps: AppDeps) {
       })
       // Public: the sign-in page shows "Continue with Google" only when the instance has a client.
       .get("/auth/providers", (c) => {
-        const body: AuthProvidersResponse = { google: deps.google !== null };
+        const body: AuthProvidersResponse = { google: deps.googleSignIn };
         return c.json(body, 200);
       })
       .get("/me", requireTenant(deps), async (c) => {

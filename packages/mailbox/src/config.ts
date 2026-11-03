@@ -30,8 +30,8 @@ const trimSlash = (url: string) => url.replace(/\/+$/, "");
 
 /**
  * The Google client, or null when GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are both unset. One
- * without the other is a mistake, not "off". GOOGLE_OAUTH_URL / GOOGLE_API_URL point every Google
- * endpoint at a fake (tests, the demo's infra/fake-google); startup refuses them in production
+ * without the other is a mistake, not "off". GOOGLE_OAUTH_URL / GOOGLE_TOKEN_URL / GOOGLE_API_URL
+ * point the Google endpoints at a fake (tests, the demo's infra/fake-google); startup refuses them in production
  * unless TRIAGE_DEMO=true (packages/db/src/startup.ts).
  */
 export function googleConfigFromEnv(env: Env): GoogleConfig | null {
@@ -42,12 +42,22 @@ export function googleConfigFromEnv(env: Env): GoogleConfig | null {
     throw new GoogleConfigError("Set both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET, or neither");
   }
   const oauthOverride = env.GOOGLE_OAUTH_URL?.trim();
+  // The browser opens the consent screen; the server calls the token endpoint. In docker compose
+  // they reach the fake at different addresses (localhost vs the service name).
+  const tokenOverride = env.GOOGLE_TOKEN_URL?.trim() || oauthOverride;
   const apiOverride = env.GOOGLE_API_URL?.trim();
   return {
     clientId,
     clientSecret,
     oauthUrl: trimSlash(oauthOverride || GOOGLE_ENDPOINTS.oauth),
-    tokenUrl: trimSlash(oauthOverride || GOOGLE_ENDPOINTS.token),
+    tokenUrl: trimSlash(tokenOverride || GOOGLE_ENDPOINTS.token),
     apiUrl: trimSlash(apiOverride || GOOGLE_ENDPOINTS.api),
   };
 }
+
+/**
+ * Whether Sign in with Google can work: Better Auth always talks to the real Google, so against a
+ * fake (the demo) only mailbox connections do.
+ */
+export const isRealGoogle = (config: GoogleConfig) =>
+  config.oauthUrl === GOOGLE_ENDPOINTS.oauth && config.tokenUrl === GOOGLE_ENDPOINTS.token;

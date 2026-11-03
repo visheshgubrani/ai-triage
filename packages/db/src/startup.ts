@@ -58,8 +58,8 @@ export function unsafeConfig(env: Env, role: StartupRole): string[] {
   if (!encryptionKey) problems.push("ENCRYPTION_KEYS (or ENCRYPTION_KEY) is not set");
   else if (encryptionKey.includes(DEV_ENCRYPTION_KEY)) problems.push("the encryption key is the published dev key");
   if (env.S3_SECRET_ACCESS_KEY === DEV_DEFAULTS.s3SecretKey) problems.push("S3_SECRET_ACCESS_KEY is the dev default");
-  if (env.GOOGLE_OAUTH_URL || env.GOOGLE_API_URL) {
-    problems.push("GOOGLE_OAUTH_URL / GOOGLE_API_URL point Google sign-in and mail at a fake Google");
+  if (env.GOOGLE_OAUTH_URL || env.GOOGLE_TOKEN_URL || env.GOOGLE_API_URL) {
+    problems.push("GOOGLE_OAUTH_URL / GOOGLE_TOKEN_URL / GOOGLE_API_URL point Google at a fake Google");
   }
   const dbPassword = databasePassword(env.DATABASE_URL);
   if (dbPassword !== null && (DEV_DEFAULTS.databasePasswords as readonly string[]).includes(dbPassword)) {

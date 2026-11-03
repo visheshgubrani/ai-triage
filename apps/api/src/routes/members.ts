@@ -85,14 +85,14 @@ export const memberRoutes = (deps: AppDeps) =>
           members: members.map((m) => ({ ...m, joinedAt: m.joinedAt.toISOString() })),
           invitations: invitations.map(toInvitation),
           workspaceDomain: await getWorkspaceDomain(tx),
-          google: deps.google !== null,
+          google: deps.googleSignIn,
         };
       });
       return c.json(body, 200);
     })
     .post("/invitations", validate("json", CreateInvitationRequest), async (c) => {
       const { email, role, acceptWith } = c.req.valid("json");
-      if (acceptWith === "google" && !deps.google) {
+      if (acceptWith === "google" && !deps.googleSignIn) {
         const body: ErrorResponse = {
           error: "Google sign-in isn't set up on this instance: invite with a password instead.",
           issues: [{ field: "acceptWith", path: "/acceptWith", message: "needs Google sign-in" }],
@@ -119,7 +119,10 @@ export const memberRoutes = (deps: AppDeps) =>
     // Claiming a Workspace domain: the admin signs in to a Google Workspace account (`hd=*`), and the
     // callback takes the domain from that account's `hd` claim (routes/mailboxes.ts, integrationRoutes).
     .post("/workspace-domain/verify", validate("json", WorkspaceDomainRequest), async (c) => {
-      if (!deps.google) return c.json({ error: "Google isn't set up on this instance (GOOGLE_CLIENT_ID)." }, 404);
+      // People join through Sign in with Google, so the domain needs it, not just a Google client.
+      if (!deps.google || !deps.googleSignIn) {
+        return c.json({ error: "Sign in with Google isn't set up on this instance (GOOGLE_CLIENT_ID)." }, 404);
+      }
       const { joinRole } = c.req.valid("json");
       const { verifier, challenge } = pkcePair();
       const state = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
@@ -193,7 +196,7 @@ export const invitationRoutes = (deps: AppDeps) =>
       const body: InvitationPreview = {
         ...preview,
         expiresAt: preview.expiresAt.toISOString(),
-        google: deps.google !== null,
+        google: deps.googleSignIn,
       };
       return c.json(body, 200);
     })
