@@ -410,6 +410,10 @@ export const MEMBER_ERROR_CODES = [
   "password_not_allowed",
   /** Accepting with a password, for an email that already has an account. */
   "user_exists",
+  /** Another tenant already claimed that Workspace domain. */
+  "domain_taken",
+  /** The Google account used to claim a domain isn't a Workspace account (no `hd`). */
+  "not_workspace_account",
 ] as const;
 export type MemberErrorCode = (typeof MEMBER_ERROR_CODES)[number];
 

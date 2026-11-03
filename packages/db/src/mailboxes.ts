@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
+  type JoinRole,
   type MailboxFetchJob,
   type MailboxMessageReason,
   type MailboxMessageStatus,
@@ -31,6 +32,7 @@ export interface OAuthStateInput {
   purpose: OAuthPurpose;
   codeVerifier: string;
   backfillDays?: number | null;
+  joinRole?: JoinRole | null;
   now: Date;
 }
 
@@ -44,6 +46,7 @@ export async function createOAuthState(tx: TenantTx, input: OAuthStateInput): Pr
       purpose: input.purpose,
       codeVerifier: input.codeVerifier,
       backfillDays: input.backfillDays ?? null,
+      joinRole: input.joinRole ?? null,
       expiresAt: new Date(input.now.getTime() + OAUTH_STATE_TTL_SECONDS * 1000),
     })
     .returning({ id: oauthStates.id });

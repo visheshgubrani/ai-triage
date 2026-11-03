@@ -1,4 +1,5 @@
 import {
+  JOIN_ROLES,
   MAILBOX_MESSAGE_REASONS,
   MAILBOX_MESSAGE_STATUSES,
   MAILBOX_PROVIDERS,
@@ -32,11 +33,17 @@ export const oauthStates = pgTable(
     codeVerifier: text("code_verifier").notNull(),
     /** For a mailbox: import this many days of recent mail too. */
     backfillDays: integer("backfill_days"),
+    /** For a Workspace domain: the role its people join as. */
+    joinRole: text("join_role"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     usedAt: timestamp("used_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
-  (t) => [tenantKey("oauth_states", t), oneOf("oauth_states_purpose_check", t.purpose, OAUTH_PURPOSES)],
+  (t) => [
+    tenantKey("oauth_states", t),
+    oneOf("oauth_states_purpose_check", t.purpose, OAUTH_PURPOSES),
+    oneOf("oauth_states_join_role_check", t.joinRole, JOIN_ROLES),
+  ],
 );
 
 /**

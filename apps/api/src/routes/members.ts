@@ -1,5 +1,6 @@
 import {
   AcceptWithPasswordRequest,
+  type AuthorizeResponse,
   CreateInvitationRequest,
   type ErrorResponse,
   type Invitation,
@@ -9,13 +10,17 @@ import {
   InvitationTokenRequest,
   type MemberList,
   UpdateMemberRequest,
+  WorkspaceDomainRequest,
 } from "@ai-triage/contracts";
 import type { MemberErrorCode } from "@ai-triage/core";
 import {
   acceptInvitation,
   acceptInvitationWithPassword,
   changeMemberRole,
+  clearWorkspaceDomain,
   createInvitation,
+  createOAuthState,
+  getWorkspaceDomain,
   type Invitation as InvitationRow,
   listInvitations,
   listMembers,
@@ -23,8 +28,10 @@ import {
   removeMember,
   revokeInvitation,
   setSessionTenant,
+  setWorkspaceJoinRole,
   withTenantTx,
 } from "@ai-triage/db";
+import { authorizationUrl, IDENTITY_SCOPES, pkcePair } from "@ai-triage/mailbox";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
@@ -35,6 +42,7 @@ import { limitUserWrites, overLimit } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
 import { idParam } from "./documents";
+import { googleDeps, googleRedirectUri } from "./mailboxes";
 
 export const MEMBER_ERROR_STATUS: Record<MemberErrorCode, 403 | 404 | 409 | 410> = {
   last_admin: 409,
@@ -45,6 +53,8 @@ export const MEMBER_ERROR_STATUS: Record<MemberErrorCode, 403 | 404 | 409 | 410>
   email_mismatch: 403,
   email_not_verified: 403,
   password_not_allowed: 403,
+  domain_taken: 409,
+  not_workspace_account: 403,
 };
 
 const userIdParam = zValidator("param", z.object({ userId: z.uuid() }), (result, c) => {
@@ -74,24 +84,11 @@ export const memberRoutes = (deps: AppDeps) =>
         return {
           members: members.map((m) => ({ ...m, joinedAt: m.joinedAt.toISOString() })),
           invitations: invitations.map(toInvitation),
-          workspaceDomain: null,
+          workspaceDomain: await getWorkspaceDomain(tx),
           google: deps.google !== null,
         };
       });
       return c.json(body, 200);
-    })
-    .patch("/:userId", userIdParam, validate("json", UpdateMemberRequest), async (c) => {
-      const { userId } = c.req.valid("param");
-      const { role } = c.req.valid("json");
-      await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
-        changeMemberRole(tx, userActor(c, deps), userId, role),
-      );
-      return c.body(null, 204);
-    })
-    .delete("/:userId", userIdParam, async (c) => {
-      const { userId } = c.req.valid("param");
-      await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => removeMember(tx, userActor(c, deps), userId));
-      return c.body(null, 204);
     })
     .post("/invitations", validate("json", CreateInvitationRequest), async (c) => {
       const { email, role, acceptWith } = c.req.valid("json");
@@ -117,6 +114,57 @@ export const memberRoutes = (deps: AppDeps) =>
     .post("/invitations/:id/revoke", idParam, async (c) => {
       const { id } = c.req.valid("param");
       await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => revokeInvitation(tx, userActor(c, deps), id));
+      return c.body(null, 204);
+    })
+    // Claiming a Workspace domain: the admin signs in to a Google Workspace account (`hd=*`), and the
+    // callback takes the domain from that account's `hd` claim (routes/mailboxes.ts, integrationRoutes).
+    .post("/workspace-domain/verify", validate("json", WorkspaceDomainRequest), async (c) => {
+      if (!deps.google) return c.json({ error: "Google isn't set up on this instance (GOOGLE_CLIENT_ID)." }, 404);
+      const { joinRole } = c.req.valid("json");
+      const { verifier, challenge } = pkcePair();
+      const state = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        createOAuthState(tx, {
+          userId: c.var.tenant.user.id,
+          purpose: "workspace_domain",
+          codeVerifier: verifier,
+          joinRole,
+          now: deps.now(),
+        }),
+      );
+      const url = authorizationUrl(googleDeps(deps), {
+        state,
+        codeChallenge: challenge,
+        redirectUri: googleRedirectUri(deps),
+        scopes: IDENTITY_SCOPES,
+        offline: false,
+        hostedDomain: "*",
+      });
+      const body: AuthorizeResponse = { url };
+      return c.json(body, 200);
+    })
+    .patch("/workspace-domain", validate("json", WorkspaceDomainRequest), async (c) => {
+      const { joinRole } = c.req.valid("json");
+      const changed = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        setWorkspaceJoinRole(tx, userActor(c, deps), joinRole),
+      );
+      return changed ? c.body(null, 204) : c.json({ error: "No Workspace domain is linked" }, 404);
+    })
+    .delete("/workspace-domain", async (c) => {
+      await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => clearWorkspaceDomain(tx, userActor(c, deps)));
+      return c.body(null, 204);
+    })
+    // After the fixed paths above: `/:userId` would match them too.
+    .patch("/:userId", userIdParam, validate("json", UpdateMemberRequest), async (c) => {
+      const { userId } = c.req.valid("param");
+      const { role } = c.req.valid("json");
+      await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        changeMemberRole(tx, userActor(c, deps), userId, role),
+      );
+      return c.body(null, 204);
+    })
+    .delete("/:userId", userIdParam, async (c) => {
+      const { userId } = c.req.valid("param");
+      await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => removeMember(tx, userActor(c, deps), userId));
       return c.body(null, 204);
     });
 

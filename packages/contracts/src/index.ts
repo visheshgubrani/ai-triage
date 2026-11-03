@@ -701,6 +701,13 @@ export const MemberList = z.object({
 });
 export type MemberList = z.infer<typeof MemberList>;
 
+export const JoinRole = z.enum(JOIN_ROLES);
+export type JoinRole = z.infer<typeof JoinRole>;
+
+/** POST /members/workspace-domain/verify, PATCH /members/workspace-domain. */
+export const WorkspaceDomainRequest = z.object({ joinRole: JoinRole });
+export type WorkspaceDomainRequest = z.infer<typeof WorkspaceDomainRequest>;
+
 export const UpdateMemberRequest = z.object({ role: MemberRole });
 export type UpdateMemberRequest = z.infer<typeof UpdateMemberRequest>;
 

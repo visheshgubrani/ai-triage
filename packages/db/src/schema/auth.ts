@@ -1,5 +1,6 @@
-import { INVITATION_ACCEPT_METHODS, INVITATION_STATUSES } from "@ai-triage/core";
-import { boolean, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { INVITATION_ACCEPT_METHODS, INVITATION_STATUSES, JOIN_ROLES } from "@ai-triage/core";
+import { sql } from "drizzle-orm";
+import { boolean, check, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { oneOf } from "./_helpers";
 
 // Better Auth tables (better-auth 1.7, core + organization and twoFactor plugins), renamed through `modelName`
@@ -19,15 +20,31 @@ const timestamps = {
     .$onUpdate(() => new Date()),
 };
 
-/** Better Auth "organization". The root of tenant isolation. */
-export const tenants = pgTable("tenants", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  name: text("name").notNull(),
-  slug: text("slug").notNull().unique(),
-  logo: text("logo"),
-  metadata: text("metadata"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+/**
+ * Better Auth "organization". The root of tenant isolation. `workspace_domain`: a Google Workspace
+ * domain whose people may join on their first Google sign-in, as `workspace_join_role`. An admin
+ * claims it by signing in to a Google account in that domain; one tenant per domain.
+ */
+export const tenants = pgTable(
+  "tenants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    slug: text("slug").notNull().unique(),
+    logo: text("logo"),
+    metadata: text("metadata"),
+    workspaceDomain: text("workspace_domain").unique("tenants_workspace_domain_key"),
+    workspaceJoinRole: text("workspace_join_role"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    oneOf("tenants_workspace_join_role_check", t.workspaceJoinRole, JOIN_ROLES),
+    check(
+      "tenants_workspace_domain_check",
+      sql`(${t.workspaceDomain} is null) = (${t.workspaceJoinRole} is null) and ${t.workspaceDomain} = lower(${t.workspaceDomain})`,
+    ),
+  ],
+);
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),

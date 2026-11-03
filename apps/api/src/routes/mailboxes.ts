@@ -19,10 +19,12 @@ import {
   getMailbox,
   getMembership,
   listMailboxes,
+  MemberError,
   mailboxTokenStore,
   mailboxTokens,
   recentMailboxMessages,
   recordAudit,
+  setWorkspaceDomain,
   updateMailbox,
   withTenantTx,
 } from "@ai-triage/db";
@@ -227,6 +229,54 @@ export const mailboxRoutes = (deps: AppDeps) =>
       return found ? c.body(null, 204) : c.json({ error: "Not found" }, 404);
     });
 
+/** The Workspace domain branch of the callback: the domain is the `hd` of the account the admin used. */
+async function verifyWorkspaceDomain(
+  c: Context,
+  deps: AppDeps,
+  input: {
+    tenantId: string;
+    pending: { codeVerifier: string; joinRole: string | null };
+    code: string | undefined;
+    error: string | undefined;
+    session: { user: { id: string; email: string } };
+  },
+) {
+  const back = (params: Record<string, string>) =>
+    c.redirect(`${deps.webOrigin}/settings/members?${new URLSearchParams(params)}`, 302);
+  if (input.error) return back({ error: input.error === "access_denied" ? "access_denied" : "google_error" });
+  if (!input.code) return back({ error: "google_error" });
+  try {
+    const tokens = await exchangeCode(
+      googleDeps(deps),
+      { code: input.code, codeVerifier: input.pending.codeVerifier, redirectUri: googleRedirectUri(deps) },
+      deps.now(),
+    );
+    const claims = tokens.idToken ? idTokenClaims(tokens.idToken) : null;
+    // `hd` is present only for Google Workspace accounts: a consumer account proves no domain.
+    if (!claims?.hd || claims.email_verified !== true) return back({ error: "not_workspace_account" });
+    const domain = claims.hd.toLowerCase();
+    await withTenantTx(deps.pool, input.tenantId, (tx) =>
+      setWorkspaceDomain(
+        tx,
+        {
+          type: "user",
+          id: input.session.user.id,
+          label: input.session.user.email,
+          ip: clientIp(c, deps.trustedProxies),
+          userAgent: c.req.header("user-agent") ?? null,
+          requestId: c.get("requestId"),
+        },
+        { domain, joinRole: input.pending.joinRole === "reviewer" ? "reviewer" : "viewer" },
+      ),
+    );
+    return back({ domain });
+  } catch (err) {
+    if (err instanceof MemberError) return back({ error: err.code });
+    console.warn(`req=${c.get("requestId")} domain check failed: ${(err as Error).name}: ${(err as Error).message}`);
+    return back({ error: "google_error" });
+  }
+}
+
 /** Why a Google round trip didn't end in a connection, as `?error=` on the web page it returns to. */
 export type CallbackError =
   | "google_off"
@@ -266,6 +316,9 @@ export const integrationRoutes = (deps: AppDeps) =>
       consumeOAuthState(tx, { state, userId: session.user.id, now: deps.now() }),
     );
     if (!pending) return fail("state_invalid");
+    if (pending.purpose === "workspace_domain") {
+      return verifyWorkspaceDomain(c, deps, { tenantId, pending, code, error, session });
+    }
     if (error) return fail(error === "access_denied" ? "access_denied" : "google_error");
     if (!code) return fail("google_error");
 

@@ -10,6 +10,7 @@ import { admissionRefusal } from "./admission";
 import { recordUserAudit } from "./audit";
 import { oauthTwoFactor } from "./auth-oauth-2fa";
 import type { Db } from "./index";
+import { joinByWorkspaceDomain } from "./members";
 import * as schema from "./schema";
 
 // Better Auth with organizations as tenants (docs/architecture.md §3). It lives in packages/db
@@ -132,6 +133,14 @@ export function createAuth({ db, secret, baseURL, webOrigin, trustedProxies = []
               hostedDomain: user.hostedDomain ?? null,
             });
             if (refusal) throw new APIError("FORBIDDEN", { code: refusal, message: "Not invited to any workspace" });
+          },
+          // Better Auth runs this before it creates the first session, so that session lands in the tenant.
+          after: async (user: { id: string; email: string; hostedDomain?: string | null }) => {
+            await joinByWorkspaceDomain(db, {
+              id: user.id,
+              email: user.email,
+              hostedDomain: user.hostedDomain ?? null,
+            });
           },
         },
       },

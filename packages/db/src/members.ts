@@ -3,13 +3,15 @@ import {
   INVITATION_TTL_DAYS,
   type InvitationAcceptMethod,
   isOneOf,
+  JOIN_ROLES,
+  type JoinRole,
   MEMBER_ROLES,
   type MemberErrorCode,
   type MemberRole,
 } from "@ai-triage/core";
 import { hashPassword } from "better-auth/crypto";
 import { and, asc, eq, gt, inArray, sql } from "drizzle-orm";
-import { type AuditActor, recordAudit } from "./audit";
+import { type AuditActor, recordAudit, SYSTEM_ACTOR } from "./audit";
 import type { Db } from "./index";
 import { accounts, invitations, memberships, sessions, tenants, users } from "./schema";
 import { type TenantTx, withTenantTx } from "./tenant-tx";
@@ -397,4 +399,100 @@ export async function acceptInvitationWithPassword(
 /** Points a session at a tenant (after accepting an invitation, the session acts in that tenant). */
 export async function setSessionTenant(db: Db, sessionToken: string, tenantId: string): Promise<void> {
   await db.update(sessions).set({ activeOrganizationId: tenantId }).where(eq(sessions.token, sessionToken));
+}
+
+// ── Workspace domain auto-join ──────────────────────────────────────────────────────────────
+
+export interface WorkspaceDomain {
+  domain: string;
+  joinRole: JoinRole;
+}
+
+export async function getWorkspaceDomain(tx: TenantTx): Promise<WorkspaceDomain | null> {
+  const [row] = await tx.db
+    .select({ domain: tenants.workspaceDomain, joinRole: tenants.workspaceJoinRole })
+    .from(tenants)
+    .where(eq(tenants.id, tx.tenantId));
+  return row?.domain && isOneOf(JOIN_ROLES, row.joinRole) ? { domain: row.domain, joinRole: row.joinRole } : null;
+}
+
+/**
+ * Claims a Workspace domain for the tenant. The caller has just proven the admin belongs to it
+ * (the `hd` of a Google account they signed in to). One tenant per domain: another's claim refuses.
+ */
+export async function setWorkspaceDomain(tx: TenantTx, actor: AuditActor, input: WorkspaceDomain): Promise<void> {
+  const domain = input.domain.toLowerCase();
+  const [taken] = await tx.db
+    .select({ id: tenants.id })
+    .from(tenants)
+    .where(and(eq(tenants.workspaceDomain, domain), sql`${tenants.id} <> ${tx.tenantId}`));
+  if (taken) throw new MemberError("domain_taken", `${domain} is already linked to another workspace`);
+  await tx.db
+    .update(tenants)
+    .set({ workspaceDomain: domain, workspaceJoinRole: input.joinRole })
+    .where(eq(tenants.id, tx.tenantId));
+  await recordAudit(tx, actor, {
+    action: "tenant.workspace_domain_set",
+    target: { type: "tenant", id: tx.tenantId },
+    details: { domain, joinRole: input.joinRole },
+  });
+}
+
+/** Changes the role people join as; only for a domain the tenant already holds. */
+export async function setWorkspaceJoinRole(tx: TenantTx, actor: AuditActor, joinRole: JoinRole): Promise<boolean> {
+  const current = await getWorkspaceDomain(tx);
+  if (!current) return false;
+  await setWorkspaceDomain(tx, actor, { domain: current.domain, joinRole });
+  return true;
+}
+
+export async function clearWorkspaceDomain(tx: TenantTx, actor: AuditActor): Promise<void> {
+  const current = await getWorkspaceDomain(tx);
+  if (!current) return;
+  await tx.db
+    .update(tenants)
+    .set({ workspaceDomain: null, workspaceJoinRole: null })
+    .where(eq(tenants.id, tx.tenantId));
+  await recordAudit(tx, actor, {
+    action: "tenant.workspace_domain_cleared",
+    target: { type: "tenant", id: tx.tenantId },
+    details: { domain: current.domain },
+  });
+}
+
+/** The tenant whose people come from this Workspace domain, if any (before any tenant is known). */
+export async function tenantForWorkspaceDomain(
+  db: Db,
+  domain: string,
+): Promise<{ tenantId: string; joinRole: JoinRole } | null> {
+  const [row] = await db
+    .select({ tenantId: tenants.id, joinRole: tenants.workspaceJoinRole })
+    .from(tenants)
+    .where(eq(tenants.workspaceDomain, domain.toLowerCase()));
+  return row && isOneOf(JOIN_ROLES, row.joinRole) ? { tenantId: row.tenantId, joinRole: row.joinRole } : null;
+}
+
+/**
+ * A user Google just created whose Workspace domain a tenant claimed joins it, as that tenant's join
+ * role. Only at creation: someone an admin later removes doesn't come back by signing in again.
+ */
+export async function joinByWorkspaceDomain(
+  db: Db,
+  user: { id: string; email: string; hostedDomain: string | null },
+): Promise<string | null> {
+  if (!user.hostedDomain) return null;
+  const target = await tenantForWorkspaceDomain(db, user.hostedDomain);
+  if (!target) return null;
+  await withTenantTx(db.$client, target.tenantId, async (tx) => {
+    await tx.db
+      .insert(memberships)
+      .values({ organizationId: target.tenantId, userId: user.id, role: target.joinRole })
+      .onConflictDoNothing({ target: [memberships.organizationId, memberships.userId] });
+    await recordAudit(tx, SYSTEM_ACTOR("workspace domain"), {
+      action: "member.joined",
+      target: { type: "user", id: user.id },
+      details: { role: target.joinRole, via: "workspace_domain", domain: user.hostedDomain, email: user.email },
+    });
+  });
+  return target.tenantId;
 }

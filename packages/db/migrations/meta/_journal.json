@@ -169,6 +169,13 @@
       "when": 1793730761273,
       "tag": "0023_mailbox_sync",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793731204256,
+      "tag": "0024_workspace_domain",
+      "breakpoints": true
     }
   ]
 }
