@@ -7,7 +7,7 @@ import {
   schemaDescription,
   toApiSchema,
 } from "@ai-triage/schemas";
-import { DOCUMENT_MIMES, OTHER_CATEGORY } from "../index";
+import { DOCUMENT_MIMES, type ModelInfo, modelInfo, OTHER_CATEGORY } from "../index";
 import { PipelineError } from "./errors";
 import type { LlmContent, LlmRequest, ParsedPart, StageModel } from "./types";
 
@@ -23,27 +23,54 @@ export interface CategoryOption {
   description: string;
 }
 
-type DocumentPart = Pick<ParsedPart, "partIndex" | "kind" | "mime" | "label" | "text" | "storageKey">;
+type DocumentPart = Pick<
+  ParsedPart,
+  "partIndex" | "kind" | "mime" | "label" | "page" | "text" | "evidenceMode" | "storageKey"
+>;
+
+/** What the model can read as such. Defaults to everything (Claude). */
+export type ModelInputs = ModelInfo["inputs"];
+const ALL_INPUTS: ModelInputs = { pdf: true, images: true };
 
 const attr = (value: string) => value.replace(/["<>\n]/g, " ");
 
-function partTag(part: DocumentPart): string {
+function partTag(part: DocumentPart, page = false): string {
   const name = part.label ? ` name="${attr(part.label)}"` : "";
-  return `<part index="${part.partIndex}" kind="${part.kind}"${name}>`;
+  const pageAttr = page && part.page !== null ? ` page="${part.page}"` : "";
+  return `<part index="${part.partIndex}" kind="${part.kind}"${name}${pageAttr}>`;
 }
 
 /**
  * The document as content blocks, in part order: text parts as tagged text, each PDF once as a
  * document block (all its pages), images as image blocks. DOCX and plain text go as text.
+ * For a model that can't read PDFs, a text-layer PDF goes as tagged text per page instead (so
+ * page-cited evidence still checks out); a scan or image it can't read fails as `unsupported_file`.
  */
-export function documentContent(parts: readonly DocumentPart[], blobs: ReadonlyMap<string, Uint8Array>): LlmContent[] {
+export function documentContent(
+  parts: readonly DocumentPart[],
+  blobs: ReadonlyMap<string, Uint8Array>,
+  inputs: ModelInputs = ALL_INPUTS,
+): LlmContent[] {
   const content: LlmContent[] = [];
   const sent = new Set<string>();
   let bytes = 0;
   for (const part of parts) {
-    const binary =
-      part.mime === DOCUMENT_MIMES.pdf || part.mime === DOCUMENT_MIMES.png || part.mime === DOCUMENT_MIMES.jpeg;
-    if (binary && part.storageKey) {
+    const pdf = part.mime === DOCUMENT_MIMES.pdf;
+    const image = part.mime === DOCUMENT_MIMES.png || part.mime === DOCUMENT_MIMES.jpeg;
+    if (pdf && !inputs.pdf && part.evidenceMode === "pdf_text") {
+      const text = `${partTag(part, true)}\n${part.text}\n</part>`;
+      bytes += Buffer.byteLength(text);
+      content.push({ type: "text", text });
+      continue;
+    }
+    if ((pdf && !inputs.pdf) || (image && !inputs.images)) {
+      throw new PipelineError(
+        "unsupported_file",
+        `part ${part.partIndex} is ${pdf ? "a scanned PDF" : "an image"}, which the configured model can't read; ` +
+          "choose a model that reads PDFs and images",
+      );
+    }
+    if ((pdf || image) && part.storageKey) {
       if (sent.has(part.storageKey)) continue;
       sent.add(part.storageKey);
       const blob = blobs.get(part.storageKey);
@@ -88,7 +115,10 @@ export function buildClassifyRequest(input: {
     system: renderPrompt(input.promptBody, {
       categories: sorted.map((c) => `- ${c.name}: ${c.description}`).join("\n"),
     }),
-    content: [...documentContent(input.parts, input.blobs), { type: "text", text: "Classify the document above." }],
+    content: [
+      ...documentContent(input.parts, input.blobs, modelInfo(input.model.model).inputs),
+      { type: "text", text: "Classify the document above." },
+    ],
     outputSchema: toApiSchema(classifyOutputSchema(classifyCategories(sorted))),
   };
 }
@@ -110,7 +140,7 @@ export function buildExtractRequest(input: {
       field_guide: fieldGuide(input.schema),
     }),
     content: [
-      ...documentContent(input.parts, input.blobs),
+      ...documentContent(input.parts, input.blobs, modelInfo(input.model.model).inputs),
       { type: "text", text: "Extract the fields from the document above." },
     ],
     outputSchema: toApiSchema(extractOutputSchema(input.schema)),

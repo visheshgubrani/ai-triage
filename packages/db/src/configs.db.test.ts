@@ -48,6 +48,17 @@ describe("pipeline configs", () => {
   it("validates models and efforts", async () => {
     const badModel = { ...input, classify: { ...input.classify, model: "claude-opus-5-5-20260101" } };
     await expect(inTenant((tx) => createConfigVersion(tx, badModel as NewConfigVersion))).rejects.toThrow(ConfigError);
+    // Each model accepts only the efforts it lists: Claude has no "none", DeepSeek Flash no "medium".
+    const claudeNone = { ...input, classify: { ...input.classify, effort: "none" as const } };
+    await expect(inTenant((tx) => createConfigVersion(tx, claudeNone))).rejects.toThrow(/accepts effort/);
+    const deepseek = { ...input, extract: { ...input.extract, model: "deepseek:deepseek-flash" as const } };
+    await expect(
+      inTenant((tx) => createConfigVersion(tx, { ...deepseek, extract: { ...deepseek.extract, effort: "medium" } })),
+    ).rejects.toThrow(ConfigError);
+    const ok = await inTenant((tx) =>
+      createConfigVersion(tx, { ...deepseek, extract: { ...deepseek.extract, effort: "high" } }),
+    );
+    expect(ok.extractModel).toBe("deepseek:deepseek-flash");
   });
 
   it("rejects edits and deletes", async () => {

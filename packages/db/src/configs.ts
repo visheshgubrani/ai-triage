@@ -1,4 +1,4 @@
-import { type AutomationMode, EFFORTS, type Effort, isOneOf, MODEL_IDS, type ModelId } from "@ai-triage/core";
+import { type AutomationMode, type Effort, isModelRef, type ModelRef, modelInfo } from "@ai-triage/core";
 import { and, eq, isNull, max } from "drizzle-orm";
 import { pipelineConfigCategories, pipelineConfigs, tenantSettings } from "./schema";
 import type { TenantTx } from "./tenant-tx";
@@ -7,7 +7,7 @@ import type { TenantTx } from "./tenant-tx";
 // creating a new version; the tenant points at one active version through tenant_settings.
 
 export interface StageConfig {
-  model: ModelId;
+  model: ModelRef;
   effort: Effort;
   promptVersionId: string;
 }
@@ -37,8 +37,11 @@ export type PipelineConfig = typeof pipelineConfigs.$inferSelect & {
 export class ConfigError extends Error {}
 
 function assertStage(stage: string, { model, effort }: StageConfig) {
-  if (!isOneOf(MODEL_IDS, model)) throw new ConfigError(`${stage}: unknown model "${model}"`);
-  if (!isOneOf(EFFORTS, effort)) throw new ConfigError(`${stage}: unknown effort "${effort}"`);
+  if (!isModelRef(model)) throw new ConfigError(`${stage}: unknown model "${model}"`);
+  const { efforts } = modelInfo(model);
+  if (!efforts.includes(effort)) {
+    throw new ConfigError(`${stage}: ${model} accepts effort ${efforts.join(", ")}, not "${effort}"`);
+  }
 }
 
 /** Inserts the next config version (max + 1 for the tenant) with its category policies. */

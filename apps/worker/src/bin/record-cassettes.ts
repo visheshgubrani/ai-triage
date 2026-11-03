@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
+import { type Effort, isModelRef, modelInfo, parseModelRef } from "@ai-triage/core";
 import { auditDraw } from "@ai-triage/core/pipeline";
 import {
   buildPipelineConfig,
@@ -9,6 +10,7 @@ import {
   createPool,
   createTenant,
   DEMO_CATEGORY_SETTINGS,
+  MODEL_PRICE_SEED,
   withTenantTx,
 } from "@ai-triage/db";
 import { loadManifest } from "@ai-triage/fixtures";
@@ -16,6 +18,7 @@ import {
   cassettePath,
   getLlmMode,
   liveTransport,
+  providerKeyEnv,
   recordTransport,
   replayTransport,
   type Transport,
@@ -26,26 +29,40 @@ import { ingestFixture } from "../fixtures";
 import { createDbLlmGateway } from "../llm";
 import { drainTenantJobs } from "../pipeline/drain";
 
-// `LLM_MODE=record pnpm cassettes:record --yes [--all] [--cap <usd>]`
-// Runs every fixture through the real pipeline against the live Claude API and saves each response
+// `LLM_MODE=record pnpm cassettes:record --yes [--all] [--cap <usd>] [--model <ref>]`
+// Runs every fixture through the real pipeline against the live model API and saves each response
 // as a cassette (fixtures/cassettes), so replay mode (the default, and CI) never needs a key.
 // This SPENDS MONEY. By default only requests without a cassette are sent; --all re-records all.
 // It uses a fresh scratch tenant each run, with its own daily budget cap.
 
 const { values } = parseArgs({
-  options: { yes: { type: "boolean" }, all: { type: "boolean" }, cap: { type: "string", default: "25" } },
+  options: {
+    yes: { type: "boolean" },
+    all: { type: "boolean" },
+    cap: { type: "string", default: "25" },
+    // Both stages use this model, at low effort (or its only effort). The default is the demo's model.
+    model: { type: "string", default: "claude-opus-5-5" },
+  },
 });
 const config = workerConfig();
 const capUsd = Number(values.cap);
 
 if (getLlmMode() !== "record") throw new Error("set LLM_MODE=record to record cassettes");
-if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY is not set");
+const model = values.model;
+if (!isModelRef(model)) throw new Error(`unknown model "${model}" (see MODEL_CATALOG in packages/core)`);
+const { efforts } = modelInfo(model);
+const effort: Effort = efforts.includes("low") ? "low" : (efforts[0] ?? "none");
+const keyEnv = providerKeyEnv(parseModelRef(model).provider);
+if (!process.env[keyEnv] && parseModelRef(model).provider !== "compat") throw new Error(`${keyEnv} is not set`);
+const price = MODEL_PRICE_SEED.find((p) => p.model === model && p.promptTokensAbove === 0);
+if (!price) throw new Error(`no seeded price for ${model}`);
 const manifest = await loadManifest(config.fixturesDir);
-// Worst case per document: both calls hit max_tokens (4,096 + 16,000 output tokens at $20/MTok)
-// with ~10k input tokens each at $4/MTok. Real runs cost a small fraction of this.
-const worstCase = (manifest.items.length * ((4096 + 16000) * 20 + 2 * 10_000 * 4)) / 1e6;
+// Worst case per document: both calls hit max_tokens (4,096 + 16,000 output tokens) with ~10k
+// input tokens each, at the model's base price. Real runs cost a small fraction of this.
+const worstCase =
+  (manifest.items.length * ((4096 + 16000) * Number(price.output) + 2 * 10_000 * Number(price.input))) / 1e6;
 console.log(
-  `Recording ${values.all ? "all" : "missing"} cassettes for ${manifest.items.length} fixtures (Claude Opus 5.5, low effort).\n` +
+  `Recording ${values.all ? "all" : "missing"} cassettes for ${manifest.items.length} fixtures (${model}, ${effort} effort).\n` +
     `Worst case if every call hit max_tokens: about $${worstCase.toFixed(0)}; spending stops at the $${capUsd} cap.`,
 );
 if (!values.yes) {
@@ -62,7 +79,12 @@ try {
   const slug = `cassette-recorder-${Date.now()}`;
   const { id: tenantId } = await createTenant(pool, { name: "Cassette recorder", slug });
   await withTenantTx(pool, tenantId, async (tx) => {
-    await buildPipelineConfig(tx, { name: "Cassette recording", categories: DEMO_CATEGORY_SETTINGS });
+    await buildPipelineConfig(tx, {
+      name: "Cassette recording",
+      classify: { model, effort },
+      extract: { model, effort },
+      categories: DEMO_CATEGORY_SETTINGS,
+    });
     await tx.queueDb.executeSql("update tenant_settings set daily_llm_cap_usd = $1", [capUsd.toFixed(2)]);
   });
 
@@ -72,8 +94,8 @@ try {
   const transport: Transport = values.all
     ? record
     : {
-        send: (params, meta) =>
-          (existsSync(cassettePath(config.cassetteDir, meta.hash)) ? replay : record).send(params, meta),
+        send: (request, meta) =>
+          (existsSync(cassettePath(config.cassetteDir, meta.hash)) ? replay : record).send(request, meta),
       };
 
   const storage = createStorage(storageConfigFromEnv());

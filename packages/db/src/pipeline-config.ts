@@ -1,4 +1,4 @@
-import type { AutomationMode, Effort, ModelId } from "@ai-triage/core";
+import type { AutomationMode, Effort, ModelRef } from "@ai-triage/core";
 import { PROMPTS, TEMPLATES, toJsonSchema } from "@ai-triage/schemas";
 import { and, eq } from "drizzle-orm";
 import { createConfigVersion, type PipelineConfig, setActiveConfig } from "./configs";
@@ -29,8 +29,8 @@ export interface CategorySettings {
 
 export interface PipelineConfigOptions {
   name?: string;
-  classify?: { model: ModelId; effort: Effort };
-  extract?: { model: ModelId; effort: Effort };
+  classify?: { model: ModelRef; effort: Effort };
+  extract?: { model: ModelRef; effort: Effort };
   /** Routing per built-in category; anything not listed reviews everything at threshold 0.9. */
   categories?: Partial<Record<string, Partial<CategorySettings>>>;
   createdBy?: string;

@@ -1,6 +1,6 @@
 import type { LlmRequest } from "@ai-triage/core/pipeline";
 import { canonicalJson } from "./hash";
-import type { Message } from "./transports";
+import type { NormalizedResponse, Usage } from "./providers";
 
 /** USD per million tokens (a model_prices row). */
 export interface Price {
@@ -12,46 +12,32 @@ export interface Price {
   cacheReadPerMtok: number;
 }
 
-export interface UsageLike {
-  input_tokens: number;
-  output_tokens: number;
-  cache_creation_input_tokens?: number | null;
-  cache_read_input_tokens?: number | null;
-  cache_creation?: { ephemeral_5m_input_tokens: number; ephemeral_1h_input_tokens: number } | null;
-}
-
 /** Total prompt size (uncached + cache writes + cache reads), which selects the price tier. */
-export const promptTokens = (u: UsageLike) =>
-  u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+export const promptTokens = (u: Usage) => u.input + u.cacheWrite5m + u.cacheWrite1h + u.cacheRead;
 
 /** Σ(tokens × price) / 1e6 over input, output, 5m and 1h cache writes, and cache reads. */
-export function computeCostUsd(usage: UsageLike, price: Price): number {
-  const write1h = usage.cache_creation?.ephemeral_1h_input_tokens ?? 0;
-  const write5m = usage.cache_creation
-    ? usage.cache_creation.ephemeral_5m_input_tokens
-    : (usage.cache_creation_input_tokens ?? 0);
+export function computeCostUsd(usage: Usage, price: Price): number {
   const total =
-    usage.input_tokens * price.inputPerMtok +
-    usage.output_tokens * price.outputPerMtok +
-    write5m * price.cacheWrite5mPerMtok +
-    write1h * price.cacheWrite1hPerMtok +
-    (usage.cache_read_input_tokens ?? 0) * price.cacheReadPerMtok;
+    usage.input * price.inputPerMtok +
+    usage.output * price.outputPerMtok +
+    usage.cacheWrite5m * price.cacheWrite5mPerMtok +
+    usage.cacheWrite1h * price.cacheWrite1hPerMtok +
+    usage.cacheRead * price.cacheReadPerMtok;
   return total / 1e6;
 }
 
 export type FindPrice = (model: string, promptTokens: number) => Promise<Price | null>;
 
 /**
- * Cost of a response. With server-side fallback, `usage.iterations` lists each hop with its model,
- * and each is priced at its own model's rate; an unpriced hop leaves the cost unknown (null).
+ * Cost of a response. With server-side fallback, each hop is priced at its own model's rate; an
+ * unpriced hop leaves the cost unknown (null).
  */
-export async function messageCostUsd(message: Message, model: string, findPrice: FindPrice) {
-  const hops = (message.usage.iterations ?? []) as unknown as (UsageLike & { model?: string | null })[];
-  const price = await findPrice(model, promptTokens(message.usage));
-  if (hops.length === 0)
-    return { costUsd: price ? computeCostUsd(message.usage, price) : null, priceId: price?.id ?? null };
+export async function responseCostUsd(response: NormalizedResponse, model: string, findPrice: FindPrice) {
+  const price = await findPrice(model, promptTokens(response.usage));
+  if (response.hops.length === 0)
+    return { costUsd: price ? computeCostUsd(response.usage, price) : null, priceId: price?.id ?? null };
   let total = 0;
-  for (const hop of hops) {
+  for (const hop of response.hops) {
     const hopPrice = await findPrice(hop.model ?? model, promptTokens(hop));
     if (!hopPrice) return { costUsd: null, priceId: price?.id ?? null };
     total += computeCostUsd(hop, hopPrice);

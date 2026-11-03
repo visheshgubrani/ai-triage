@@ -13,12 +13,12 @@ export * from "./errors";
 export * from "./gateway";
 export * from "./hash";
 export * from "./output";
-export * from "./params";
+export * from "./providers";
 export * from "./transports";
 
 import { liveTransport, recordTransport, replayTransport, type Transport } from "./transports";
 
-/** The transport for a mode. Only record and live construct an API client (and need a key). */
+/** The transport for a mode. Only record and live construct API clients (and need keys). */
 export function createTransport(mode: LlmMode, cassetteDir: string): Transport {
   if (mode === "replay") return replayTransport(cassetteDir);
   if (mode === "record") return recordTransport(liveTransport(), cassetteDir);

@@ -1,26 +1,25 @@
 import { PipelineError } from "@ai-triage/core/pipeline";
 import { RefusalError, TruncatedError } from "./errors";
-import type { Message } from "./transports";
-
-/** True when a fallback model served the response (server-side fallback after a refusal). */
-export const servedByFallback = (message: Message) =>
-  (message.usage.iterations ?? []).some((it) => it.type === "fallback_message");
+import { type NormalizedResponse, normalizeResponse } from "./providers";
 
 /**
- * The structured output of a response. Checks `stop_reason` before reading content: a refusal or
+ * The structured output of a response. Checks the stop reason before reading content: a refusal or
  * truncation is an error, never a partial result.
  */
-export function readOutput(message: Message, maxTokens: number): unknown {
-  if (message.stop_reason === "refusal") throw new RefusalError(message.stop_details?.category ?? null);
-  if (message.stop_reason === "max_tokens") throw new TruncatedError(maxTokens);
-  if (message.stop_reason !== "end_turn") {
-    throw new PipelineError("invalid_output", `unexpected stop_reason ${message.stop_reason}`);
+export function readOutput(response: NormalizedResponse, maxTokens: number): unknown {
+  if (response.stopReason === "refusal") throw new RefusalError(response.refusalCategory);
+  if (response.stopReason === "max_tokens") throw new TruncatedError(maxTokens);
+  if (response.stopReason !== "end_turn") {
+    throw new PipelineError("invalid_output", `unexpected stop reason ${response.stopReason}`);
   }
-  const text = message.content.find((b) => b.type === "text");
-  if (text?.type !== "text") throw new PipelineError("invalid_output", "the response has no text block");
+  if (response.text === null) throw new PipelineError("invalid_output", "the response has no text");
   try {
-    return JSON.parse(text.text);
+    return JSON.parse(response.text);
   } catch {
     throw new PipelineError("invalid_output", "the response is not valid JSON");
   }
 }
+
+/** The output of a stored attempt (an llm_calls row's model and raw response). */
+export const readAttemptOutput = (model: string, response: unknown, maxTokens: number) =>
+  readOutput(normalizeResponse(model, response), maxTokens);

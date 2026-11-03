@@ -50,6 +50,34 @@ describe("toApiSchema", () => {
     expect(apiViolations(api)).toEqual([]);
   });
 
+  it("keeps the built-in schemas inside OpenAI's strict mode too (no allOf, fewer formats)", () => {
+    // The openai-compatible adapter (packages/llm) sends the same reduced schema with strict: true.
+    const openAiFormats = new Set([
+      "date-time",
+      "time",
+      "date",
+      "duration",
+      "email",
+      "hostname",
+      "ipv4",
+      "ipv6",
+      "uuid",
+    ]);
+    const found = { keywords: new Set<string>(), formats: new Set<string>() };
+    const walk = (node: unknown): void => {
+      if (typeof node !== "object" || node === null) return;
+      for (const [key, value] of Object.entries(node)) {
+        if (!Array.isArray(node)) found.keywords.add(key);
+        if (key === "format") found.formats.add(value as string);
+        walk(value);
+      }
+    };
+    walk(toApiSchema(classifyOutputSchema(["invoice", "other"])));
+    for (const schema of Object.values(schemas)) walk(toApiSchema(extractOutputSchema(schema as JsonSchema)));
+    expect(found.keywords.has("allOf")).toBe(false);
+    expect([...found.formats].filter((f) => !openAiFormats.has(f))).toEqual([]);
+  });
+
   it("reduces the classify schema to the supported subset", () => {
     const api = toApiSchema(classifyOutputSchema(["contract", "invoice", "other"]));
     expect(apiViolations(api)).toEqual([]);

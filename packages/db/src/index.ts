@@ -15,6 +15,7 @@ export * from "./pipeline-config";
 export * from "./prices";
 export * from "./resolvers";
 export * from "./roles";
+export { MODEL_PRICE_SEED } from "./seed/prices";
 export * from "./tenant-tx";
 export * from "./tenants";
 export * from "./uploads";

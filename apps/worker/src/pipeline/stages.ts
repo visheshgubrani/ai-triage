@@ -3,7 +3,7 @@ import {
   type Effort,
   EMAIL_SOURCE_MIME,
   type LlmStage,
-  type ModelId,
+  type ModelRef,
   OTHER_CATEGORY,
   PIPELINE_STAGES,
   type PipelineStage,
@@ -55,7 +55,7 @@ import {
   upsertOpenTask,
   withTenantTx,
 } from "@ai-triage/db";
-import { type Message, readOutput } from "@ai-triage/llm";
+import { readAttemptOutput } from "@ai-triage/llm";
 import { type JsonSchema, schemaDescription, validateFields } from "@ai-triage/schemas";
 import type { Storage } from "@ai-triage/storage";
 import type { PipelineDeps } from "./deps";
@@ -67,7 +67,7 @@ import type { PipelineDeps } from "./deps";
 
 const BINARY = new Set<string>([DOCUMENT_MIMES.pdf, DOCUMENT_MIMES.png, DOCUMENT_MIMES.jpeg]);
 
-/** The PDFs and images among the parts, which are sent to Claude as they are. */
+/** The PDFs and images among the parts, which are sent to the model as they are (if it reads them). */
 async function loadBlobs(storage: Storage, parts: readonly ParsedPart[]): Promise<Map<string, Uint8Array>> {
   const keys = new Set(parts.flatMap((p) => (p.storageKey && BINARY.has(p.mime) ? [p.storageKey] : [])));
   return new Map(await Promise.all([...keys].map(async (key) => [key, await storage.get(key)] as const)));
@@ -77,12 +77,12 @@ function stageModel(config: PipelineConfig, stage: LlmStage) {
   const policy = stagePolicy(config.policy);
   return stage === "classify"
     ? {
-        model: config.classifyModel as ModelId,
+        model: config.classifyModel as ModelRef,
         effort: config.classifyEffort as Effort,
         maxTokens: policy.classifyMaxTokens,
       }
     : {
-        model: config.extractModel as ModelId,
+        model: config.extractModel as ModelRef,
         effort: config.extractEffort as Effort,
         maxTokens: policy.extractMaxTokens,
       };
@@ -281,7 +281,11 @@ export async function routeStage(deps: PipelineDeps, job: StageJob): Promise<voi
   if (!input) return;
 
   const schema = input.schemaVersion.jsonSchema as JsonSchema;
-  const response = readOutput(input.attempt.response as Message, stagePolicy(input.config.policy).extractMaxTokens);
+  const response = readAttemptOutput(
+    input.attempt.model,
+    input.attempt.response,
+    stagePolicy(input.config.policy).extractMaxTokens,
+  );
   const evaluation = evaluateExtraction({
     category: input.extraction.category,
     schemaVersion: { id: input.schemaVersion.id, version: input.schemaVersion.version, jsonSchema: schema },

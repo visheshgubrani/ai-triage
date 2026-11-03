@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import type { Db } from "../index";
 import { modelPrices } from "../schema";
 
-/** Date these prices were checked against https://platform.claude.com/docs/en/about-claude/pricing */
+/** Date these prices were checked against https://platform.claude.com/docs/en/about-claude/pricing and the pages below. */
 export const PRICES_VERIFIED_ON = "2026-11-03";
 
 /**
@@ -32,6 +32,32 @@ export const MODEL_PRICE_SEED = [
     w1h: "1",
     read: "0.05",
   },
+  // OpenAI-compatible providers bill no cache writes (write = input) and report cached prompt tokens.
+  // https://developers.openai.com/api/docs/pricing
+  { model: "openai:gpt-6.1-terra", promptTokensAbove: 0, input: "1", output: "5", w5m: "1", w1h: "1", read: "0.05" },
+  // https://api-docs.deepseek.com/quick_start/pricing: peak-hour rates (off-peak is half), so the
+  // recorded cost is an upper bound.
+  {
+    model: "deepseek:deepseek-flash",
+    promptTokensAbove: 0,
+    input: "0.30",
+    output: "1.20",
+    w5m: "0.30",
+    w1h: "0.30",
+    read: "0.006",
+  },
+  // OpenRouter routes to several upstreams at different prices: the highest listed, with no cache discount.
+  {
+    model: "openrouter:openai/gpt-6.1-terra",
+    promptTokensAbove: 0,
+    input: "2",
+    output: "10",
+    w5m: "2",
+    w1h: "2",
+    read: "2",
+  },
+  // A local OpenAI-compatible server costs nothing per token.
+  { model: "compat:qwen3", promptTokensAbove: 0, input: "0", output: "0", w5m: "0", w1h: "0", read: "0" },
 ] as const;
 
 /** Upserts the price list. Runs as the owner: the app role can only read model_prices. */
