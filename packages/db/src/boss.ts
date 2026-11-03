@@ -50,7 +50,9 @@ export async function installBossSchema(ownerUrl: string): Promise<void> {
     for (const name of [...names.filter(isTarget), ...names.filter((n) => !isTarget(n))]) {
       const options = QUEUE_OPTIONS[name];
       if (await boss.getQueue(name)) {
-        await boss.updateQueue(name, { ...options, deadLetter: options.deadLetter ?? null });
+        // pg-boss fixes a queue's policy at creation and refuses it in an update.
+        const { policy: _policy, ...updatable } = options;
+        await boss.updateQueue(name, { ...updatable, deadLetter: options.deadLetter ?? null });
       } else {
         await boss.createQueue(name, options);
       }

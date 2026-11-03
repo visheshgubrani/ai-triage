@@ -283,10 +283,18 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
    - M6: TOTP 2FA, sessions and API key management.
    - M7: deletion and retention.
    - M8: supply chain, CI and container.
-6. **Reliability (planned):** real mail volume and variety (hundreds of email types), per-tenant fairness, observability, backpressure.
-7. **Google Workspace / Gmail (planned):** mailbox sync instead of forwarding, and Sign in with Google, which shares the OAuth client.
+6. **Google Workspace (in progress):** Google setup is in [google.md](google.md). Milestones:
+   - M0: closed sets, env and docs.
+   - M1: Sign in with Google (no TOTP bypass, admission gate).
+   - M2: `pnpm tenant:create`, members and invitation links.
+   - M3: the Google OAuth module and mailbox connections.
+   - M4: the Gmail sync worker.
+   - M5: Workspace domain auto-join.
+   - M6: sender authentication for synced mail, source display, eval parity.
+   - M7: a fake Google for the demo and e2e, and the security docs.
+7. **Reliability (planned):** real mail volume and variety (hundreds of email types), per-tenant fairness, observability, backpressure.
 
-**Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Outlook sync, a members UI (invitations, role changes), erasing eval items, SSE, OpenTelemetry, and dual-run agreement.
+**Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Microsoft 365 / Outlook sync, Gmail push (Pub/Sub) and Workspace domain-wide delegation, outbound invitation email, erasing eval items, SSE, OpenTelemetry, and dual-run agreement.
 
 ---
 

@@ -4,6 +4,7 @@ Context for coding agents (and humans). Keep it lean: only what every session ne
 - [docs/architecture.md](docs/architecture.md): the agreed design and the source of truth.
 - [docs/llm.md](docs/llm.md): model providers, Claude API notes, LLM modes and cassettes.
 - [docs/security.md](docs/security.md): the threat model, controls and the production checklist.
+- [docs/google.md](docs/google.md): the Google OAuth client, Gmail sync and what Google requires.
 
 **ai-triage** is an open-source, multi-tenant AI triage inbox:
 1. Emails (Postmark inbound) and documents (uploads, REST API) come in.
@@ -14,7 +15,7 @@ Context for coding agents (and humans). Keep it lean: only what every session ne
 
 It's an MVP and a portfolio project: correct where correctness is cheap, runnable by a stranger with no API key, and readable.
 
-**Status:** phases 1–5 (foundation, pipeline, review, evals, security) are done. Next: reliability, then Google Workspace / Gmail (architecture §9).
+**Status:** phases 1–5 (foundation, pipeline, review, evals, security) are done. Phase 6, Google Workspace (Gmail sync, Sign in with Google, members), is in progress; then reliability (architecture §9).
 
 ## Repo map
 
@@ -29,6 +30,7 @@ packages/schemas    Category templates, prompts, toApiSchema(), Ajv, rules (a le
 packages/storage    S3 client, presigned URLs, server-issued storage keys
 packages/ingest     Ingestion paths: store the source, then create document + run + parse job
 packages/evals      Comparators, grading, metrics, threshold sweep, reliability, run diff (pure, web-safe)
+packages/mailbox    Mail providers: Google config, OAuth and Gmail REST over an injected fetch (no SDK)
 packages/contracts  Zod API contracts shared by api and web
 fixtures/           Synthetic labeled docs (generated, committed) + LLM cassettes
 ```

@@ -26,4 +26,6 @@ export const workerConfig = (env: NodeJS.ProcessEnv = process.env) => ({
   llmConcurrency: Number(env.WORKER_LLM_CONCURRENCY ?? 4),
   evalConcurrency: Number(env.WORKER_EVAL_CONCURRENCY ?? 2),
   webhookTimeoutMs: Number(env.WEBHOOK_TIMEOUT_MS ?? 10_000),
+  mailboxConcurrency: Number(env.WORKER_MAILBOX_CONCURRENCY ?? 4),
+  mailboxSyncBatch: Number(env.MAILBOX_SYNC_BATCH ?? 200),
 });
