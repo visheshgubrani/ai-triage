@@ -14,7 +14,7 @@
     "test:unit": "vitest run --project unit",
     "lint": "biome check .",
     "format": "biome check --write .",
-    "infra:up": "docker compose up -d --wait postgres storage && docker compose run --rm storage-init",
+    "infra:up": "docker compose up -d --wait postgres storage webhook-catcher && docker compose run --rm storage-init",
     "infra:down": "docker compose down",
     "db:generate": "pnpm --filter @ai-triage/db generate",
     "db:migrate": "pnpm --filter @ai-triage/db migrate",

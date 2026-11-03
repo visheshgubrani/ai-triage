@@ -53,6 +53,24 @@ services:
         [ "$$code" = 200 ] || [ "$$code" = 409 ]
     restart: "no"
 
+  # Local webhook receiver: verifies X-Triage-Signature and lists deliveries at http://localhost:9030.
+  # The demo tenant's webhook points here (DEMO_WEBHOOK_URL / DEMO_WEBHOOK_SECRET in .env).
+  webhook-catcher:
+    image: node:24-alpine
+    command: ["node", "/app/catcher.mjs"]
+    environment:
+      PORT: "9030"
+      WEBHOOK_SECRET: ${DEMO_WEBHOOK_SECRET:-}
+    ports:
+      - "127.0.0.1:${CATCHER_PORT:-9030}:9030"
+    volumes:
+      - ./infra/webhook-catcher:/app:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9030/requests >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   postgres-data:
   storage-data:
