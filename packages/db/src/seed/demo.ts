@@ -5,6 +5,7 @@ import { getActiveConfig } from "../configs";
 import { createDb } from "../index";
 import { buildPipelineConfig, DEMO_CATEGORY_SETTINGS } from "../pipeline-config";
 import { tenants } from "../schema";
+import { getWebhookSettings, setWebhook } from "../settings";
 import { withTenantTx } from "../tenant-tx";
 import { createTenant } from "../tenants";
 import { addMembership, ensurePasswordUser } from "../users";
@@ -48,5 +49,16 @@ export async function seedPipelineConfig(appPool: pg.Pool, demo: DemoSeed): Prom
   await withTenantTx(appPool, demo.tenantId, async (tx) => {
     if (await getActiveConfig(tx)) return;
     await buildPipelineConfig(tx, { name: "Demo config", categories: DEMO_CATEGORY_SETTINGS });
+  });
+}
+
+/**
+ * Points the demo tenant's webhook at the local catcher (DEMO_WEBHOOK_URL / DEMO_WEBHOOK_SECRET), so
+ * approvals show up there. Leaves a webhook an admin already configured alone.
+ */
+export async function seedDemoWebhook(appPool: pg.Pool, demo: DemoSeed, webhook: { url: string; secret: string }) {
+  await withTenantTx(appPool, demo.tenantId, async (tx) => {
+    if ((await getWebhookSettings(tx)).url) return;
+    await setWebhook(tx, webhook);
   });
 }

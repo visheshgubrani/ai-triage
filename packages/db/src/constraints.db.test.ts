@@ -13,7 +13,7 @@ import {
   reviewTasks,
 } from "./schema";
 import type { TenantTx } from "./tenant-tx";
-import { expectPgError, insertConfigFixture, insertDocument, newTenant, PG, testDbUrls } from "./testing";
+import { expectPgError, insertConfigFixture, insertDocument, newTenant, PG, testDbUrls, testUser } from "./testing";
 
 // Database-level guarantees from docs/architecture.md §4/§10 that don't depend on app code.
 
@@ -169,6 +169,7 @@ describe("actions", () => {
           documentId: ids.documentId,
           revision: 1,
           author: "user",
+          createdBy: await testUser(app),
           category: "invoice",
           schemaVersionId: ids.schemaVersionId,
           fields: {},

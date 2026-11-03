@@ -102,4 +102,21 @@ describe("catalog", () => {
     );
     expect(members).toEqual([]);
   });
+
+  it("guards immutable and frozen rows with triggers", async () => {
+    const { rows } = await owner.query<{ table: string; trigger: string }>(`
+      select c.relname as table, t.tgname as trigger
+      from pg_trigger t join pg_class c on c.oid = t.tgrelid join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and not t.tgisinternal order by c.relname, t.tgname`);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { table: "actions", trigger: "actions_immutable" },
+        { table: "category_schema_versions", trigger: "category_schema_versions_immutable" },
+        { table: "extractions", trigger: "extractions_immutable" },
+        { table: "pipeline_configs", trigger: "pipeline_configs_immutable" },
+        { table: "prompt_versions", trigger: "prompt_versions_immutable" },
+        { table: "review_decisions", trigger: "review_decisions_immutable" },
+      ]),
+    );
+  });
 });

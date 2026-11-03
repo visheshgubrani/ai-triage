@@ -327,6 +327,7 @@ export const extractions = pgTable(
     oneOf("extractions_author_check", t.author, EXTRACTION_AUTHORS),
     oneOf("extractions_decision_check", t.decision, DECISIONS),
     check("extractions_author_run_check", sql`(${t.author} = 'model') = (${t.runId} is not null)`),
+    check("extractions_user_author_check", sql`${t.author} <> 'user' or ${t.createdBy} is not null`),
     foreignKey({
       name: "extractions_document_fk",
       columns: [t.tenantId, t.documentId],

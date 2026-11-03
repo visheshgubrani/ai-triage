@@ -184,6 +184,7 @@ export const HEARTBEAT_SECONDS = 60;
 /** Machine-readable reasons a review request was refused (409 or 422), shown as `code` in ErrorResponse. */
 export const REVIEW_ERROR_CODES = [
   "task_resolved",
+  "reprocessing",
   "claim_lost",
   "claimed_by_other",
   "stale_revision",

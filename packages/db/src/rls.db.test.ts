@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import { assertAppRole, createDb, createPool, withTenantTx } from "./index";
 import { categorySchemaVersions, documentParts, documents, extractions } from "./schema";
-import { expectPgError, insertDocument, newTenant, PG, testDbUrls } from "./testing";
+import { expectPgError, insertDocument, newTenant, PG, testDbUrls, testUser } from "./testing";
 
 // Tenant isolation (docs/architecture.md §3, §10): RLS and composite FKs, as the app role.
 
@@ -100,6 +100,7 @@ describe("composite foreign keys", () => {
           documentId: doc1.id,
           revision: 1,
           author: "user",
+          createdBy: await testUser(app),
           category: "invoice",
           schemaVersionId: schemaVersion?.id ?? "",
           fields: {},

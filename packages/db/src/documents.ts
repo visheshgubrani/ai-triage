@@ -1,8 +1,10 @@
 import type { DocumentSource } from "@ai-triage/core";
-import { and, desc, eq, lt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, lt, ne } from "drizzle-orm";
 import { enqueueStage, type PgBoss } from "./boss";
-import { loadClassification, loadParts } from "./pipeline";
-import { actions, documents, extractions, processingRuns, reviewTasks, tenantSettings } from "./schema";
+import { getActiveConfig } from "./configs";
+import { loadClassification, loadParts, loadSchemaVersion } from "./pipeline";
+import { listDecisions } from "./review";
+import { actions, documents, extractions, processingRuns, reviewTasks, tenantSettings, users } from "./schema";
 import type { TenantTx } from "./tenant-tx";
 
 export class IngestError extends Error {}
@@ -88,7 +90,11 @@ export async function listDocuments(tx: TenantTx, options: { limit?: number; bef
     .limit(options.limit ?? 50);
 }
 
-/** Everything the read-only detail page shows about one document, or null if it isn't visible. */
+/**
+ * Everything the detail and review pages show about one document, or null if it isn't visible.
+ * `modelGateResults` are those of the latest model revision: a reviewer's revision has no evidence of
+ * its own, so the page highlights the model's quotes.
+ */
 export async function getDocumentDetail(tx: TenantTx, documentId: string) {
   const [document] = await tx.db.select().from(documents).where(eq(documents.id, documentId));
   if (!document) return null;
@@ -99,17 +105,44 @@ export async function getDocumentDetail(tx: TenantTx, documentId: string) {
     ? await tx.db.select().from(extractions).where(eq(extractions.id, document.currentExtractionId))
     : [];
   const [task] = await tx.db
-    .select()
+    .select({ task: reviewTasks, claimedByEmail: users.email })
     .from(reviewTasks)
+    .leftJoin(users, eq(users.id, reviewTasks.claimedBy))
     .where(and(eq(reviewTasks.documentId, documentId), ne(reviewTasks.status, "resolved")));
-  const documentActions = await tx.db.select().from(actions).where(eq(actions.documentId, documentId));
+  const revisions = await tx.db
+    .select({
+      id: extractions.id,
+      revision: extractions.revision,
+      author: extractions.author,
+      authorEmail: users.email,
+      runId: extractions.runId,
+      category: extractions.category,
+      decision: extractions.decision,
+      gateResults: extractions.gateResults,
+      createdAt: extractions.createdAt,
+    })
+    .from(extractions)
+    .leftJoin(users, eq(users.id, extractions.createdBy))
+    .where(eq(extractions.documentId, documentId))
+    .orderBy(asc(extractions.revision));
+  const documentActions = await tx.db
+    .select()
+    .from(actions)
+    .where(eq(actions.documentId, documentId))
+    .orderBy(asc(actions.createdAt));
+  const config = await getActiveConfig(tx);
   return {
     document,
     run: run ?? null,
     parts: await loadParts(tx, documentId),
     classification: run ? await loadClassification(tx, run.id) : null,
     extraction: extraction ?? null,
-    task: task ?? null,
+    schema: extraction ? (await loadSchemaVersion(tx, extraction.schemaVersionId)).jsonSchema : null,
+    modelGateResults: revisions.findLast((r) => r.author === "model")?.gateResults ?? null,
+    revisions: revisions.map(({ gateResults: _gateResults, ...r }) => r),
+    task: task ? { ...task.task, claimedByEmail: task.claimedByEmail } : null,
+    decisions: await listDecisions(tx, documentId),
     actions: documentActions,
+    categories: (config?.categories ?? []).map((c) => c.category).sort(),
   };
 }
