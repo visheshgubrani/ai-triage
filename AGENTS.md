@@ -55,9 +55,17 @@ It's an MVP and a portfolio project. Be correct where correctness is cheap, keep
 - `apps/web`: a header nav, `/review` (inbox, Processing failed, Delivery failures), `/review/[taskId]` (source with evidence highlights, a form rendered from the category schema, decisions, shortcuts) and `/settings`.
 - `webhook-catcher` compose service (`infra/webhook-catcher/catcher.mjs`) on :9030, which verifies signatures. The demo tenant's webhook points at it.
 
-**Cassettes are recorded** (`fixtures/cassettes`, 112 responses from `openai:gpt-6.1-terra` at low effort, $0.18 on 2026-11-03). The demo tenant, the replay e2e test and the recorder share one model, `DEMO_MODEL` (`packages/db/src/pipeline-config.ts`), because a cassette is keyed by the exact request; changing the model, a prompt, a request builder or a fixture means re-recording (`LLM_MODE=record pnpm cassettes:record --yes`, with `--all` to replace everything). Stop `pnpm dev` first: its replay worker shares the queues. The recorder also re-extracts misclassified fixtures with their labeled category, so a reviewer's natural Reclassify has a cassette; any other reclassify in replay fails as `cassette_missing`.
+**Cassettes are recorded** (`fixtures/cassettes`, 112 responses from `openai:gpt-6.1-terra` at low effort, $0.18 on 2026-11-03). `recorded.json` is keyed by model ref (`isRecorded(dir, model)`); `--model deepseek:deepseek-flash` records a second set for the eval A/B (not recorded yet). Eval runs replay from the same cassettes: their requests are byte-identical to production's (`evals.e2e.db.test.ts` checks every fixture). The demo tenant, the replay e2e test and the recorder share one model, `DEMO_MODEL` (`packages/db/src/pipeline-config.ts`), because a cassette is keyed by the exact request; changing the model, a prompt, a request builder or a fixture means re-recording (`LLM_MODE=record pnpm cassettes:record --yes`, with `--all` to replace everything). Stop `pnpm dev` first: its replay worker shares the queues. The recorder also re-extracts misclassified fixtures with their labeled category, so a reviewer's natural Reclassify has a cassette; any other reclassify in replay fails as `cassette_missing`.
 
-Not built yet: phase 4 (§9 of `docs/architecture.md`), plus the Dockerfile and the compose `init` service.
+**Phase 4 (evals) is done:**
+- Schema: `0007_evals` (item source title, content key, retire; run item count and error; result score, reasons, grades, error reason) and `0008_eval_guards` (items immutable except retiring once, results insert-only, a run changes only its progress while active, test-split runs need a frozen config).
+- `packages/evals` (pure, web-safe): comparators (`exact`, `normalized`, `date`, `amount` within a cent, `set_f1`, `free_text` by presence), `gradeItem()`, run metrics (classification, extraction, routing, cost and latency), `thresholdSweep()`, `reliabilityTable()`, `diffRuns()`, `weightedPrecision()` (1 / audit rate, Kish effective n), and the shared `ResultDetail` / `ProductionMetrics` shapes.
+- Data layer (`packages/db`): `evals.ts` (datasets, items, `createEvalRun` with one `eval.item` job per item in the same transaction, `commitEvalResult`, `freezeCalibratedConfig`, `activateConfig`), `configs.ts` (`createCandidateConfig`, `listConfigs`), `metrics.ts` (production metrics in SQL).
+- Sources: `packages/ingest/src/eval-source.ts` (`importEvalSource`, `snapshotDocumentSource`) and `apps/worker/src/pipeline/source.ts` (`parseSource`, `loadBlobs`, `stageModel`, `loadCategoryOptions`), shared by the stages and the runner.
+- Runner: `apps/worker/src/evals/` (`runEvalItem`, the `eval.failed` dead letter, `drainEvalJobs`). `EvalDeps` has no queue, actions or delivery port.
+- API: `/evals/*` and `/configs/*`; "Add to eval set" on approve / edit_approve. Web: `/evals` (Runs, Datasets, Configs, Production), `/evals/runs/[id]` (metrics, sweep, reliability, Freeze), `/evals/diff`.
+- Seeds and tools: `seed:evals` (Main dataset from the fixtures, dev / calib / test runs, a DeepSeek candidate once recorded) and `pnpm eval:import`.
+- Docker: `Dockerfile` (one image) and compose `init`, `api`, `worker`, `web`: `docker compose up --build` runs the whole demo in replay.
 
 ## Repo map
 
@@ -71,7 +79,7 @@ packages/llm        Model gateway (Claude + OpenAI-compatible providers) + llm_c
 packages/schemas    Category templates, prompts, toApiSchema(), Ajv, rules (a leaf: no workspace deps)
 packages/storage    S3 client, presigned URLs, server-issued storage keys
 packages/ingest     Ingestion paths: store the source, then create document + run + parse job
-packages/evals      Comparators + metrics
+packages/evals      Comparators, grading, metrics, threshold sweep, reliability, run diff (pure, web-safe)
 packages/contracts  Zod API contracts shared by api and web
 docs/architecture.md   Agreed design (source of truth)
 fixtures/              Synthetic labeled docs (generated, committed) + LLM cassettes
@@ -90,7 +98,9 @@ pnpm ingest <file>           # .pdf/.docx/.eml/.png/.txt via the REST API (TRIAG
 pnpm api-key:create --tenant demo   # prints a tenant API key once
 pnpm fixtures:generate       # regenerate fixtures/manifest.json (files are kept unless --force, which invalidates cassettes)
 LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY: records missing cassettes (--all re-records, --model <ref> picks the model)
+pnpm eval:import <items.jsonl> [--dataset Main]   # labeled files into an eval dataset (origin `import`)
 pnpm dev                     # api :8787, web :3000, worker
+docker compose up --build    # the whole demo in containers (init seeds; replay mode; no key)
 pnpm typecheck && pnpm lint && pnpm test && pnpm build   # must all pass before you're done (pnpm test needs infra:up)
 pnpm test:unit               # unit tests only, no Postgres needed
 pnpm e2e                     # Playwright demo walkthrough against a running `pnpm dev` (local only, not in CI yet)
@@ -165,6 +175,12 @@ Ports are deliberately non-default (5440, 9020/9021, 8787) to avoid clashing wit
 - **Retry resolves the `processing_failed` task** (a retry may auto-approve, and route never closes tasks on the auto path); a failed reclassify run is retried as a reclassify. **Reclassify keeps the task** in `awaiting_extraction` until route reopens it as `review`.
 - **Delivery failure classes:** a missing URL or secret, a 3xx, and a 4xx other than 408/425/429 fail the action at once; anything else is retried and then dead-lettered to `action.failed`. Redeliver re-enqueues with a fresh job id and the same Idempotency-Key (the action id).
 - **Display schemas:** jsonb doesn't keep key order, so the detail API rebuilds a built-in category's schema from its template for the form's field order.
+- **Eval runs never act.** The runner gets `EvalDeps` (`pool`, `storage`, `llm`, `limits`, `llmMode`, `now`): no boss, actions or delivery. A type test pins those keys and a source scan rejects `createAction`, `enqueue` and delivery imports under `apps/worker/src/evals/`. The run row and its item jobs are created in one transaction by the API; each item commits its result (and marks its attempts canonical only if the result was stored) under a `FOR NO KEY UPDATE` lock on the run, and the last one finishes the run.
+- **Eval items mirror documents.** `source_key` / `source_mime` / `source_title` are stored exactly as ingestion stores a document's source (`EMAIL_SOURCE_MIME` for emails, one object per attachment, the file name verbatim: it goes on the wire as a PDF title), and both paths parse through `parseSource`. Schemas come from `category_schema_versions`, never from templates (jsonb key order feeds the extract prompt). Parse replaces lone surrogates and `parseClassifyOutput` rounds the score to 3 decimals, as the database round trip does.
+- **Grading** (`packages/evals`): `required_correct` is the definition of a correct auto-approval (right category and every required field). Grades are stored on the result when written. Errors count as wrong and as review.
+- **Test needs frozen.** `createEvalRun` refuses (`config_not_frozen`) and the `eval_runs_test_split` trigger backs it up. Freeze creates a child version (`createCandidateConfig` + `freezeConfig`; never `buildPipelineConfig`, which activates). Activation requires frozen.
+- **LLM modes** (`LLM_MODES`, `getLlmMode`, `callModeOf`) live in core so the api reads them without loading SDKs; `@ai-triage/llm` re-exports them. A run stores the mode it expects; the worker fails a run whose mode differs from its own.
+- **Web in Docker:** server components call the API at `API_INTERNAL_URL` (compose: `http://api:8787`); the browser uses `NEXT_PUBLIC_API_URL`, inlined at build time.
 - **Fixtures are generated once and committed;** cassettes are keyed by their exact bytes. Random draws in the generator must happen outside the file-writing callbacks.
 
 ## Gotchas found while scaffolding
