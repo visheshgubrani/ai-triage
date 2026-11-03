@@ -71,6 +71,8 @@ Answer 2xx to accept. 5xx, 408, 425, 429, timeouts (10 s) and network errors are
 pnpm typecheck && pnpm lint && pnpm test && pnpm build
 ```
 
+`pnpm e2e` runs the Playwright demo walkthrough (review, edit, approve, stale tab refused, signed delivery, redeliver) against a running `pnpm dev`.
+
 `pnpm test` includes database tests (tenant isolation, constraints, queue atomicity, auth), which run against a scratch `triage_test` database and need `pnpm infra:up`. `pnpm test:unit` runs without Postgres. CI runs everything on every push.
 
 ## License

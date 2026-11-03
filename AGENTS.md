@@ -93,6 +93,7 @@ LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY: records missing ca
 pnpm dev                     # api :8787, web :3000, worker
 pnpm typecheck && pnpm lint && pnpm test && pnpm build   # must all pass before you're done (pnpm test needs infra:up)
 pnpm test:unit               # unit tests only, no Postgres needed
+pnpm e2e                     # Playwright demo walkthrough against a running `pnpm dev` (local only, not in CI yet)
 pnpm db:generate             # after editing packages/db/src/schema.ts
 pnpm format                  # Biome autofix
 pnpm infra:down
