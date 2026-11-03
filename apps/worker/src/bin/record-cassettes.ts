@@ -10,7 +10,11 @@ import {
   createPool,
   createTenant,
   DEMO_CATEGORY_SETTINGS,
+  getActiveConfig,
+  loadClassification,
+  loadDocument,
   MODEL_PRICE_SEED,
+  startRun,
   withTenantTx,
 } from "@ai-triage/db";
 import { loadManifest } from "@ai-triage/fixtures";
@@ -99,23 +103,48 @@ try {
       };
 
   const storage = createStorage(storageConfigFromEnv());
+  const documents = new Map<string, string>();
   for (const item of manifest.items) {
-    await ingestFixture({ pool, boss, storage }, tenantId, item, config.fixturesDir, {
+    const { documentId } = await ingestFixture({ pool, boss, storage }, tenantId, item, config.fixturesDir, {
       maxFileBytes: config.maxFileBytes,
     });
+    documents.set(item.id, documentId);
   }
-  await drainTenantJobs(
-    {
-      pool,
-      boss,
-      storage,
-      llm: createDbLlmGateway({ pool, mode: "record", transport }),
-      limits: { maxPdfPages: config.maxPdfPages },
-      auditDraw,
-      now: () => new Date(),
-    },
-    tenantId,
-  );
+  const deps = {
+    pool,
+    boss,
+    storage,
+    llm: createDbLlmGateway({ pool, mode: "record", transport }),
+    limits: { maxPdfPages: config.maxPdfPages },
+    auditDraw,
+    now: () => new Date(),
+  };
+  await drainTenantJobs(deps, tenantId);
+
+  // A reviewer reclassifying a misclassified fixture to its label sends a forced-category extract
+  // request; record those too, so that natural reclassify works in the replay demo.
+  const reclassified = await withTenantTx(pool, tenantId, async (tx) => {
+    const active = await getActiveConfig(tx);
+    if (!active) throw new Error("recorder tenant has no active config");
+    let n = 0;
+    for (const item of manifest.items) {
+      const documentId = documents.get(item.id);
+      const document = documentId ? await loadDocument(tx, documentId) : null;
+      if (!document?.currentRunId || item.expectedCategory === "other") continue;
+      const predicted = (await loadClassification(tx, document.currentRunId))?.category;
+      if (!predicted || predicted === item.expectedCategory) continue;
+      await startRun(tx, boss, {
+        documentId: document.id,
+        configId: active.id,
+        trigger: "reclassify",
+        forcedCategory: item.expectedCategory,
+      });
+      n++;
+    }
+    return n;
+  });
+  console.log(`reclassify pass: ${reclassified} misclassified fixture(s) re-extracted with their labeled category`);
+  if (reclassified > 0) await drainTenantJobs(deps, tenantId);
 
   const summary = await withTenantTx(pool, tenantId, async (tx) => {
     const calls = await tx.queueDb.executeSql(

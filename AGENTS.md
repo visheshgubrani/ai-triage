@@ -47,9 +47,17 @@ It's an MVP and a portfolio project. Be correct where correctness is cheap, keep
 
 **Model providers:** besides Claude, configs can use OpenAI, DeepSeek, OpenRouter or a local OpenAI-compatible server (see "Model providers" below). The cassette format is 2 (the hash includes the provider).
 
-**Cassettes are not recorded yet.** Until someone runs `LLM_MODE=record pnpm cassettes:record --yes` (needs `ANTHROPIC_API_KEY`, costs a few dollars), every document fails at classify with `cassette_missing`, and the replay e2e test (`apps/worker/src/pipeline/e2e.db.test.ts`, gated on `fixtures/cassettes/recorded.json`) is skipped.
+**Phase 3 (review) is done:**
+- Data layer (`packages/db`): `review.ts` (inbox and counts, `claimNext` with `FOR UPDATE SKIP LOCKED`, `claimTask`, `heartbeat`, `releaseClaim`, `lockTaskForDecision`, user revisions, decisions), `runs.ts` (`startRun` for retry and reclassify runs), `delivery.ts` (the outbox) and `settings.ts` (webhook URL and secret). Migration `0005_review` (decision columns, a tightened claim CHECK) and `0006_review_guards` (triggers: decisions are insert-only, an action's payload is frozen, an extraction changes only when route records its decision once).
+- `@ai-triage/core/pipeline`: `proposeAction()` / `approvedPayload()` (one payload shape for auto and human approvals) and `checkUserRevision()`. `@ai-triage/core/review` (web-safe): `fieldDiff()` and `gateFieldMarks()`.
+- `apps/api`: `/review/*` (inbox, claim-next, claim, heartbeat, release, `POST /review/tasks/:id/decisions`), `/actions/failed` and `/actions/:id/redeliver`, `/settings/webhook` (admin), and `/documents/:id/email` (sanitized HTML) and `/documents/:id/parts/:index/file`.
+- `apps/worker/src/delivery`: signed webhook delivery, the `action.failed` dead letter, and `drainDeliveries()` for tests.
+- `apps/web`: a header nav, `/review` (inbox, Processing failed, Delivery failures), `/review/[taskId]` (source with evidence highlights, a form rendered from the category schema, decisions, shortcuts) and `/settings`.
+- `webhook-catcher` compose service (`infra/webhook-catcher/catcher.mjs`) on :9030, which verifies signatures. The demo tenant's webhook points at it.
 
-Not built yet: phases 3–4 (§9 of `docs/architecture.md`), plus the Dockerfile and the compose `init` service. `action.deliver` jobs are enqueued by route but wait for the phase 3 delivery handler.
+**Cassettes are not recorded yet.** Until someone runs `LLM_MODE=record pnpm cassettes:record --yes` (needs `ANTHROPIC_API_KEY`, costs a few dollars), every document fails at classify with `cassette_missing`, and the replay e2e test (`apps/worker/src/pipeline/e2e.db.test.ts`, gated on `fixtures/cassettes/recorded.json`) is skipped. The recorder also re-extracts misclassified fixtures with their labeled category, so a reviewer's natural Reclassify has a cassette; any other reclassify in replay fails as `cassette_missing`.
+
+Not built yet: phase 4 (§9 of `docs/architecture.md`), plus the Dockerfile and the compose `init` service.
 
 ## Repo map
 
@@ -75,7 +83,7 @@ compose.yaml           Local infra
 ```bash
 pnpm install                 # Node >= 24, pnpm 12
 cp .env.example .env         # already done in a fresh scaffold
-pnpm infra:up                # Postgres :5440, RustFS :9020 (console :9021), creates bucket
+pnpm infra:up                # Postgres :5440, RustFS :9020 (console :9021), webhook catcher :9030, creates bucket
 pnpm db:migrate              # create the app role, apply migrations, install pg-boss + queues
 pnpm db:seed                 # prices, demo tenant (admin@demo.test / reviewer@demo.test, password demo-password), config, 60 fixture docs
 pnpm ingest <file>           # .pdf/.docx/.eml/.png/.txt via the REST API (TRIAGE_API_KEY), .json as a Postmark payload
@@ -151,6 +159,11 @@ Ports are deliberately non-default (5440, 9020/9021, 8787) to avoid clashing wit
 - **Stage commit order:** guarded status advance first (it locks the document row and detects stale or duplicate jobs), then the stage result, then pointers (`current_extraction_id` after the extraction insert: the FK isn't deferrable), then `markCanonical`, then enqueue. Stage jobs get deterministic ids (`stageJobId`), so a duplicate send is a no-op.
 - **Failures:** a `PipelineError` (bad file, refusal, `max_tokens`, missing cassette, budget...) fails the run at once; anything else is retried by pg-boss per `QUEUE_OPTIONS`, then dead-lettered to `doc.failed`. `failRun` is guarded on the failing stage's input status.
 - **Cassette hashes must not depend on the tenant:** request builders take content and config only (no ids, keys or recipient addresses). A test checks this.
+- **Review decisions** go through one endpoint, `POST /review/tasks/:id/decisions` (`apps/api/src/review.ts`), in one transaction that locks the document row and then the task row: the same order as the worker's stage commits, so they can't deadlock. Refusals are `ReviewError(code)`: 409 when the state moved on (`claim_lost`, `stale_revision`, `task_resolved`, `reprocessing`, `claimed_by_other`, `not_redeliverable`), 422 when the request can never apply (`action_not_allowed`, `invalid_fields`, `invalid_category`).
+- **Leases have no reaper.** A claim whose `lease_expires_at` has passed counts as no claim everywhere (claim, inbox, decisions), so no maintenance role is needed. Lease time comes from `AppDeps.now`, which tests pin.
+- **Retry resolves the `processing_failed` task** (a retry may auto-approve, and route never closes tasks on the auto path); a failed reclassify run is retried as a reclassify. **Reclassify keeps the task** in `awaiting_extraction` until route reopens it as `review`.
+- **Delivery failure classes:** a missing URL or secret, a 3xx, and a 4xx other than 408/425/429 fail the action at once; anything else is retried and then dead-lettered to `action.failed`. Redeliver re-enqueues with a fresh job id and the same Idempotency-Key (the action id).
+- **Display schemas:** jsonb doesn't keep key order, so the detail API rebuilds a built-in category's schema from its template for the form's field order.
 - **Fixtures are generated once and committed;** cassettes are keyed by their exact bytes. Random draws in the generator must happen outside the file-writing callbacks.
 
 ## Gotchas found while scaffolding
