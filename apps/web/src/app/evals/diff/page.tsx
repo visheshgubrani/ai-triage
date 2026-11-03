@@ -14,7 +14,13 @@ export default async function EvalDiffPage({ searchParams }: { searchParams: Pro
           Evals
         </Link>
       </p>
-      {me && a && b ? <DiffView a={a} b={b} /> : <p className="mt-6 text-sm text-red-600">Pick two runs to compare.</p>}
+      {!me ? (
+        <p className="mt-6 text-sm text-red-600">Sign in to compare runs.</p>
+      ) : a && b ? (
+        <DiffView a={a} b={b} />
+      ) : (
+        <p className="mt-6 text-sm text-red-600">Pick two runs to compare.</p>
+      )}
     </main>
   );
 }
