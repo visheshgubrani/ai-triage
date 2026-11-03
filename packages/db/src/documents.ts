@@ -1,4 +1,5 @@
 import type { DocumentSource } from "@ai-triage/core";
+import { getTemplate, toJsonSchema } from "@ai-triage/schemas";
 import { and, asc, desc, eq, lt, ne } from "drizzle-orm";
 import { enqueueStage, type PgBoss } from "./boss";
 import { getActiveConfig } from "./configs";
@@ -114,6 +115,16 @@ export async function listDocuments(tx: TenantTx, options: { limit?: number; bef
 }
 
 /**
+ * A schema version for display. jsonb doesn't keep object key order, so for a built-in category the
+ * same version is rebuilt from its template, which lists fields in their authored order.
+ */
+async function displaySchema(tx: TenantTx, schemaVersionId: string): Promise<unknown> {
+  const row = await loadSchemaVersion(tx, schemaVersionId);
+  const template = getTemplate(row.category, row.version);
+  return template ? toJsonSchema(template) : row.jsonSchema;
+}
+
+/**
  * Everything the detail and review pages show about one document, or null if it isn't visible.
  * `modelGateResults` are those of the latest model revision: a reviewer's revision has no evidence of
  * its own, so the page highlights the model's quotes.
@@ -160,7 +171,7 @@ export async function getDocumentDetail(tx: TenantTx, documentId: string) {
     parts: await loadParts(tx, documentId),
     classification: run ? await loadClassification(tx, run.id) : null,
     extraction: extraction ?? null,
-    schema: extraction ? (await loadSchemaVersion(tx, extraction.schemaVersionId)).jsonSchema : null,
+    schema: extraction ? await displaySchema(tx, extraction.schemaVersionId) : null,
     modelGateResults: revisions.findLast((r) => r.author === "model")?.gateResults ?? null,
     revisions: revisions.map(({ gateResults: _gateResults, ...r }) => r),
     task: task ? { ...task.task, claimedByEmail: task.claimedByEmail } : null,
