@@ -6,7 +6,8 @@
   "description": "Pure pipeline: parse, classify, extract, verify evidence, gates, route",
   "exports": {
     ".": "./src/index.ts",
-    "./pipeline": "./src/pipeline/index.ts"
+    "./pipeline": "./src/pipeline/index.ts",
+    "./review": "./src/review.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

@@ -7,5 +7,6 @@ export * from "./gates";
 export * from "./outputs";
 export * from "./parse";
 export * from "./requests";
+export * from "./revision";
 export * from "./route";
 export * from "./types";
