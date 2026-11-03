@@ -11,7 +11,8 @@
     "seed:documents": "tsx --env-file-if-exists=../../.env src/bin/seed-documents.ts",
     "seed:evals": "tsx --env-file-if-exists=../../.env src/bin/seed-evals.ts",
     "eval:import": "tsx --env-file-if-exists=../../.env src/bin/eval-import.ts",
-    "cassettes:record": "tsx --env-file-if-exists=../../.env src/bin/record-cassettes.ts"
+    "cassettes:record": "tsx --env-file-if-exists=../../.env src/bin/record-cassettes.ts",
+    "tenant:delete": "tsx --env-file-if-exists=../../.env src/bin/tenant-delete.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",

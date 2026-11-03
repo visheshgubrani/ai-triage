@@ -4,6 +4,7 @@ import {
   check,
   date,
   foreignKey,
+  integer,
   numeric,
   pgTable,
   primaryKey,
@@ -32,6 +33,8 @@ export const tenantSettings = pgTable(
     webhookSecretPrevEnc: text("webhook_secret_prev_enc"),
     webhookSecretPrevUntil: timestamp("webhook_secret_prev_until", { withTimezone: true }),
     dailyLlmCapUsd: numeric("daily_llm_cap_usd", { precision: 12, scale: 4 }).notNull().default("5"),
+    /** Finished documents older than this many days are purged daily; null keeps them forever. */
+    retentionDays: integer("retention_days"),
     updatedAt: updatedAt(),
   },
   (t) => [

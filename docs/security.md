@@ -58,7 +58,7 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 | Prompt injection | `<part` / `</part` in document text escaped; a deterministic `injection_suspected` gate (pipeline/untrusted.ts) sends text that addresses the triage system to review | Done (M5) |
 | Sender spoofing | Authentication-Results headers stored with each email; the `sender_unauthenticated` gate trusts only headers from receiving servers the config names (`policy.sender.trustedAuthServIds`) and needs DMARC (or DKIM) pass. **Opt-in per config** (API: `sender` on a candidate config); on by default once Gmail sync supplies reliable results (phase 7) | Done (M5), opt-in |
 | Accounts | TOTP 2FA with backup codes (Better Auth `twoFactor`; code checks rate-limited, BA locks out repeated failures); admin-only routes need it when `REQUIRE_ADMIN_2FA` is on (the default outside the demo); session list and revoke; a password change signs out other sessions; API keys created, listed (prefix only) and revoked from Settings, with optional expiry. All audited | Done (M6) |
-| Privacy | Document purge, per-tenant retention, expired-upload cleanup, tenant offboarding | M7 |
+| Privacy | `purge_document()`: a SECURITY DEFINER function owned by `app_purger`, the only role the immutability guards let delete, deletes a document and everything derived from it within the caller's tenant; its objects are deleted by a `storage.delete` job enqueued in the same transaction. Admins delete documents (audited with the id and a hash of the external id). Per-tenant retention purges finished documents nightly; abandoned uploads are dropped; `pnpm tenant:delete` offboards a tenant | Done (M7) |
 | Supply chain | Least-privilege CI, SHA-pinned actions, CodeQL, `pnpm audit`, Dependabot, a minimum release age, digest-pinned images, a read-only app tree in the container | M8 |
 
 ## Deliberate non-goals and residual risks
@@ -87,7 +87,8 @@ Set these before exposing an instance. `TRIAGE_DEMO` must be unset; the api and 
 - [ ] Every admin turns on 2FA (Settings → Security); `REQUIRE_ADMIN_2FA` stays unset (on).
 - [ ] `RATE_LIMIT_SCALE`: only if legitimate traffic hits the default limits (it multiplies them all).
 - [ ] No demo seed. `pnpm db:seed` loads demo users, and production refuses it.
-- [ ] Backups for Postgres and the bucket, with restores tested.
+- [ ] A retention period (Settings → Retention) that matches your data policy.
+- [ ] Backups for Postgres and the bucket, with restores tested (and expiring, so purged data leaves them too).
 - [ ] GitHub: secret scanning with push protection, and private vulnerability reporting.
 
 ## Reporting a vulnerability

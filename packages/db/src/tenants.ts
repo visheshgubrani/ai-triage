@@ -92,3 +92,49 @@ export async function rotateInboundAddress(tx: TenantTx, domain?: string): Promi
   await tx.db.insert(inboundAddresses).values({ tenantId: tx.tenantId, address: to });
   return { from, to };
 }
+
+/**
+ * Offboarding (docs/security.md, M7): deletes every row of a tenant, its memberships and the tenant
+ * itself, plus its queued jobs, in one transaction on the OWNER pool. Immutability guards and FKs
+ * are switched off for the transaction (session_replication_role = replica, which needs a superuser:
+ * the compose owner is one). Users stay: they're global and may belong to other tenants. Storage is
+ * the caller's job (everything under `t/{tenantId}/`).
+ */
+export async function deleteTenantData(ownerPool: pg.Pool, tenantId: string): Promise<Record<string, number>> {
+  const client = await ownerPool.connect();
+  const counts: Record<string, number> = {};
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL session_replication_role = replica");
+    const { rows: tables } = await client.query<{ table_name: string }>(
+      `select table_name from information_schema.columns
+       where table_schema = 'public' and column_name = 'tenant_id' and table_name <> 'tenants'`,
+    );
+    for (const { table_name } of tables) {
+      const res = await client.query(`delete from public.${pgIdent(table_name)} where tenant_id = $1`, [tenantId]);
+      if (res.rowCount) counts[table_name] = res.rowCount;
+    }
+    for (const table of ["memberships", "invitations"]) {
+      const res = await client.query(`delete from public.${table} where organization_id = $1`, [tenantId]);
+      if (res.rowCount) counts[table] = res.rowCount;
+    }
+    await client.query("update public.sessions set active_organization_id = null where active_organization_id = $1", [
+      tenantId,
+    ]);
+    const jobs = await client.query("delete from pgboss.job where data->>'tenantId' = $1", [tenantId]);
+    if (jobs.rowCount) counts["pgboss.job"] = jobs.rowCount;
+    await client.query("delete from public.tenants where id = $1", [tenantId]);
+    await client.query("COMMIT");
+    return counts;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const pgIdent = (name: string) => {
+  if (!/^[a-z_][a-z0-9_]*$/.test(name)) throw new Error(`unexpected table name ${name}`);
+  return `"${name}"`;
+};

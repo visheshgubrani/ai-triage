@@ -53,7 +53,7 @@ await registerDelivery(boss, {
   timeoutMs: config.webhookTimeoutMs,
 });
 
-await registerMaintenance(boss, { pool, now: () => new Date() });
+await registerMaintenance(boss, { pool, boss, storage, now: () => new Date() });
 
 console.log(`worker started (llm mode: ${mode}${mode === "replay" ? `, cassettes: ${config.cassetteDir}` : ""})`);
 

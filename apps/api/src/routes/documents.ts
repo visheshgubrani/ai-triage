@@ -7,14 +7,23 @@ import type {
   SourceUrlResponse,
 } from "@ai-triage/contracts";
 import { EMAIL_SOURCE_MIME } from "@ai-triage/core";
-import { getDocumentDetail, listDocuments, loadDocument, loadPart, withTenantTx } from "@ai-triage/db";
+import {
+  getDocumentDetail,
+  listDocuments,
+  loadDocument,
+  loadPart,
+  purgeDocument,
+  recordAudit,
+  withTenantTx,
+} from "@ai-triage/db";
 import { readEmailView } from "@ai-triage/ingest";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { z } from "zod";
+import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
 import { limitUserWrites } from "../rate-limit";
-import { requireTenant, type TenantEnv } from "../tenant";
+import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 
 /** A malformed id is just a document that doesn't exist. */
 export const idParam = zValidator("param", z.object({ id: z.uuid() }), (result, c) => {
@@ -161,6 +170,24 @@ export const documentRoutes = (deps: AppDeps) =>
       );
       if (!found) return c.json({ error: "Not found" }, 404);
       return c.json(detail(found, deps.now()), 200);
+    })
+    // Deletes the document and everything derived from it (docs/security.md, privacy). Admins only;
+    // the audit event keeps the id and a hash of the external id, never content.
+    .delete("/:id", requireRole("admin"), idParam, async (c) => {
+      const id = c.req.valid("param").id;
+      const purged = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const done = await purgeDocument(tx, deps.boss, id);
+        if (done) {
+          await recordAudit(tx, userActor(c, deps), {
+            action: "document.purged",
+            target: { type: "document", id },
+            details: done,
+          });
+        }
+        return done;
+      });
+      if (!purged) return c.json({ error: "Not found" }, 404);
+      return c.json({ deleted: true }, 200);
     })
     .get("/:id/source", idParam, async (c) => {
       const document = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>

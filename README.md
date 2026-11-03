@@ -158,4 +158,5 @@ MIT
 - **The demo's eval numbers rest on small samples** (13 test items), and the synthetic fixtures are easier than real mail. The Wilson bounds say how little 5/6 proves.
 - **Replay evals need cassettes for their exact requests.** Changing a config's model, effort or prompt in replay mode makes its runs fail as `cassette_missing` until recorded; thresholds and automation don't change requests, so calibration works in replay.
 - **Live eval runs share the tenant's daily budget** with production.
+- **Deleting a document keeps its eval-set copies.** Items a reviewer added to an eval dataset are separate snapshots; erasing them comes later.
 - **Replay figures are recorded figures.** In replay mode, tokens, cost and latency come from the cassette, and are labeled as such (`llm_calls.mode = 'replay'`).

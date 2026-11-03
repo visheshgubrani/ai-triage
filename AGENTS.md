@@ -98,6 +98,7 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 | A pipeline stage handler | Commit order: guarded status advance, stage result, pointers, `markCanonical`, then enqueue |
 | The eval runner (`apps/worker/src/evals/`) | No `createAction`, `enqueue` or delivery imports; a source scan and a type test enforce this |
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |
+| Add a document-derived table | Add it to `purge_document()` (a new migration replacing the function), or purges fail on the FK |
 | A Better Auth table | Keep BA's model and field names, and use `uuid().defaultRandom()` ids |
 
 ## Gotchas

@@ -3,6 +3,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   NotFound,
   PutBucketCorsCommand,
   PutObjectCommand,
@@ -64,6 +65,8 @@ export interface Storage {
   ): Promise<string>;
   /** Deletes objects; a key that doesn't exist is fine. */
   delete(keys: readonly string[]): Promise<void>;
+  /** Deletes every object whose key starts with `prefix` (which must end with "/"). */
+  deletePrefix(prefix: string): Promise<number>;
   /** Lets `origins` PUT and GET objects from the browser (presigned uploads and downloads). */
   allowBrowserOrigins(origins: string[]): Promise<void>;
 }
@@ -149,6 +152,19 @@ export function createStorage(config: StorageConfig): Storage {
       for (let i = 0; i < keys.length; i += 20) {
         await Promise.all(keys.slice(i, i + 20).map((Key) => s3.send(new DeleteObjectCommand({ Bucket, Key }))));
       }
+    },
+    async deletePrefix(prefix) {
+      if (!prefix.endsWith("/")) throw new Error(`refusing to delete by a prefix without a trailing slash: ${prefix}`);
+      let deleted = 0;
+      let token: string | undefined;
+      do {
+        const page = await s3.send(new ListObjectsV2Command({ Bucket, Prefix: prefix, ContinuationToken: token }));
+        const keys = (page.Contents ?? []).map((o) => o.Key).filter((k): k is string => Boolean(k));
+        await this.delete(keys);
+        deleted += keys.length;
+        token = page.IsTruncated ? page.NextContinuationToken : undefined;
+      } while (token);
+      return deleted;
     },
     async allowBrowserOrigins(origins) {
       await s3.send(

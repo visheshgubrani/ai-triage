@@ -3,8 +3,10 @@ import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Badge, stateOf } from "@/components/badge";
+import { getMe } from "@/components/header";
 import { Section } from "@/components/section";
 import { api } from "@/lib/api";
+import { DeleteDocumentButton } from "./delete-button";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +43,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
     );
   }
   const d = DocumentDetail.parse(await res.json());
+  const me = await getMe();
   const gates = (d.extraction?.gateResults ?? {}) as Gates;
   const values = (d.extraction?.fields ?? {}) as Record<string, unknown>;
   const checks = new Map((gates.evidence?.checks ?? []).map((c) => [c.field, c]));
@@ -52,7 +55,10 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           Documents
         </Link>
       </p>
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight">{d.document.title ?? "(untitled)"}</h1>
+      <div className="mt-2 flex items-start justify-between gap-3">
+        <h1 className="text-2xl font-semibold tracking-tight">{d.document.title ?? "(untitled)"}</h1>
+        {me?.role === "admin" && <DeleteDocumentButton id={d.document.id} />}
+      </div>
       <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
         <Badge value={stateOf(d.document)} /> {d.document.source} · {d.document.mime ?? "unknown type"} · processing{" "}
         <Badge value={d.document.processingStatus} /> review <Badge value={d.document.reviewStatus} /> delivery{" "}

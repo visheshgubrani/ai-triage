@@ -122,8 +122,10 @@ export const QUEUES = {
   evalItem: "eval.item",
   /** Dead-letter queue of `eval.item`: stores an error result once retries are exhausted. */
   evalFailed: "eval.failed",
-  /** Daily housekeeping (cron): prunes old rate-limit windows. */
+  /** Daily housekeeping (cron): retention purges, expired uploads, old rate-limit windows. */
   maintenance: "system.maintenance",
+  /** Deletes a purged document's objects, after the purge committed (the outbox for storage). */
+  storageDelete: "storage.delete",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -186,10 +188,18 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
   },
   [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
   [QUEUES.maintenance]: { retryLimit: 3, retryDelay: 60, retryBackoff: true, expireInSeconds: 900 },
+  [QUEUES.storageDelete]: { retryLimit: 10, retryDelay: 30, retryBackoff: true, expireInSeconds: 300 },
 };
 
 /** When the maintenance job runs (cron, UTC). */
 export const MAINTENANCE_CRON = "15 3 * * *";
+
+/** Payload of `storage.delete`: objects and key prefixes, all inside `t/{tenantId}/`. */
+export interface StorageDeleteJob {
+  tenantId: string;
+  keys: string[];
+  prefixes: string[];
+}
 
 /** Payload of every pipeline stage job (and of its dead-letter copy). */
 export interface StageJob {

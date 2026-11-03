@@ -435,6 +435,12 @@ export type ApiKeyRequest = z.infer<typeof ApiKeyRequest>;
 export const ApiKeyCreated = z.object({ key: z.string(), apiKey: ApiKeySummary });
 export type ApiKeyCreated = z.infer<typeof ApiKeyCreated>;
 
+// ── Retention ──────────────────────────────────────────────────────────────────────────────
+
+/** GET/PUT /settings/retention: finished documents older than this are purged daily (null: kept). */
+export const RetentionSettings = z.object({ retentionDays: z.number().int().min(1).max(3650).nullable() });
+export type RetentionSettings = z.infer<typeof RetentionSettings>;
+
 // ── LLM budget ──────────────────────────────────────────────────────────────────────────────
 
 /** GET/PUT /settings/budget: the daily cap (USD) and today's (UTC) live spend. */

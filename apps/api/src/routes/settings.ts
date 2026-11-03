@@ -9,12 +9,14 @@ import {
   type BudgetSettings,
   type ErrorResponse,
   type InboundSettings,
+  RetentionSettings,
   WebhookSettingsRequest,
   type WebhookSettingsResponse,
 } from "@ai-triage/contracts";
 import {
   createApiKey,
   getBudget,
+  getRetentionDays,
   getWebhookSettings,
   listApiKeys,
   listAuditEvents,
@@ -24,6 +26,7 @@ import {
   rotateInboundAddress,
   rotateWebhookSecret,
   setBudgetCap,
+  setRetentionDays,
   setWebhook,
   withTenantTx,
 } from "@ai-triage/db";
@@ -138,6 +141,25 @@ export const settingsRoutes = (deps: AppDeps) =>
         const error: ErrorResponse = { error: "No inbound domain is configured (INBOUND_DOMAIN)." };
         return c.json(error, 409);
       }
+      return c.json(body, 200);
+    })
+    .get("/retention", async (c) => {
+      const body: RetentionSettings = {
+        retentionDays: await withTenantTx(deps.pool, c.var.tenant.tenantId, getRetentionDays),
+      };
+      return c.json(body, 200);
+    })
+    .put("/retention", validate("json", RetentionSettings), async (c) => {
+      const { retentionDays } = c.req.valid("json");
+      await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const before = await getRetentionDays(tx);
+        await setRetentionDays(tx, retentionDays);
+        await recordAudit(tx, userActor(c, deps), {
+          action: "settings.retention_updated",
+          details: { fromDays: before, toDays: retentionDays },
+        });
+      });
+      const body: RetentionSettings = { retentionDays };
       return c.json(body, 200);
     })
     .get("/budget", async (c) => {
