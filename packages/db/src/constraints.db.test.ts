@@ -51,6 +51,8 @@ beforeAll(async () => {
         tenantId,
         datasetId: dataset?.id ?? "",
         sourceKey: "k",
+        sourceMime: "application/pdf",
+        contentKey: `sha256:${randomUUID()}`,
         expectedCategory: "invoice",
         split: "dev",
         origin: "seed",
@@ -58,7 +60,14 @@ beforeAll(async () => {
       .returning();
     const [evalRun] = await tx.db
       .insert(evalRuns)
-      .values({ tenantId, datasetId: dataset?.id ?? "", configId: config.id, split: "dev", llmMode: "replay" })
+      .values({
+        tenantId,
+        datasetId: dataset?.id ?? "",
+        configId: config.id,
+        split: "dev",
+        llmMode: "replay",
+        itemCount: 1,
+      })
       .returning();
     return {
       configId: config.id,
