@@ -41,6 +41,7 @@ const app = createApp({
   limits: { maxFileBytes: Number(process.env.MAX_FILE_MB ?? 20) * 2 ** 20 },
   postmark: postmarkUser && postmarkPassword ? { user: postmarkUser, password: postmarkPassword } : null,
   webOrigin,
+  now: () => new Date(),
 });
 
 const server = serve({ fetch: app.fetch, port }, (info) => {

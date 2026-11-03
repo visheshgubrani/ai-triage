@@ -4,7 +4,16 @@ import { enqueueStage, type PgBoss } from "./boss";
 import { getActiveConfig } from "./configs";
 import { loadClassification, loadParts, loadSchemaVersion } from "./pipeline";
 import { listDecisions } from "./review";
-import { actions, documents, extractions, processingRuns, reviewTasks, tenantSettings, users } from "./schema";
+import {
+  actions,
+  documentParts,
+  documents,
+  extractions,
+  processingRuns,
+  reviewTasks,
+  tenantSettings,
+  users,
+} from "./schema";
 import type { TenantTx } from "./tenant-tx";
 
 export class IngestError extends Error {}
@@ -52,6 +61,20 @@ export async function ingestDocument(
   await tx.db.update(documents).set({ currentRunId: run.id }).where(eq(documents.id, doc.id));
   await enqueueStage(boss, tx, "parse", { tenantId: tx.tenantId, documentId: doc.id, runId: run.id });
   return { documentId: doc.id, duplicate: false };
+}
+
+export async function loadDocument(tx: TenantTx, documentId: string) {
+  const [row] = await tx.db.select().from(documents).where(eq(documents.id, documentId));
+  return row ?? null;
+}
+
+/** One part of a document, with its storage key (for presigning the part's file). */
+export async function loadPart(tx: TenantTx, documentId: string, partIndex: number) {
+  const [row] = await tx.db
+    .select()
+    .from(documentParts)
+    .where(and(eq(documentParts.documentId, documentId), eq(documentParts.partIndex, partIndex)));
+  return row ?? null;
 }
 
 /** The id of the tenant's document with this source and external id, if any. */

@@ -18,6 +18,8 @@ export const WEB_ORIGIN = "http://localhost:3000";
 export const POSTMARK = { user: "postmark", password: "test-postmark-password" };
 
 export async function createTestApp(options: { maxFileBytes?: number } = {}) {
+  // Tests may pin the clock (to let a lease run out); otherwise it's real time.
+  let fixedNow: Date | null = null;
   const { appUrl } = testDbUrls();
   const pool = createPool(appUrl);
   const db = createDb(pool);
@@ -39,7 +41,13 @@ export async function createTestApp(options: { maxFileBytes?: number } = {}) {
     limits: { maxFileBytes: options.maxFileBytes ?? 20 * 2 ** 20 },
     postmark: POSTMARK,
     webOrigin: WEB_ORIGIN,
+    now: () => fixedNow ?? new Date(),
   });
+
+  /** Pins the app's clock (null: real time again). */
+  function setNow(at: Date | null) {
+    fixedNow = at;
+  }
 
   /** Signs in and returns the session cookie header, or the failed response's status. */
   async function signIn(email: string, password = DEMO_PASSWORD): Promise<{ status: number; cookie: string }> {
@@ -68,5 +76,5 @@ export async function createTestApp(options: { maxFileBytes?: number } = {}) {
     await pool.end();
   }
 
-  return { app, pool, db, boss, storage, signIn, memberCookie, close };
+  return { app, pool, db, boss, storage, signIn, memberCookie, setNow, close };
 }

@@ -15,4 +15,6 @@ export interface AppDeps {
   postmark: { user: string; password: string } | null;
   /** The web app's origin: allowed by CORS with credentials, and trusted by Better Auth. */
   webOrigin: string;
+  /** The clock for claims and leases (injected so tests can let a lease run out). */
+  now: () => Date;
 }

@@ -121,7 +121,15 @@ export const SAMPLE_INVOICE_FIELDS = {
  */
 export async function seedReviewTask(
   tx: TenantTx,
-  input: { kind?: ReviewTaskKind; category?: string; fields?: unknown; reasons?: string[]; score?: number } = {},
+  input: {
+    kind?: ReviewTaskKind;
+    category?: string;
+    fields?: unknown;
+    reasons?: string[];
+    score?: number;
+    /** The run was a reclassify to this category (as if a reviewer had reclassified it before). */
+    forcedCategory?: string;
+  } = {},
 ) {
   const config = await getActiveConfig(tx);
   if (!config) throw new Error("seedReviewTask needs an active config (buildPipelineConfig)");
@@ -134,7 +142,8 @@ export async function seedReviewTask(
       tenantId: tx.tenantId,
       documentId: doc.id,
       configId: config.id,
-      trigger: "ingest",
+      trigger: input.forcedCategory ? "reclassify" : "ingest",
+      forcedCategory: input.forcedCategory ?? null,
       status: failed ? "failed" : "done",
       error: failed ? "llm_refusal: test" : null,
       finishedAt: new Date(),
