@@ -45,7 +45,7 @@ describe("catalog", () => {
     expect(bad.map((r) => r.conname)).toEqual([]);
   });
 
-  it(`grants ${APP_GROUP_ROLE} read/write on every table except read-only model_prices`, async () => {
+  it(`grants ${APP_GROUP_ROLE} read/write on every table except read-only model_prices and append-only audit_events`, async () => {
     const { rows } = await owner.query<{ relname: string; sel: boolean; ins: boolean; upd: boolean; del: boolean }>(
       `select c.relname,
               has_table_privilege($1, c.oid, 'SELECT') as sel, has_table_privilege($1, c.oid, 'INSERT') as ins,
@@ -56,12 +56,13 @@ describe("catalog", () => {
     );
     for (const r of rows) {
       const writable = r.relname !== "model_prices";
+      const appendOnly = r.relname === "audit_events";
       expect({ table: r.relname, sel: r.sel, ins: r.ins, upd: r.upd, del: r.del }).toEqual({
         table: r.relname,
         sel: true,
         ins: writable,
-        upd: writable,
-        del: writable,
+        upd: writable && !appendOnly,
+        del: writable && !appendOnly,
       });
     }
   });

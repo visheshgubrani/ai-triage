@@ -3,6 +3,7 @@ import { assertAppRole, assertSafeStartup, createAuth, createBoss, createDb, cre
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
+import { parseTrustedProxies } from "./client-ip";
 
 const port = Number(process.env.API_PORT ?? 8787);
 const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
@@ -40,6 +41,7 @@ const app = createApp({
   postmark: postmarkUser && postmarkPassword ? { user: postmarkUser, password: postmarkPassword } : null,
   webOrigin,
   hsts: baseURL.startsWith("https://"),
+  trustedProxies: parseTrustedProxies(process.env.TRUSTED_PROXIES),
   now: () => new Date(),
   webhooks: { allowHttp: process.env.WEBHOOK_ALLOW_HTTP === "true" },
   llmMode: callModeOf(getLlmMode()),

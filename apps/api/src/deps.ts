@@ -2,6 +2,7 @@ import type { LlmCallMode } from "@ai-triage/core";
 import type { Auth, Db, PgBoss, Pool } from "@ai-triage/db";
 import type { IngestLimits } from "@ai-triage/ingest";
 import type { Storage } from "@ai-triage/storage";
+import type { parseTrustedProxies } from "./client-ip";
 
 export interface AppDeps {
   db: Db;
@@ -18,6 +19,8 @@ export interface AppDeps {
   webOrigin: string;
   /** Send Strict-Transport-Security (the API is served over https). */
   hsts: boolean;
+  /** Proxies whose X-Forwarded-For is believed (TRUSTED_PROXIES), for audit and rate-limit IPs. */
+  trustedProxies: ReturnType<typeof parseTrustedProxies>;
   /** The clock for claims and leases (injected so tests can let a lease run out). */
   now: () => Date;
   /** Tenants may set an http: webhook URL only when this is on (local development). */

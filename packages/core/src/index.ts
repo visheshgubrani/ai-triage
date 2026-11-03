@@ -245,6 +245,35 @@ export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 export const API_ERROR_CODES = ["bad_origin", "unreadable_file"] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
+/** Who did something recorded in the audit log: a member, a tenant API key, or the system (CLI, cron). */
+export const AUDIT_ACTOR_TYPES = ["user", "api_key", "system"] as const;
+export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
+
+/**
+ * Security-relevant changes recorded in `audit_events` (docs/security.md). Review decisions have
+ * their own trail (`review_decisions`) and aren't repeated here.
+ */
+export const AUDIT_ACTIONS = [
+  "settings.webhook_updated",
+  "settings.webhook_secret_rotated",
+  "settings.budget_updated",
+  "settings.retention_updated",
+  "settings.inbound_rotated",
+  "api_key.created",
+  "api_key.revoked",
+  "action.redelivered",
+  "config.created",
+  "config.frozen",
+  "config.activated",
+  "eval_run.created",
+  "eval_item.retired",
+  "document.purged",
+  "retention.swept",
+  "auth.two_factor_enabled",
+  "auth.two_factor_disabled",
+] as const;
+export type AuditAction = (typeof AUDIT_ACTIONS)[number];
+
 /** Headers of a webhook delivery. Receivers dedupe on the Idempotency-Key, which is the action id. */
 export const WEBHOOK_HEADERS = {
   idempotencyKey: "Idempotency-Key",

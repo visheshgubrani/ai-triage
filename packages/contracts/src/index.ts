@@ -1,6 +1,8 @@
 import {
   ACTION_STATUSES,
   API_ERROR_CODES,
+  AUDIT_ACTIONS,
+  AUDIT_ACTOR_TYPES,
   AUTOMATION_MODES,
   DECISIONS,
   DELIVERY_STATUSES,
@@ -393,6 +395,29 @@ export type WebhookSettingsRequest = z.infer<typeof WebhookSettingsRequest>;
 /** PUT /settings/webhook and POST /settings/webhook/rotate. `secret` is set only when one was created. */
 export const WebhookSettingsResponse = z.object({ settings: WebhookSettings, secret: z.string().nullable() });
 export type WebhookSettingsResponse = z.infer<typeof WebhookSettingsResponse>;
+
+// ── Audit log ───────────────────────────────────────────────────────────────────────────────
+
+export const AuditEvent = z.object({
+  id: z.uuid(),
+  actorType: z.enum(AUDIT_ACTOR_TYPES),
+  actorId: z.string().nullable(),
+  actorLabel: z.string().nullable(),
+  action: z.enum(AUDIT_ACTIONS),
+  targetType: z.string().nullable(),
+  targetId: z.string().nullable(),
+  details: z.record(z.string(), z.unknown()),
+  ip: z.string().nullable(),
+  userAgent: z.string().nullable(),
+  requestId: z.string().nullable(),
+  createdAt: isoDate,
+});
+export type AuditEvent = z.infer<typeof AuditEvent>;
+
+export const AuditQuery = z.object({ cursor: z.string().max(200).optional() });
+
+export const AuditEventList = z.object({ events: z.array(AuditEvent), nextCursor: z.string().nullable() });
+export type AuditEventList = z.infer<typeof AuditEventList>;
 
 // ── Evals ────────────────────────────────────────────────────────────────────────────────────
 // Request bodies are Zod (validated); responses are typed with the metric shapes from @ai-triage/evals.

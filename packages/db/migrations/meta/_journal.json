@@ -64,6 +64,20 @@
       "when": 1793696858559,
       "tag": "0008_eval_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793707317533,
+      "tag": "0009_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793707318330,
+      "tag": "0010_audit_guards",
+      "breakpoints": true
     }
   ]
 }
