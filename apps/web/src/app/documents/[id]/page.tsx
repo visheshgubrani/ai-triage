@@ -2,9 +2,9 @@ import { DocumentDetail } from "@ai-triage/contracts";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import type { ReactNode } from "react";
+import { Badge, stateOf } from "@/components/badge";
+import { Section } from "@/components/section";
 import { api } from "@/lib/api";
-import { Badge, stateOf } from "../status";
 
 export const dynamic = "force-dynamic";
 
@@ -23,15 +23,6 @@ type Gates = {
     }[];
   };
 };
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="mt-6 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
-      <h2 className="text-sm font-medium text-neutral-500">{title}</h2>
-      <div className="mt-2 text-sm">{children}</div>
-    </section>
-  );
-}
 
 const show = (v: unknown) =>
   v === null || v === undefined ? "-" : typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -75,7 +66,14 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
       )}
 
       {d.task && (
-        <Section title={`Open task: ${d.task.kind}`}>
+        <Section
+          title={`Open task: ${d.task.kind}`}
+          actions={
+            <Link href={`/review/${d.task.id}`} className="text-sm font-medium underline underline-offset-2">
+              Open in review
+            </Link>
+          }
+        >
           <p className="font-mono text-xs">{d.task.reasons.join(", ") || "-"}</p>
         </Section>
       )}
@@ -132,7 +130,11 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
           {d.actions.map((a) => (
             <div key={a.id}>
               <p>
-                <Badge value={a.status} /> <span className="font-mono text-xs">Idempotency-Key {a.id}</span>
+                <Badge value={a.status} /> <span className="font-mono text-xs">Idempotency-Key {a.id}</span>{" "}
+                <span className="text-xs text-neutral-500">
+                  · {a.attempts} attempt{a.attempts === 1 ? "" : "s"}
+                  {a.lastError ? ` · last error: ${a.lastError}` : ""}
+                </span>
               </p>
               <pre className="mt-2 overflow-x-auto rounded bg-neutral-50 p-2 text-xs dark:bg-neutral-900">
                 {JSON.stringify(a.payload, null, 2)}

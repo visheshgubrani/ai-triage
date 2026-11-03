@@ -59,10 +59,12 @@ export interface InboxFilter {
   olderThan?: Date;
   /** Only tasks claimed by this user. */
   mineUserId?: string;
+  /** Just this task, open or resolved (the review page's lookup). */
+  taskId?: string;
 }
 
 function inboxConditions(filter: InboxFilter, now: Date): SQL[] {
-  const conditions: SQL[] = [ne(reviewTasks.status, "resolved")];
+  const conditions: SQL[] = filter.taskId ? [eq(reviewTasks.id, filter.taskId)] : [ne(reviewTasks.status, "resolved")];
   if (filter.kind) conditions.push(eq(reviewTasks.kind, filter.kind));
   if (filter.category) conditions.push(sql`${taskCategory} = ${filter.category}`);
   if (filter.reasonCode) conditions.push(hasReasonCode(filter.reasonCode));

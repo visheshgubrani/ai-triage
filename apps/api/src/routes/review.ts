@@ -8,6 +8,7 @@ import {
   type InboxAge,
   InboxQuery,
   type InboxResponse,
+  type InboxTask,
   type ReleaseResponse,
 } from "@ai-triage/contracts";
 import {
@@ -28,6 +29,12 @@ import { validate } from "../validate";
 import { idParam } from "./documents";
 
 const AGE_MS: Record<InboxAge, number> = { "1h": 3_600_000, "24h": 86_400_000, "7d": 7 * 86_400_000 };
+
+const inboxTask = (r: Awaited<ReturnType<typeof listInbox>>[number]): InboxTask => ({
+  ...r,
+  createdAt: r.createdAt.toISOString(),
+  claim: r.claim && { ...r.claim, leaseExpiresAt: r.claim.leaseExpiresAt?.toISOString() ?? "" },
+});
 
 const claimBody = (claim: Claim): ClaimResponse => ({
   taskId: claim.taskId,
@@ -54,18 +61,18 @@ export const reviewRoutes = (deps: AppDeps) => {
         olderThan: q.olderThan ? new Date(now.getTime() - AGE_MS[q.olderThan]) : undefined,
         mineUserId: q.mine ? c.var.tenant.user.id : undefined,
       };
-      const body: InboxResponse = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
-        const rows = await listInbox(tx, { now, filter });
-        return {
-          tasks: rows.map((r) => ({
-            ...r,
-            createdAt: r.createdAt.toISOString(),
-            claim: r.claim && { ...r.claim, leaseExpiresAt: r.claim.leaseExpiresAt?.toISOString() ?? "" },
-          })),
-          counts: await inboxCounts(tx),
-        };
-      });
+      const body: InboxResponse = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => ({
+        tasks: (await listInbox(tx, { now, filter })).map(inboxTask),
+        counts: await inboxCounts(tx),
+      }));
       return c.json(body, 200);
+    })
+    .get("/tasks/:id", idParam, async (c) => {
+      const [row] = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        listInbox(tx, { now: deps.now(), filter: { taskId: c.req.valid("param").id } }),
+      );
+      if (!row) return c.json({ error: "Not found" }, 404);
+      return c.json(inboxTask(row), 200);
     })
     .post("/claim-next", reviewer, validate("json", ClaimNextRequest), async (c) => {
       const filter = c.req.valid("json");
