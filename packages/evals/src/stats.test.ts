@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { wilsonLowerBound } from "./index";
+import { wilsonLowerBound } from "./stats";
 
 describe("wilsonLowerBound", () => {
   it("is 0 for an empty sample", () => {

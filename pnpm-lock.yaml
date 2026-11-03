@@ -377,7 +377,14 @@ importers:
         specifier: ^0.31.11
         version: 0.31.11
 
-  packages/evals: {}
+  packages/evals:
+    dependencies:
+      '@ai-triage/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ai-triage/schemas':
+        specifier: workspace:*
+        version: link:../schemas
 
   packages/ingest:
     dependencies:
