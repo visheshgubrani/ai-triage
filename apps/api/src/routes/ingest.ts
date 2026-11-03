@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import type { IgnoredResponse, IngestResponse } from "@ai-triage/contracts";
 import { normalizePostmark, type PostmarkInbound } from "@ai-triage/core/pipeline";
 import { checkEmailLimits, IngestRejected, ingestEmail, ingestFile, resolveEmailTenant } from "@ai-triage/ingest";
@@ -18,9 +18,18 @@ const limit = (deps: AppDeps) =>
     onError: (c) => c.json({ error: "Payload too large" }, 413),
   });
 
-/** Constant-time string comparison (hashing first makes the lengths equal). */
-const sameSecret = (a: string, b: string) =>
-  timingSafeEqual(createHash("sha256").update(a).digest(), createHash("sha256").update(b).digest());
+/**
+ * Constant-time string comparison. Both sides are padded to the same length (timingSafeEqual needs
+ * that), and the lengths are compared separately, so neither the content nor its length leaks
+ * through timing beyond the longer side's length.
+ */
+function sameSecret(given: string, expected: string): boolean {
+  const a = Buffer.from(given, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  const size = Math.max(a.length, b.length);
+  const padded = (buf: Buffer) => Buffer.concat([buf, Buffer.alloc(size - buf.length)]);
+  return timingSafeEqual(padded(a), padded(b)) && a.length === b.length;
+}
 
 /**
  * Postmark inbound webhook. Postmark doesn't sign webhooks, so the URL carries basic-auth

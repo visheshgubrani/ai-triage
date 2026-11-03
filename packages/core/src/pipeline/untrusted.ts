@@ -7,26 +7,32 @@
 /**
  * Phrases addressed to the triage system rather than to a human reader. Kept short and specific:
  * the goal is to catch documents that try to steer the model, not to judge ordinary mail.
+ *
+ * They run on attacker-controlled text, so they must stay linear: findInjection() first collapses
+ * whitespace to single spaces, and the patterns use literal spaces next to tokens that can't contain
+ * one, so no part of the input can be matched more than one way (no catastrophic backtracking).
  */
 export const INJECTION_PATTERNS: readonly RegExp[] = [
   // "ignore your validation rules", "disregard all previous instructions"
-  /\b(?:ignore|disregard|forget|override)\b(?:\s+[\w-]+){0,3}?\s+(?:instructions|rules|prompts?|guidelines)\b/i,
-  /\byou\s+are\s+now\b/i,
-  /\bsystem\s+prompt\b/i,
+  /\b(?:ignore|disregard|forget|override)(?: [\w-]+){0,3}? (?:instructions|rules|prompts?|guidelines)\b/i,
+  /\byou are now\b/i,
+  /\bsystem prompt\b/i,
   // "classify this message as an invoice", "classify it with confidence 1.0"
-  /\b(?:classify|categori[sz]e|label|route)\s+(?:it|this|the)\b(?:\s+[\w-]+){0,2}?\s+(?:as|with)\b/i,
+  /\b(?:classify|categori[sz]e|label|route) (?:it|this|the)(?: [\w-]+){0,2}? (?:as|with)\b/i,
   // A confidence or field name of the model's own output.
-  /\b(?:self_)?confidence\s*(?:of|=|:|to|at)?\s*(?:1(?:\.0+)?|100\s*%)(?![\d.])/i,
+  /\b(?:self_)?confidence(?: ?(?:of|=|:|to|at))? ?(?:1(?:\.0+)?|100 ?%)(?![\d.])/i,
   /\b(?:self_confidence|uncertain_fields)\b/i,
-  /\b(?:approve|pay)\s+(?:it|this)\s+(?:without|immediately)\b/i,
-  /\b(?:note|message|instructions?)\s+(?:to|for)\s+(?:the\s+)?(?:automated|ai|llm|language\s+model)\b/i,
+  /\b(?:approve|pay) (?:it|this) (?:without|immediately)\b/i,
+  /\b(?:note|message|instructions?) (?:to|for) (?:the )?(?:automated|ai|llm|language model)\b/i,
   // The prompt's own part delimiters (escaped before sending, but their presence is telling).
   /<\/?part\b/i,
 ];
 
 /** The first phrase in `texts` that looks like an instruction to the triage system, or null. */
 export function findInjection(texts: readonly string[]): string | null {
-  for (const text of texts) {
+  for (const raw of texts) {
+    // One linear pass, so the patterns only ever see single spaces.
+    const text = raw.replace(/\s+/g, " ");
     for (const pattern of INJECTION_PATTERNS) {
       const match = pattern.exec(text);
       if (match) return match[0].slice(0, 120);
