@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { organization } from "better-auth/plugins";
+import { organization, twoFactor } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements } from "better-auth/plugins/organization/access";
 import { asc, eq } from "drizzle-orm";
@@ -75,6 +75,9 @@ export function createAuth({ db, secret, baseURL, trustedOrigins, trustedProxies
       },
     },
     plugins: [
+      // TOTP with backup codes (docs/security.md, M6). Better Auth encrypts the TOTP secret with
+      // BETTER_AUTH_SECRET; the api requires it for admin-only routes when REQUIRE_ADMIN_2FA is on.
+      twoFactor({ issuer: "AI Triage", schema: { twoFactor: { modelName: "twoFactors" } } }),
       organization({
         ac,
         roles,

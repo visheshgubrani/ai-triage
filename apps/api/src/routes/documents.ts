@@ -149,7 +149,7 @@ const partParam = zValidator("param", z.object({ id: z.uuid(), index: z.coerce.n
 /** Document views for any member of the tenant, including the sources the review page shows. */
 export const documentRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
+    .use(requireTenant(deps), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/", async (c) => {
       const rows = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDocuments(tx, { limit: 100 }));
       const body: DocumentList = { documents: rows.map(summary) };

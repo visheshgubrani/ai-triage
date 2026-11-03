@@ -51,6 +51,9 @@ export const MeResponse = z.object({
   user: z.object({ id: z.string(), email: z.string(), name: z.string() }),
   tenant: z.object({ id: z.string(), name: z.string(), slug: z.string() }),
   role: MemberRole,
+  twoFactorEnabled: z.boolean(),
+  /** An admin who must turn on 2FA before admin settings work (REQUIRE_ADMIN_2FA). */
+  twoFactorRequired: z.boolean(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
@@ -403,6 +406,34 @@ export type WebhookSettingsResponse = z.infer<typeof WebhookSettingsResponse>;
 /** GET /settings/inbound and POST /settings/inbound/rotate: where to forward mail for this tenant. */
 export const InboundSettings = z.object({ addresses: z.array(z.string()) });
 export type InboundSettings = z.infer<typeof InboundSettings>;
+
+// ── API keys ───────────────────────────────────────────────────────────────────────────────
+
+export const ApiKeySummary = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  /** `tri_xxxxxxxx`: enough to recognise a key, never enough to use it. */
+  prefix: z.string(),
+  createdAt: isoDate,
+  lastUsedAt: isoDate.nullable(),
+  expiresAt: isoDate.nullable(),
+  revokedAt: isoDate.nullable(),
+});
+export type ApiKeySummary = z.infer<typeof ApiKeySummary>;
+
+export const ApiKeyList = z.object({ keys: z.array(ApiKeySummary) });
+export type ApiKeyList = z.infer<typeof ApiKeyList>;
+
+export const ApiKeyRequest = z.object({
+  name: z.string().trim().min(1).max(100),
+  /** Omitted: the key never expires. */
+  expiresInDays: z.number().int().min(1).max(3650).optional(),
+});
+export type ApiKeyRequest = z.infer<typeof ApiKeyRequest>;
+
+/** POST /settings/api-keys: the key itself, shown this once. */
+export const ApiKeyCreated = z.object({ key: z.string(), apiKey: ApiKeySummary });
+export type ApiKeyCreated = z.infer<typeof ApiKeyCreated>;
 
 // ── LLM budget ──────────────────────────────────────────────────────────────────────────────
 

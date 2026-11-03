@@ -62,6 +62,10 @@ const app = createApp({
   keys: keyRingFromEnv(process.env),
   rateLimits: rateLimitsFromEnv(process.env),
   inboundDomain: process.env.INBOUND_DOMAIN || null,
+  // On unless turned off explicitly, or for the local demo (whose admin has a published password anyway).
+  requireAdmin2fa: process.env.REQUIRE_ADMIN_2FA
+    ? process.env.REQUIRE_ADMIN_2FA === "true"
+    : process.env.TRIAGE_DEMO !== "true",
   llmMode: callModeOf(getLlmMode()),
 });
 

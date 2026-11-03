@@ -17,7 +17,7 @@ import { idParam } from "./documents";
 /** The outbox: the "Delivery failures" view and manual Redeliver (same Idempotency-Key, new attempt). */
 export const actionRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
+    .use(requireTenant(deps), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/failed", async (c) => {
       const rows = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDeliveryFailures(tx));
       const body: DeliveryFailureList = {

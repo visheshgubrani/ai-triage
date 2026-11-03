@@ -24,7 +24,7 @@ import { idParam } from "./documents";
 export const configRoutes = (deps: AppDeps) => {
   const admin = requireRole("admin");
   return new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
+    .use(requireTenant(deps), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/", async (c) => {
       const body: ConfigList = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => ({
         configs: (await listConfigs(tx)).map((config) => toConfigSummary(config)),

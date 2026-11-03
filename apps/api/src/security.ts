@@ -20,16 +20,6 @@ const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 /** The JSON routes' body limit. Uploads go straight to storage, so nothing else needs more. */
 export const JSON_BODY_LIMIT = 2 ** 20;
 
-/**
- * Better Auth endpoints the web uses. Everything else under /api/auth is 404: organization
- * endpoints (members, roles, invitations) have no UI or audit yet, and sign-up is closed anyway.
- */
-export const AUTH_PATHS: ReadonlySet<string> = new Set([
-  "/api/auth/sign-in/email",
-  "/api/auth/sign-out",
-  "/api/auth/get-session",
-]);
-
 /** Headers for a JSON-only API: nothing may load, frame, sniff or follow a referrer from it. */
 export const apiSecureHeaders = (options: { hsts: boolean }) =>
   secureHeaders({

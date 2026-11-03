@@ -57,7 +57,7 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 | Parsers | DOCX zip-bomb check from the central directory (≤ 5000 entries, ≤ 50 MB uncompressed) before mammoth runs; images over 40 MP refused; the PDF page cap | Done (M5) |
 | Prompt injection | `<part` / `</part` in document text escaped; a deterministic `injection_suspected` gate (pipeline/untrusted.ts) sends text that addresses the triage system to review | Done (M5) |
 | Sender spoofing | Authentication-Results headers stored with each email; the `sender_unauthenticated` gate trusts only headers from receiving servers the config names (`policy.sender.trustedAuthServIds`) and needs DMARC (or DKIM) pass. **Opt-in per config** (API: `sender` on a candidate config); on by default once Gmail sync supplies reliable results (phase 7) | Done (M5), opt-in |
-| Accounts | TOTP 2FA (required for admins), session list and revoke, API keys with expiry and revocation from the UI | M6 |
+| Accounts | TOTP 2FA with backup codes (Better Auth `twoFactor`; code checks rate-limited, BA locks out repeated failures); admin-only routes need it when `REQUIRE_ADMIN_2FA` is on (the default outside the demo); session list and revoke; a password change signs out other sessions; API keys created, listed (prefix only) and revoked from Settings, with optional expiry. All audited | Done (M6) |
 | Privacy | Document purge, per-tenant retention, expired-upload cleanup, tenant offboarding | M7 |
 | Supply chain | Least-privilege CI, SHA-pinned actions, CodeQL, `pnpm audit`, Dependabot, a minimum release age, digest-pinned images, a read-only app tree in the container | M8 |
 
@@ -84,6 +84,7 @@ Set these before exposing an instance. `TRIAGE_DEMO` must be unset; the api and 
 - [ ] `POSTMARK_INBOUND_USER` / `POSTMARK_INBOUND_PASSWORD`: long and random.
 - [ ] `TRUSTED_PROXIES`: the addresses (or CIDRs) of the proxies in front of the API, so rate limits and audit IPs see the real client.
 - [ ] `WEBHOOK_ALLOWED_HOSTS`: only if a receiver lives on a private network.
+- [ ] Every admin turns on 2FA (Settings → Security); `REQUIRE_ADMIN_2FA` stays unset (on).
 - [ ] `RATE_LIMIT_SCALE`: only if legitimate traffic hits the default limits (it multiplies them all).
 - [ ] No demo seed. `pnpm db:seed` loads demo users, and production refuses it.
 - [ ] Backups for Postgres and the bucket, with restores tested.

@@ -1,4 +1,8 @@
 import {
+  type ApiKeyCreated,
+  type ApiKeyList,
+  ApiKeyRequest,
+  type ApiKeySummary,
   type AuditEventList,
   AuditQuery,
   BudgetRequest,
@@ -9,11 +13,14 @@ import {
   type WebhookSettingsResponse,
 } from "@ai-triage/contracts";
 import {
+  createApiKey,
   getBudget,
   getWebhookSettings,
+  listApiKeys,
   listAuditEvents,
   listInboundAddresses,
   recordAudit,
+  revokeApiKey,
   rotateInboundAddress,
   rotateWebhookSecret,
   setBudgetCap,
@@ -27,6 +34,16 @@ import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
 import { webhookUrlProblem } from "../webhook-url";
+import { idParam } from "./documents";
+
+const iso = (d: Date | null) => d?.toISOString() ?? null;
+const toKeySummary = (k: Awaited<ReturnType<typeof listApiKeys>>[number]): ApiKeySummary => ({
+  ...k,
+  createdAt: k.createdAt.toISOString(),
+  lastUsedAt: iso(k.lastUsedAt),
+  expiresAt: iso(k.expiresAt),
+  revokedAt: iso(k.revokedAt),
+});
 
 /**
  * Tenant settings (admins only). The webhook target: deliveries go only here (docs/architecture.md
@@ -35,7 +52,7 @@ import { webhookUrlProblem } from "../webhook-url";
  */
 export const settingsRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth), requireRole("admin"), limitUserWrites(deps, deps.rateLimits.writesPerUser))
+    .use(requireTenant(deps), requireRole("admin"), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/webhook", async (c) => {
       const settings = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
         getWebhookSettings(tx, deps.keys, deps.now()),
@@ -71,6 +88,38 @@ export const settingsRoutes = (deps: AppDeps) =>
         return { settings: await getWebhookSettings(tx, deps.keys, deps.now()), secret };
       });
       return c.json(body, 200);
+    })
+    .get("/api-keys", async (c) => {
+      const keys = await withTenantTx(deps.pool, c.var.tenant.tenantId, listApiKeys);
+      const body: ApiKeyList = { keys: keys.map(toKeySummary) };
+      return c.json(body, 200);
+    })
+    .post("/api-keys", validate("json", ApiKeyRequest), async (c) => {
+      const { name, expiresInDays } = c.req.valid("json");
+      const expiresAt = expiresInDays ? new Date(deps.now().getTime() + expiresInDays * 86_400_000) : null;
+      const body = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx): Promise<ApiKeyCreated> => {
+        const created = await createApiKey(tx, { name, expiresAt, createdBy: c.var.tenant.user.id });
+        await recordAudit(tx, userActor(c, deps), {
+          action: "api_key.created",
+          target: { type: "api_key", id: created.id },
+          details: { name, prefix: created.prefix, expiresAt: expiresAt?.toISOString() ?? null },
+        });
+        const summary = (await listApiKeys(tx)).find((k) => k.id === created.id);
+        if (!summary) throw new Error("created key not found");
+        return { key: created.key, apiKey: toKeySummary(summary) };
+      });
+      return c.json(body, 201);
+    })
+    .post("/api-keys/:id/revoke", idParam, async (c) => {
+      const id = c.req.valid("param").id;
+      const revoked = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const done = await revokeApiKey(tx, id);
+        if (done)
+          await recordAudit(tx, userActor(c, deps), { action: "api_key.revoked", target: { type: "api_key", id } });
+        return done;
+      });
+      if (!revoked) return c.json({ error: "Not found" }, 404);
+      return c.json({ revoked }, 200);
     })
     .get("/inbound", async (c) => {
       const body: InboundSettings = {

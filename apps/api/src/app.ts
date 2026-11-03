@@ -6,10 +6,9 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { requestId } from "hono/request-id";
-import { clientIp } from "./client-ip";
+import { handleAuth } from "./auth-routes";
 import type { AppDeps } from "./deps";
 import { EVAL_ERROR_STATUS } from "./evals";
-import { overLimit } from "./rate-limit";
 import { REVIEW_ERROR_STATUS } from "./review";
 import { actionRoutes } from "./routes/actions";
 import { configRoutes } from "./routes/configs";
@@ -19,14 +18,14 @@ import { publicApiRoutes, webhookRoutes } from "./routes/ingest";
 import { reviewRoutes } from "./routes/review";
 import { settingsRoutes } from "./routes/settings";
 import { uploadRoutes } from "./routes/uploads";
-import { AUTH_PATHS, apiSecureHeaders, limitJsonBodies, requestLog, requireTrustedOrigin } from "./security";
+import { apiSecureHeaders, limitJsonBodies, requestLog, requireTrustedOrigin } from "./security";
 import { requireTenant } from "./tenant";
 
 export type { AppDeps } from "./deps";
 
 /** Builds the API. Dependencies are injected so tests can run it against a scratch database. */
 export function createApp(deps: AppDeps) {
-  const { db, auth, webOrigin } = deps;
+  const { db, webOrigin } = deps;
   const app = new Hono();
   app.use(requestId());
   if (process.env.NODE_ENV !== "test") app.use(requestLog());
@@ -72,21 +71,7 @@ export function createApp(deps: AppDeps) {
       .use("*", cors({ origin: webOrigin, credentials: true }))
       .use("*", requireTrustedOrigin([webOrigin]))
       .use("*", limitJsonBodies())
-      .on(["GET", "POST"], "/api/auth/*", async (c) => {
-        if (!AUTH_PATHS.has(c.req.path)) return c.notFound();
-        const ip = clientIp(c, deps.trustedProxies) ?? "unknown";
-        const limited =
-          c.req.path === "/api/auth/sign-in/email"
-            ? ((await overLimit(c, deps, deps.rateLimits.signInPerIp, `ip:${ip}:sign-in`)) ??
-              (await overLimit(
-                c,
-                deps,
-                deps.rateLimits.signInPerEmail,
-                `email:${await signInEmail(c.req.raw)}:sign-in`,
-              )))
-            : await overLimit(c, deps, deps.rateLimits.authPerIp, `ip:${ip}:auth`);
-        return limited ?? auth.handler(c.req.raw);
-      })
+      .on(["GET", "POST"], "/api/auth/*", (c) => handleAuth(c, deps))
       .get("/health", async (c) => {
         const dbUp = await pingDb(db);
         const body: HealthResponse = {
@@ -96,11 +81,11 @@ export function createApp(deps: AppDeps) {
         };
         return c.json(body, dbUp ? 200 : 503);
       })
-      .get("/me", requireTenant(db, auth), async (c) => {
-        const { tenantId, role, user } = c.var.tenant;
+      .get("/me", requireTenant(deps), async (c) => {
+        const { tenantId, role, user, twoFactorEnabled, twoFactorRequired } = c.var.tenant;
         const tenant = await getTenant(db, tenantId);
         if (!tenant) return c.json({ error: "Tenant not found" }, 404);
-        const body: MeResponse = { user, tenant, role };
+        const body: MeResponse = { user, tenant, role, twoFactorEnabled, twoFactorRequired };
         return c.json(body, 200);
       })
       .route("/uploads", uploadRoutes(deps))
@@ -113,16 +98,6 @@ export function createApp(deps: AppDeps) {
       .route("/webhooks", webhookRoutes(deps))
       .route("/v1", publicApiRoutes(deps))
   );
-}
-
-/** The account a sign-in attempt is for (read from a copy, so Better Auth still gets the body). */
-async function signInEmail(request: Request): Promise<string> {
-  try {
-    const body = (await request.clone().json()) as { email?: unknown };
-    return typeof body.email === "string" ? body.email.trim().toLowerCase() : "none";
-  } catch {
-    return "none";
-  }
 }
 
 export type AppType = ReturnType<typeof createApp>;

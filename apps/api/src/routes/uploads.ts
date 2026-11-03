@@ -11,7 +11,7 @@ import { idParam } from "./documents";
 export const uploadRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
     .use(
-      requireTenant(deps.db, deps.auth),
+      requireTenant(deps),
       requireRole("admin", "reviewer"),
       limitUserWrites(deps, deps.rateLimits.writesPerUser),
       limitUserWrites(deps, deps.rateLimits.uploadsPerUser, "uploads"),

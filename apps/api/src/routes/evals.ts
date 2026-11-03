@@ -51,7 +51,7 @@ const DAY_MS = 86_400_000;
 export const evalRoutes = (deps: AppDeps) => {
   const admin = requireRole("admin");
   return new Hono<TenantEnv>()
-    .use(requireTenant(deps.db, deps.auth), limitUserWrites(deps, deps.rateLimits.writesPerUser))
+    .use(requireTenant(deps), limitUserWrites(deps, deps.rateLimits.writesPerUser))
     .get("/datasets", async (c) => {
       const datasets = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDatasets(tx));
       const body: EvalDatasetList = {

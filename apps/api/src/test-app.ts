@@ -27,7 +27,12 @@ export const POSTMARK = { user: "postmark", password: "test-postmark-password" }
 const testResolve = async (hostname: string) => [hostname.startsWith("private.") ? "10.0.0.7" : "93.184.215.14"];
 
 export async function createTestApp(
-  options: { maxFileBytes?: number; webhookAllowedHosts?: string[]; rateLimits?: RateLimits } = {},
+  options: {
+    maxFileBytes?: number;
+    webhookAllowedHosts?: string[];
+    rateLimits?: RateLimits;
+    requireAdmin2fa?: boolean;
+  } = {},
 ) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
   let fixedNow: Date | null = null;
@@ -60,6 +65,7 @@ export async function createTestApp(
     // Every test file signs in as the demo users from the same (unknown) address, and the counters
     // live in the shared test database: limits stay out of the way unless a test sets its own.
     inboundDomain: null,
+    requireAdmin2fa: options.requireAdmin2fa ?? false,
     rateLimits: options.rateLimits ?? rateLimitsFromEnv({ RATE_LIMIT_SCALE: "10000" }),
     llmMode: "replay",
   });

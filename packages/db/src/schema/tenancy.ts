@@ -69,6 +69,8 @@ export const apiKeys = pgTable(
     keyHash: text("key_hash").notNull().unique(),
     createdBy: uuid("created_by").references(() => users.id),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    /** Optional: the resolver refuses the key after this (0015_api_key_expiry.sql). */
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     createdAt: createdAt(),
   },

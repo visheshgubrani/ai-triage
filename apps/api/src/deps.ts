@@ -29,6 +29,8 @@ export interface AppDeps {
   webhookEgress: WebhookEgress;
   /** Encrypts and decrypts webhook signing secrets (ENCRYPTION_KEYS). */
   keys: KeyRing;
+  /** Admin-only routes need the admin's TOTP 2FA (REQUIRE_ADMIN_2FA; off under TRIAGE_DEMO). */
+  requireAdmin2fa: boolean;
   /** Domain of generated inbound addresses (INBOUND_DOMAIN); null keeps the current address's domain. */
   inboundDomain: string | null;
   /** Request limits (RATE_LIMITS, scaled by RATE_LIMIT_SCALE); tests lower them. */
