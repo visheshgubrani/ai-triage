@@ -108,6 +108,8 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 
 - tsup bundles CommonJS deps such as `pg` into the ESM output. So api and worker add a `createRequire` banner; without it, `node dist/index.js` fails with "Dynamic require of "events" is not supported".
 - Better Auth's `disableSignUp` also blocks server-side `signUpEmail`, so seeds and tests use `ensurePasswordUser()`.
+- Better Auth's TOTP step only follows `/sign-in/email`. `packages/db/src/auth-oauth-2fa.ts` repeats it after a Google callback by writing the twoFactor plugin's own cookie and verification rows, so keep `better-auth` pinned; `google-auth.db.test.ts` fails if those internals move.
+- Google sign-up goes through one gate, `admissionRefusal()` (`packages/db/src/admission.ts`), called from Better Auth's `user.create.before` hook. Don't add `trustedProviders: ["google"]`: it would let Google link an account whose email Google didn't verify.
 - Better Auth with `generateId: "uuid"` leaves `id` out of inserts, so every auth table needs `uuid().defaultRandom()`.
 - `docker compose up --wait` treats an exited one-shot service as a failure. So `infra:up` waits only on the long-running services, then runs `storage-init` with `run --rm`.
 - Local S3 is RustFS, because MinIO stopped publishing images. The bucket is created with `curl --aws-sigv4`.

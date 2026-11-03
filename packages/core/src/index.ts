@@ -374,7 +374,14 @@ export const EVAL_ERROR_CODES = [
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 
 /** Request-level refusals shared by every route (docs/security.md), shown as `code` in ErrorResponse. */
-export const API_ERROR_CODES = ["bad_origin", "unreadable_file", "rate_limited", "two_factor_required"] as const;
+export const API_ERROR_CODES = [
+  "bad_origin",
+  "unreadable_file",
+  "rate_limited",
+  "two_factor_required",
+  /** A sensitive account change by a user without a password needs a sign-in from the last few minutes. */
+  "recent_sign_in_required",
+] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
 /** Who did something recorded in the audit log: a member, a tenant API key, or the system (CLI, cron). */

@@ -205,6 +205,9 @@ importers:
       '@ai-triage/ingest':
         specifier: workspace:*
         version: link:../../packages/ingest
+      '@ai-triage/mailbox':
+        specifier: workspace:*
+        version: link:../../packages/mailbox
       '@ai-triage/storage':
         specifier: workspace:*
         version: link:../../packages/storage

@@ -35,6 +35,11 @@ export const users = pgTable("users", {
   image: text("image"),
   /** twoFactor plugin. */
   twoFactorEnabled: boolean("two_factor_enabled").notNull().default(false),
+  /**
+   * The Google Workspace domain (`hd` claim) of the account the user signed up with, if any. Set
+   * once, by Sign in with Google (src/auth.ts); it decides Workspace domain auto-join.
+   */
+  hostedDomain: text("hosted_domain"),
   ...timestamps,
 });
 

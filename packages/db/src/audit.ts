@@ -1,7 +1,8 @@
 import type { AuditAction, AuditActorType } from "@ai-triage/core";
 import { desc, sql } from "drizzle-orm";
+import type pg from "pg";
 import { auditEvents } from "./schema";
-import type { TenantTx } from "./tenant-tx";
+import { type TenantTx, withTenantTx } from "./tenant-tx";
 
 // The audit log (docs/security.md). Always called inside the tenant transaction that makes the
 // change, so the change and its event commit or roll back together.
@@ -39,6 +40,25 @@ export async function recordAudit(tx: TenantTx, actor: AuditActor, event: AuditE
     userAgent: actor.userAgent?.slice(0, 300) ?? null,
     requestId: actor.requestId ?? null,
   });
+}
+
+/**
+ * An account-level change (2FA, a linked Google account) belongs to no single tenant, so it is
+ * recorded in every tenant the user belongs to.
+ */
+export async function recordUserAudit(
+  pool: pg.Pool,
+  userId: string,
+  actor: AuditActor,
+  event: AuditEventInput,
+): Promise<void> {
+  const { rows } = await pool.query<{ tenant_id: string }>(
+    "select organization_id as tenant_id from memberships where user_id = $1",
+    [userId],
+  );
+  for (const { tenant_id } of rows) {
+    await withTenantTx(pool, tenant_id, (tx) => recordAudit(tx, actor, event));
+  }
 }
 
 /**

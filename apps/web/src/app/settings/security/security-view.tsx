@@ -7,6 +7,7 @@ import { Button } from "@/components/button";
 import { Section } from "@/components/section";
 import { authClient } from "@/lib/auth-client";
 import { ago } from "@/lib/format";
+import { authErrorText, googleEnabled } from "@/lib/google";
 
 const input = "rounded-md border border-neutral-300 bg-transparent px-3 py-1.5 text-sm dark:border-neutral-700";
 
@@ -24,18 +25,34 @@ function Note({ message }: { message: Message }) {
   );
 }
 
-/** TOTP: turn on (scan, confirm a code, keep the backup codes) or off. */
-function TwoFactorSection({ enabled, required }: { enabled: boolean; required: boolean }) {
+/**
+ * TOTP: turn on (scan, confirm a code, keep the backup codes) or off. A user with a password confirms
+ * with it; a Google-only user needs to have signed in within the last few minutes instead (the api
+ * refuses with `recent_sign_in_required` otherwise).
+ */
+function TwoFactorSection({
+  enabled,
+  required,
+  hasPassword,
+}: {
+  enabled: boolean;
+  required: boolean;
+  hasPassword: boolean;
+}) {
   const router = useRouter();
   const [setup, setSetup] = useState<{ qr: string; uri: string; backupCodes: string[] } | null>(null);
   const [message, setMessage] = useState<Message>(null);
+  const passwordOf = (form: HTMLFormElement) =>
+    hasPassword ? { password: String(new FormData(form).get("password")) } : {};
 
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const password = String(new FormData(event.currentTarget).get("password"));
-    const { data, error } = await authClient.twoFactor.enable({ password });
+    const { data, error } = await authClient.twoFactor.enable(passwordOf(event.currentTarget));
     if (error || !data || data.method !== "totp") {
-      return setMessage({ error: true, text: error?.message ?? "Couldn't start setup" });
+      return setMessage({
+        error: true,
+        text: error ? authErrorText(error, "Couldn't start setup") : "Couldn't start setup",
+      });
     }
     const qr = `data:image/svg+xml;utf8,${encodeURIComponent(await QRCode.toString(data.totpURI, { type: "svg", margin: 1 }))}`;
     setSetup({ qr, uri: data.totpURI, backupCodes: data.backupCodes });
@@ -54,10 +71,10 @@ function TwoFactorSection({ enabled, required }: { enabled: boolean; required: b
 
   async function disable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const password = String(new FormData(event.currentTarget).get("password"));
+    const body = passwordOf(event.currentTarget);
     if (!window.confirm("Turn off two-factor authentication?")) return;
-    const { error } = await authClient.twoFactor.disable({ password });
-    if (error) return setMessage({ error: true, text: error.message ?? "Couldn't turn it off" });
+    const { error } = await authClient.twoFactor.disable(body);
+    if (error) return setMessage({ error: true, text: authErrorText(error, "Couldn't turn it off") });
     setMessage({ error: false, text: "Two-factor authentication is off." });
     router.refresh();
   }
@@ -70,7 +87,7 @@ function TwoFactorSection({ enabled, required }: { enabled: boolean; required: b
       {enabled ? (
         <form onSubmit={disable} className="flex flex-wrap items-center gap-2">
           <span>On: sign-in asks for a code from your authenticator app.</span>
-          <input name="password" type="password" placeholder="Password" required className={input} />
+          {hasPassword && <input name="password" type="password" placeholder="Password" required className={input} />}
           <Button type="submit">Turn off</Button>
         </form>
       ) : setup ? (
@@ -106,7 +123,7 @@ function TwoFactorSection({ enabled, required }: { enabled: boolean; required: b
       ) : (
         <form onSubmit={start} className="flex flex-wrap items-center gap-2">
           <span>Off.</span>
-          <input name="password" type="password" placeholder="Password" required className={input} />
+          {hasPassword && <input name="password" type="password" placeholder="Password" required className={input} />}
           <Button type="submit" variant="primary">
             Set up
           </Button>
@@ -228,13 +245,95 @@ function PasswordSection() {
   );
 }
 
+type Account = { id: string; providerId: string };
+
+/** How this account signs in: a password, Google, or both. Google can be linked or unlinked here. */
+function SignInMethodsSection({
+  accounts,
+  google,
+  onChange,
+}: {
+  accounts: Account[];
+  google: boolean;
+  onChange: () => Promise<void>;
+}) {
+  const [message, setMessage] = useState<Message>(null);
+  const linked = accounts.find((a) => a.providerId === "google");
+  const hasPassword = accounts.some((a) => a.providerId === "credential");
+
+  async function link() {
+    const { error } = await authClient.linkSocial({
+      provider: "google",
+      callbackURL: `${window.location.origin}/settings/security`,
+      errorCallbackURL: `${window.location.origin}/settings/security`,
+    });
+    if (error) setMessage({ error: true, text: authErrorText(error, "Couldn't start linking") });
+  }
+
+  async function unlink(accountId: string) {
+    if (!window.confirm("Stop signing in with Google?")) return;
+    const { error } = await authClient.unlinkAccount({ accountId });
+    if (error) return setMessage({ error: true, text: authErrorText(error, "Couldn't unlink Google") });
+    setMessage({ error: false, text: "Google is no longer linked." });
+    await onChange();
+  }
+
+  if (!google && !linked) return null;
+  return (
+    <Section title="Sign-in methods">
+      <ul className="divide-y divide-neutral-100 dark:divide-neutral-900">
+        <li className="flex items-center justify-between gap-2 py-2">
+          <span>Password</span>
+          <span className="text-neutral-500">{hasPassword ? "Set" : "None: you sign in with Google"}</span>
+        </li>
+        <li className="flex items-center justify-between gap-2 py-2">
+          <span>Google</span>
+          {linked ? (
+            // Better Auth refuses to unlink the last way to sign in.
+            <Button onClick={() => void unlink(linked.id)} disabled={!hasPassword}>
+              Unlink
+            </Button>
+          ) : (
+            <Button onClick={() => void link()}>Link Google account</Button>
+          )}
+        </li>
+      </ul>
+      <Note message={message} />
+    </Section>
+  );
+}
+
 export function SecurityView(props: { email: string; twoFactorEnabled: boolean; twoFactorRequired: boolean }) {
+  const [accounts, setAccounts] = useState<Account[] | null>(null);
+  const [google, setGoogle] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const { data } = await authClient.listAccounts();
+    setAccounts((data ?? []) as Account[]);
+  }, []);
+  useEffect(() => {
+    void load();
+    void googleEnabled().then(setGoogle);
+    // Back from linking Google with `?error=` (for example, a Google account with another email).
+    const code = new URLSearchParams(window.location.search).get("error");
+    if (code) setLinkError(`Google couldn't be linked (${code}).`);
+  }, [load]);
+
+  if (!accounts) return <p className="mt-6 text-sm text-neutral-500">Loading…</p>;
+  const hasPassword = accounts.some((a) => a.providerId === "credential");
   return (
     <>
       <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">Signed in as {props.email}.</p>
-      <TwoFactorSection enabled={props.twoFactorEnabled} required={props.twoFactorRequired} />
+      {linkError && (
+        <p role="alert" className="mt-2 text-sm text-red-600">
+          {linkError}
+        </p>
+      )}
+      <TwoFactorSection enabled={props.twoFactorEnabled} required={props.twoFactorRequired} hasPassword={hasPassword} />
+      <SignInMethodsSection accounts={accounts} google={google} onChange={load} />
       <SessionsSection />
-      <PasswordSection />
+      {hasPassword && <PasswordSection />}
     </>
   );
 }

@@ -134,6 +134,13 @@
       "when": 1793728818727,
       "tag": "0018_google_closed_sets",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793729197566,
+      "tag": "0019_google_sign_in",
+      "breakpoints": true
     }
   ]
 }

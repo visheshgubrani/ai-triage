@@ -57,6 +57,10 @@ export const MeResponse = z.object({
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
+/** GET /auth/providers (public): which sign-in methods besides email and password this instance offers. */
+export const AuthProvidersResponse = z.object({ google: z.boolean() });
+export type AuthProvidersResponse = z.infer<typeof AuthProvidersResponse>;
+
 /** A field-level problem: a request that didn't parse, or edited values that don't match the schema. */
 export const Issue = z.object({ field: z.string(), path: z.string(), message: z.string() });
 export type Issue = z.infer<typeof Issue>;

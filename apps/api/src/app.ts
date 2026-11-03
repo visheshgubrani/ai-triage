@@ -1,4 +1,4 @@
-import type { ErrorResponse, HealthResponse, Issue, MeResponse } from "@ai-triage/contracts";
+import type { AuthProvidersResponse, ErrorResponse, HealthResponse, Issue, MeResponse } from "@ai-triage/contracts";
 import { PipelineError } from "@ai-triage/core/pipeline";
 import { ConfigError, EvalRequestError, getTenant, pingDb, ReviewError } from "@ai-triage/db";
 import { IngestRejected } from "@ai-triage/ingest";
@@ -80,6 +80,11 @@ export function createApp(deps: AppDeps) {
           time: new Date().toISOString(),
         };
         return c.json(body, dbUp ? 200 : 503);
+      })
+      // Public: the sign-in page shows "Continue with Google" only when the instance has a client.
+      .get("/auth/providers", (c) => {
+        const body: AuthProvidersResponse = { google: deps.google !== null };
+        return c.json(body, 200);
       })
       .get("/me", requireTenant(deps), async (c) => {
         const { tenantId, role, user, twoFactorEnabled, twoFactorRequired } = c.var.tenant;
