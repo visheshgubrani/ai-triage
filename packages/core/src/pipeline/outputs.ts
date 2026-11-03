@@ -43,7 +43,9 @@ export function parseClassifyOutput(output: unknown, categories: readonly string
   }
   return {
     category: output.category as string,
-    selfConfidence: output.self_confidence as number,
+    // Rounded as classifications.self_confidence (numeric(4,3)) stores it, so production (which routes
+    // on the stored value) and eval runs (which route on this one) compare the same score.
+    selfConfidence: Math.round((output.self_confidence as number) * 1000) / 1000,
     rationale: output.rationale as string,
   };
 }

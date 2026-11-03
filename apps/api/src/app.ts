@@ -1,15 +1,18 @@
 import type { ErrorResponse, HealthResponse, Issue, MeResponse } from "@ai-triage/contracts";
 import { PipelineError } from "@ai-triage/core/pipeline";
-import { getTenant, pingDb, ReviewError } from "@ai-triage/db";
+import { ConfigError, EvalRequestError, getTenant, pingDb, ReviewError } from "@ai-triage/db";
 import { IngestRejected } from "@ai-triage/ingest";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { HTTPException } from "hono/http-exception";
 import { logger } from "hono/logger";
 import type { AppDeps } from "./deps";
+import { EVAL_ERROR_STATUS } from "./evals";
 import { REVIEW_ERROR_STATUS } from "./review";
 import { actionRoutes } from "./routes/actions";
+import { configRoutes } from "./routes/configs";
 import { documentRoutes } from "./routes/documents";
+import { evalRoutes } from "./routes/evals";
 import { publicApiRoutes, webhookRoutes } from "./routes/ingest";
 import { reviewRoutes } from "./routes/review";
 import { settingsRoutes } from "./routes/settings";
@@ -32,6 +35,15 @@ export function createApp(deps: AppDeps) {
       const { issues, ...details } = err.details as { issues?: Issue[] };
       const body: ErrorResponse = { error: err.message, code: err.code, issues, details };
       return c.json(body, REVIEW_ERROR_STATUS[err.code]);
+    }
+    if (err instanceof EvalRequestError) {
+      const body: ErrorResponse = { error: err.message, code: err.code, details: err.details };
+      return c.json(body, EVAL_ERROR_STATUS[err.code]);
+    }
+    // A candidate config the catalog refuses (unknown model, an effort it doesn't accept, …).
+    if (err instanceof ConfigError) {
+      const body: ErrorResponse = { error: err.message, code: "invalid_config" };
+      return c.json(body, 422);
     }
     if (err instanceof HTTPException) return err.getResponse();
     console.error(err);
@@ -64,6 +76,8 @@ export function createApp(deps: AppDeps) {
       .route("/review", reviewRoutes(deps))
       .route("/actions", actionRoutes(deps))
       .route("/settings", settingsRoutes(deps))
+      .route("/evals", evalRoutes(deps))
+      .route("/configs", configRoutes(deps))
       .route("/webhooks", webhookRoutes(deps))
       .route("/v1", publicApiRoutes(deps))
   );

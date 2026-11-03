@@ -199,6 +199,9 @@ importers:
       '@ai-triage/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ai-triage/evals':
+        specifier: workspace:*
+        version: link:../../packages/evals
       '@ai-triage/ingest':
         specifier: workspace:*
         version: link:../../packages/ingest
@@ -230,6 +233,9 @@ importers:
       '@ai-triage/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@ai-triage/evals':
+        specifier: workspace:*
+        version: link:../../packages/evals
       better-auth:
         specifier: 1.7.15
         version: 1.7.15(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(kysely@0.29.8)(pg@8.23.1))(next@16.4.3(@opentelemetry/api@1.10.0)(@playwright/test@1.64.1)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
@@ -267,6 +273,9 @@ importers:
       '@ai-triage/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ai-triage/evals':
+        specifier: workspace:*
+        version: link:../../packages/evals
       '@ai-triage/fixtures':
         specifier: workspace:*
         version: link:../../fixtures
@@ -314,6 +323,9 @@ importers:
       '@ai-triage/core':
         specifier: workspace:*
         version: link:../core
+      '@ai-triage/evals':
+        specifier: workspace:*
+        version: link:../evals
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -354,6 +366,9 @@ importers:
       '@ai-triage/core':
         specifier: workspace:*
         version: link:../core
+      '@ai-triage/evals':
+        specifier: workspace:*
+        version: link:../evals
       '@ai-triage/schemas':
         specifier: workspace:*
         version: link:../schemas
@@ -377,7 +392,14 @@ importers:
         specifier: ^0.31.11
         version: 0.31.11
 
-  packages/evals: {}
+  packages/evals:
+    dependencies:
+      '@ai-triage/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ai-triage/schemas':
+        specifier: workspace:*
+        version: link:../schemas
 
   packages/ingest:
     dependencies:

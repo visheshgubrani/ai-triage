@@ -1,5 +1,5 @@
 import type { DecisionRequest, DecisionResponse } from "@ai-triage/contracts";
-import { ACTIONS_BY_TASK_KIND, OTHER_CATEGORY, QUEUES, type ReviewErrorCode } from "@ai-triage/core";
+import { ACTIONS_BY_TASK_KIND, type EvalSplit, OTHER_CATEGORY, QUEUES, type ReviewErrorCode } from "@ai-triage/core";
 import { approvedPayload, checkUserRevision, proposeAction } from "@ai-triage/core/pipeline";
 import { fieldDiff } from "@ai-triage/core/review";
 import {
@@ -7,12 +7,15 @@ import {
   type ExtractionRow,
   enqueue,
   getActiveConfig,
+  getOrCreateDataset,
   insertDecision,
+  insertEvalItem,
   insertUserExtraction,
   loadClassification,
   loadExtraction,
   loadRun,
   loadSchemaVersion,
+  loadTaskDocument,
   lockTaskForDecision,
   ReviewError,
   resolveTask,
@@ -23,6 +26,7 @@ import {
   type TenantTx,
   withTenantTx,
 } from "@ai-triage/db";
+import { type EvalSource, snapshotDocumentSource } from "@ai-triage/ingest";
 import type { AppDeps } from "./deps";
 import type { TenantContext } from "./tenant";
 
@@ -47,13 +51,24 @@ const asFields = (value: unknown): Fields => (value && typeof value === "object"
  * Applies a reviewer's decision to a task, all in one transaction (docs/architecture.md §5): the
  * document row and then the task row are locked, the claim is checked, and the action must be one
  * the task's kind allows. Returns null when the task isn't visible to the tenant.
+ *
+ * "Add to eval set" on an approval copies the document's source first (storage isn't
+ * transactional; a refused decision leaves an unreferenced copy, like an expired upload), then
+ * adds the item, labeled with the approved revision, in the decision's transaction.
  */
-export function decide(
+export async function decide(
   deps: AppDeps,
   actor: TenantContext,
   taskId: string,
   body: DecisionRequest,
 ): Promise<DecisionResponse | null> {
+  const evalSplit = "addToEvalSet" in body ? body.addToEvalSet?.split : undefined;
+  let snapshot: EvalSource | null = null;
+  if (evalSplit) {
+    const document = await withTenantTx(deps.pool, actor.tenantId, (tx) => loadTaskDocument(tx, taskId));
+    if (!document) return null;
+    snapshot = await snapshotDocumentSource(deps.storage, actor.tenantId, document);
+  }
   return withTenantTx(deps.pool, actor.tenantId, async (tx) => {
     const now = deps.now();
     const locked = await lockTaskForDecision(tx, {
@@ -68,7 +83,7 @@ export function decide(
       throw new ReviewError("action_not_allowed", `A ${task.kind} task can't be resolved with ${body.action}.`);
     }
     const note = body.note?.trim() || null;
-    const result = { documentId: document.id, extractionId: null, actionId: null, runId: null };
+    const result = { documentId: document.id, extractionId: null, actionId: null, runId: null, evalItem: null };
 
     switch (body.action) {
       case "approve":
@@ -105,12 +120,17 @@ export function decide(
           diff: edit?.diff ?? null,
           note,
         });
+        const evalItem =
+          evalSplit && snapshot
+            ? await addToEvalSet(tx, actor, { approved, edited: edit !== null, decisionId, split: evalSplit, snapshot })
+            : null;
         return {
           ...result,
           decisionId,
           outcome: edit ? "edit_approve" : "approve",
           extractionId: approved.id,
           actionId,
+          evalItem,
         };
       }
 
@@ -183,6 +203,48 @@ export function decide(
         return { ...result, decisionId, outcome: "retry", runId };
       }
     }
+  });
+}
+
+/**
+ * The approved revision as an eval label in the tenant's Main dataset. A label must match the full
+ * schema (a plain approval can bind a revision that didn't), else the whole decision is refused.
+ * The tag says whether a person edited the values or approved the model's as they were.
+ */
+async function addToEvalSet(
+  tx: TenantTx,
+  actor: TenantContext,
+  input: { approved: ExtractionRow; edited: boolean; decisionId: string; split: EvalSplit; snapshot: EvalSource },
+) {
+  const { approved } = input;
+  const schemaVersion = await loadSchemaVersion(tx, approved.schemaVersionId);
+  // Nulls are kept: to the comparators a null and a missing key both mean "not stated".
+  const fields = asFields(approved.fields);
+  const check = checkUserRevision({
+    category: approved.category,
+    schemaVersion: {
+      id: schemaVersion.id,
+      version: schemaVersion.version,
+      jsonSchema: schemaVersion.jsonSchema as JsonSchema,
+    },
+    values: fields,
+  });
+  if (check.validationIssues.length > 0) {
+    throw new ReviewError("invalid_fields", "These values can't be an eval label: some don't match the schema.", {
+      issues: check.validationIssues.map(({ field, path, message }) => ({ field, path, message })),
+    });
+  }
+  const dataset = await getOrCreateDataset(tx);
+  return insertEvalItem(tx, {
+    datasetId: dataset.id,
+    source: input.snapshot,
+    expectedCategory: approved.category,
+    expectedFields: fields,
+    split: input.split,
+    origin: "review",
+    originRef: `decision:${input.decisionId}`,
+    tags: [input.edited ? "review:edited" : "review:approved"],
+    createdBy: actor.user.id,
   });
 }
 

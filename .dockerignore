@@ -1,0 +1,11 @@
+# Never bake local secrets or build output into the image; compose passes the environment.
+.env
+.git
+**/node_modules
+**/.next
+**/dist
+**/.turbo
+**/*.tsbuildinfo
+test-results
+playwright-report
+.claude

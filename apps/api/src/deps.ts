@@ -1,3 +1,4 @@
+import type { LlmCallMode } from "@ai-triage/core";
 import type { Auth, Db, PgBoss, Pool } from "@ai-triage/db";
 import type { IngestLimits } from "@ai-triage/ingest";
 import type { Storage } from "@ai-triage/storage";
@@ -19,4 +20,6 @@ export interface AppDeps {
   now: () => Date;
   /** Tenants may set an http: webhook URL only when this is on (local development). */
   webhooks: { allowHttp: boolean };
+  /** How eval runs started now will call models (from LLM_MODE); the worker refuses a run that differs. */
+  llmMode: LlmCallMode;
 }

@@ -18,11 +18,12 @@
     "infra:down": "docker compose down",
     "db:generate": "pnpm --filter @ai-triage/db generate",
     "db:migrate": "pnpm --filter @ai-triage/db migrate",
-    "db:seed": "pnpm --filter @ai-triage/db seed && pnpm --filter @ai-triage/worker seed:documents",
+    "db:seed": "pnpm --filter @ai-triage/db seed && pnpm --filter @ai-triage/worker seed:documents && pnpm --filter @ai-triage/worker seed:evals",
     "api-key:create": "pnpm --filter @ai-triage/db api-key:create",
     "ingest": "pnpm --filter @ai-triage/api ingest",
     "fixtures:generate": "pnpm --filter @ai-triage/fixtures generate",
     "cassettes:record": "pnpm --filter @ai-triage/worker cassettes:record",
+    "eval:import": "pnpm --filter @ai-triage/worker eval:import",
     "e2e": "playwright test"
   },
   "devDependencies": {

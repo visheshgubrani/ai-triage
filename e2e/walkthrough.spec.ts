@@ -28,9 +28,11 @@ test("review an invoice, approve the corrected revision, deliver it signed, rede
 }) => {
   await signIn(page, "reviewer@demo.test");
 
-  // An invoice waiting for review that nobody holds.
+  // An invoice waiting for review that nobody holds, with text evidence to highlight (not a scan).
   const inbox = await (await page.request.get(`${API}/review/tasks?kind=review&category=invoice`)).json();
-  const task = (inbox.tasks as { id: string; documentId: string; claim: unknown }[]).find((t) => !t.claim);
+  const task = (inbox.tasks as { id: string; documentId: string; claim: unknown; reasons: string[] }[]).find(
+    (t) => !t.claim && !t.reasons.includes("evidence_unverifiable"),
+  );
   test.skip(!task, "no free invoice review task: seed the demo (pnpm db:seed) and let the worker run");
   if (!task) return;
 

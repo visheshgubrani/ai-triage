@@ -9,11 +9,14 @@
     "start": "node --env-file-if-exists=../../.env dist/index.js",
     "typecheck": "tsc --noEmit",
     "seed:documents": "tsx --env-file-if-exists=../../.env src/bin/seed-documents.ts",
+    "seed:evals": "tsx --env-file-if-exists=../../.env src/bin/seed-evals.ts",
+    "eval:import": "tsx --env-file-if-exists=../../.env src/bin/eval-import.ts",
     "cassettes:record": "tsx --env-file-if-exists=../../.env src/bin/record-cassettes.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",
     "@ai-triage/db": "workspace:*",
+    "@ai-triage/evals": "workspace:*",
     "@ai-triage/fixtures": "workspace:*",
     "@ai-triage/ingest": "workspace:*",
     "@ai-triage/llm": "workspace:*",

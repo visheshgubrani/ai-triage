@@ -29,7 +29,7 @@ export const supportRequest: CategoryTemplate = {
     customer_email: "normalized",
     product: "normalized",
     order_id: "exact",
-    issue_summary: "normalized",
+    issue_summary: "free_text",
     severity: "exact",
     requested_action: "exact",
   },

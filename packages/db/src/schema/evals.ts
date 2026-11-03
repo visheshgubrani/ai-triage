@@ -3,6 +3,7 @@ import {
   EVAL_ITEM_ORIGINS,
   EVAL_RUN_STATUSES,
   EVAL_SPLITS,
+  FAILURE_REASONS,
   LLM_CALL_MODES,
   LLM_STAGES,
 } from "@ai-triage/core";
@@ -11,6 +12,7 @@ import {
   boolean,
   check,
   foreignKey,
+  index,
   integer,
   jsonb,
   numeric,
@@ -22,7 +24,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { createdAt, emptyTextArray, oneOf, pk, tenantId, tenantKey } from "./_helpers";
+import { between01, createdAt, emptyTextArray, oneOf, pk, tenantId, tenantKey } from "./_helpers";
 import { users } from "./auth";
 import { pipelineConfigs, processingRuns } from "./pipeline";
 import { modelPrices } from "./prices";
@@ -44,7 +46,13 @@ export const evalDatasets = pgTable(
   (t) => [tenantKey("eval_datasets", t), unique("eval_datasets_name_key").on(t.tenantId, t.name)],
 );
 
-/** A labeled example. `source_key` points at an immutable snapshot of the source in storage. */
+/**
+ * A labeled example. `source_key`, `source_mime` and `source_title` mirror a document's source
+ * (`documents.source_key`, `mime`, `title`): an immutable snapshot in storage that the eval runner
+ * parses exactly as the parse stage would, so its model requests match production's byte for byte.
+ * `content_key` is derived like `documents.external_id`, so the same content can't be in a dataset
+ * twice. Items never change (trigger); a wrong label is retired and replaced.
+ */
 export const evalItems = pgTable(
   "eval_items",
   {
@@ -52,13 +60,19 @@ export const evalItems = pgTable(
     tenantId: tenantId(),
     datasetId: uuid("dataset_id").notNull(),
     sourceKey: text("source_key").notNull(),
-    sourceMime: text("source_mime"),
+    sourceMime: text("source_mime").notNull(),
+    sourceTitle: text("source_title"),
+    contentKey: text("content_key").notNull(),
     expectedCategory: text("expected_category").notNull(),
     expectedFields: jsonb("expected_fields").notNull().default({}),
     split: text("split", { enum: EVAL_SPLITS }).notNull(),
     origin: text("origin", { enum: EVAL_ITEM_ORIGINS }).notNull(),
+    /** Where the item came from, for people: `fixture:<id>`, `decision:<id>`, an import file name. */
+    originRef: text("origin_ref"),
     tags: text("tags").array().notNull().default(emptyTextArray()),
+    createdBy: uuid("created_by").references(() => users.id),
     createdAt: createdAt(),
+    retiredAt: timestamp("retired_at", { withTimezone: true }),
   },
   (t) => [
     tenantKey("eval_items", t),
@@ -69,6 +83,8 @@ export const evalItems = pgTable(
       columns: [t.tenantId, t.datasetId],
       foreignColumns: [evalDatasets.tenantId, evalDatasets.id],
     }),
+    uniqueIndex("eval_items_content_key").on(t.tenantId, t.datasetId, t.contentKey).where(sql`${t.retiredAt} is null`),
+    index("eval_items_split_idx").on(t.tenantId, t.datasetId, t.split).where(sql`${t.retiredAt} is null`),
   ],
 );
 
@@ -82,7 +98,12 @@ export const evalRuns = pgTable(
     split: text("split", { enum: EVAL_SPLITS }).notNull(),
     llmMode: text("llm_mode", { enum: LLM_CALL_MODES }).notNull(),
     status: text("status", { enum: EVAL_RUN_STATUSES }).notNull().default("queued"),
+    /** Active items in the split when the run started; the run is done when it has this many results. */
+    itemCount: integer("item_count").notNull(),
+    /** Summary metrics, computed once when the run finishes. */
     aggregates: jsonb("aggregates"),
+    /** Why the run failed as a whole (for example, the worker's LLM mode differs from the run's). */
+    error: text("error"),
     createdBy: uuid("created_by").references(() => users.id),
     createdAt: createdAt(),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -93,6 +114,8 @@ export const evalRuns = pgTable(
     oneOf("eval_runs_split_check", t.split, EVAL_SPLITS),
     oneOf("eval_runs_llm_mode_check", t.llmMode, LLM_CALL_MODES),
     oneOf("eval_runs_status_check", t.status, EVAL_RUN_STATUSES),
+    check("eval_runs_item_count_check", sql`${t.itemCount} > 0`),
+    index("eval_runs_dataset_idx").on(t.tenantId, t.datasetId, t.createdAt),
     foreignKey({
       name: "eval_runs_dataset_fk",
       columns: [t.tenantId, t.datasetId],
@@ -142,6 +165,7 @@ export const llmCalls = pgTable(
   },
   (t): PgTableExtraConfigValue[] => [
     tenantKey("llm_calls", t),
+    index("llm_calls_created_idx").on(t.tenantId, t.createdAt),
     oneOf("llm_calls_stage_check", t.stage, LLM_STAGES),
     oneOf("llm_calls_mode_check", t.mode, LLM_CALL_MODES),
     check(
@@ -174,7 +198,12 @@ export const llmCalls = pgTable(
   ],
 );
 
-/** Per-item eval outcome. `proposed_action` is stored for inspection and never sent. */
+/**
+ * Per-item eval outcome, insert-only (trigger). `proposed_action` is stored for inspection and never
+ * sent. The grades are fixed when the result is written (docs/architecture.md §6): `category_correct`;
+ * `required_correct`, the right category and every required field correct (a correct auto-approval);
+ * `fully_correct`, every field correct. An error result is wrong on all three.
+ */
 export const evalResults = pgTable(
   "eval_results",
   {
@@ -185,12 +214,21 @@ export const evalResults = pgTable(
     predictedCategory: text("predicted_category"),
     predictedFields: jsonb("predicted_fields"),
     fieldScores: jsonb("field_scores"),
+    /** The classifier's self_confidence: the number compared against the category's threshold. */
+    score: numeric("score", { precision: 4, scale: 3, mode: "number" }),
     decision: text("decision", { enum: DECISIONS }),
+    /** Gate and route reasons, as on `extractions.decision_reasons`. */
+    reasons: text("reasons").array().notNull().default(emptyTextArray()),
+    gateResults: jsonb("gate_results"),
+    categoryCorrect: boolean("category_correct").notNull(),
+    requiredCorrect: boolean("required_correct").notNull(),
+    fullyCorrect: boolean("fully_correct").notNull(),
     proposedAction: jsonb("proposed_action"),
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     latencyMs: integer("latency_ms"),
     classifyCallId: uuid("classify_call_id"),
     extractCallId: uuid("extract_call_id"),
+    errorReason: text("error_reason", { enum: FAILURE_REASONS }),
     error: text("error"),
     createdAt: createdAt(),
   },
@@ -198,6 +236,9 @@ export const evalResults = pgTable(
     tenantKey("eval_results", t),
     unique("eval_results_run_item_key").on(t.evalRunId, t.evalItemId),
     oneOf("eval_results_decision_check", t.decision, DECISIONS),
+    oneOf("eval_results_error_reason_check", t.errorReason, FAILURE_REASONS),
+    check("eval_results_error_check", sql`(${t.error} is null) = (${t.errorReason} is null)`),
+    between01("eval_results_score_check", t.score),
     foreignKey({
       name: "eval_results_run_fk",
       columns: [t.tenantId, t.evalRunId],

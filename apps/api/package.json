@@ -17,6 +17,7 @@
     "@ai-triage/contracts": "workspace:*",
     "@ai-triage/core": "workspace:*",
     "@ai-triage/db": "workspace:*",
+    "@ai-triage/evals": "workspace:*",
     "@ai-triage/ingest": "workspace:*",
     "@ai-triage/storage": "workspace:*",
     "@hono/node-server": "^2.1.5",

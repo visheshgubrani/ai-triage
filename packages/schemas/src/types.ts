@@ -6,8 +6,12 @@ export type JsonSchema = { [key: string]: unknown };
 /** Field values of one extraction, keyed by field name. */
 export type FieldValues = Record<string, unknown>;
 
-/** How phase 4 evals compare a predicted field to its label (docs/architecture.md §8). */
-export const COMPARATORS = ["exact", "normalized", "date", "amount", "set_f1"] as const;
+/**
+ * How evals compare a predicted field to its label (docs/architecture.md §8). `free_text` is for
+ * fields the model writes in its own words: only presence is graded (both set, or both empty),
+ * because string matching can't tell a good summary from a bad one.
+ */
+export const COMPARATORS = ["exact", "normalized", "date", "amount", "set_f1", "free_text"] as const;
 export type Comparator = (typeof COMPARATORS)[number];
 
 /**

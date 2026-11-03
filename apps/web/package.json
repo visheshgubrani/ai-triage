@@ -12,6 +12,7 @@
   "dependencies": {
     "@ai-triage/contracts": "workspace:*",
     "@ai-triage/core": "workspace:*",
+    "@ai-triage/evals": "workspace:*",
     "better-auth": "1.7.15",
     "next": "^16.4.3",
     "react": "^19.3.1",

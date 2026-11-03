@@ -1,6 +1,4 @@
 import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { type Effort, isModelRef, modelInfo, parseModelRef } from "@ai-triage/core";
 import { auditDraw } from "@ai-triage/core/pipeline";
@@ -23,6 +21,7 @@ import {
   cassettePath,
   getLlmMode,
   liveTransport,
+  markRecorded,
   providerKeyEnv,
   recordTransport,
   replayTransport,
@@ -33,21 +32,28 @@ import { workerConfig } from "../config";
 import { ingestFixture } from "../fixtures";
 import { createDbLlmGateway } from "../llm";
 import { drainTenantJobs } from "../pipeline/drain";
+import { defaultEffort } from "../recorded-model";
 
-// `LLM_MODE=record pnpm cassettes:record --yes [--all] [--cap <usd>] [--model <ref>]`
+// `LLM_MODE=record pnpm cassettes:record --yes [--all] [--cap <usd>] [--model <ref>] [--effort <level>]`
 // Runs every fixture through the real pipeline against the live model API and saves each response
 // as a cassette (fixtures/cassettes), so replay mode (the default, and CI) never needs a key.
 // This SPENDS MONEY. By default only requests without a cassette are sent; --all re-records all.
 // It uses a fresh scratch tenant each run, with its own daily budget cap. Stop any running worker
 // (`pnpm dev`) first: it shares the job queues and would replay this run's jobs instead.
 
+/** Run failures that leave no response to replay: the set stays incomplete until they're re-recorded. */
+const NO_RESPONSE_FAILURES = new Set(["retries_exhausted", "llm_bad_request", "budget_exhausted"]);
+
 const { values } = parseArgs({
   options: {
     yes: { type: "boolean" },
     all: { type: "boolean" },
     cap: { type: "string", default: "25" },
-    // Both stages use this model, at low effort (or its only effort). The default is the demo's model.
+    // Both stages use this model. The default is the demo's model.
     model: { type: "string", default: DEMO_MODEL.model },
+    // Both stages use this effort; by default low (or the model's only effort). Cassettes are keyed
+    // by the exact request, so evals replay a model only at the effort it was recorded with.
+    effort: { type: "string" },
   },
 });
 const config = workerConfig();
@@ -57,7 +63,8 @@ if (getLlmMode() !== "record") throw new Error("set LLM_MODE=record to record ca
 const model = values.model;
 if (!isModelRef(model)) throw new Error(`unknown model "${model}" (see MODEL_CATALOG in packages/core)`);
 const { efforts } = modelInfo(model);
-const effort: Effort = efforts.includes("low") ? "low" : (efforts[0] ?? "none");
+const effort: Effort = (values.effort as Effort | undefined) ?? defaultEffort(model);
+if (!efforts.includes(effort)) throw new Error(`${model} accepts effort ${efforts.join(", ")}, not "${effort}"`);
 const keyEnv = providerKeyEnv(parseModelRef(model).provider);
 if (!process.env[keyEnv] && parseModelRef(model).provider !== "compat") throw new Error(`${keyEnv} is not set`);
 const price = MODEL_PRICE_SEED.find((p) => p.model === model && p.promptTokensAbove === 0);
@@ -97,12 +104,27 @@ try {
   // Missing-only: serve requests that already have a cassette from it, record the rest.
   const record = recordTransport(liveTransport(), config.cassetteDir);
   const replay = replayTransport(config.cassetteDir);
-  const transport: Transport = values.all
-    ? record
-    : {
-        send: (request, meta) =>
-          (existsSync(cassettePath(config.cassetteDir, meta.hash)) ? replay : record).send(request, meta),
-      };
+  // Every call is logged as it starts and ends, so a slow or failing provider is visible as it happens
+  // (the SDK itself retries a 429/5xx twice before an error reaches us).
+  let calls = 0;
+  const transport: Transport = {
+    async send(request, meta) {
+      const cached = !values.all && existsSync(cassettePath(config.cassetteDir, meta.hash));
+      if (cached) return replay.send(request, meta);
+      const n = ++calls;
+      const started = Date.now();
+      const elapsed = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
+      console.log(`  → call ${n} ${meta.stage} ${meta.hash.slice(0, 10)}`);
+      try {
+        const result = await record.send(request, meta);
+        console.log(`  ✓ call ${n} ${meta.stage} in ${elapsed()}`);
+        return result;
+      } catch (err) {
+        console.log(`  ✗ call ${n} ${meta.stage} after ${elapsed()}: ${String((err as Error).message).slice(0, 160)}`);
+        throw err;
+      }
+    },
+  };
 
   const storage = createStorage(storageConfigFromEnv());
   const documents = new Map<string, string>();
@@ -112,6 +134,23 @@ try {
     });
     documents.set(item.id, documentId);
   }
+  // Progress every 20 s: where the documents are in the pipeline.
+  const progress = setInterval(() => {
+    void withTenantTx(pool, tenantId, (tx) =>
+      tx.queueDb.executeSql(
+        "select processing_status as status, count(*)::int as n from documents group by 1 order by 1",
+      ),
+    )
+      .then(({ rows }) => {
+        const by = Object.fromEntries((rows as { status: string; n: number }[]).map((r) => [r.status, r.n]));
+        console.log(
+          `progress: ${by.done ?? 0} done, ${by.failed ?? 0} failed of ${manifest.items.length} documents ${JSON.stringify(by)}; ${calls} live calls started`,
+        );
+      })
+      .catch(() => {});
+  }, 20_000);
+  progress.unref();
+
   const deps = {
     pool,
     boss,
@@ -148,6 +187,7 @@ try {
   console.log(`reclassify pass: ${reclassified} misclassified fixture(s) re-extracted with their labeled category`);
   if (reclassified > 0) await drainTenantJobs(deps, tenantId);
 
+  clearInterval(progress);
   const summary = await withTenantTx(pool, tenantId, async (tx) => {
     const calls = await tx.queueDb.executeSql(
       "select count(*)::int as calls, count(*) filter (where mode = 'live')::int as live, coalesce(sum(cost_usd) filter (where mode = 'live'), 0)::float as spent from llm_calls",
@@ -169,20 +209,35 @@ try {
   console.log(
     `llm calls: ${summary.calls.calls} (${summary.calls.live} live), actual spend $${summary.calls.spent.toFixed(4)}`,
   );
+  // A set is complete when every request a replay will make has a cassette. Failures that left no
+  // response behind (the provider kept failing or rejected the request, or the budget ran out) mean
+  // replay would miss; failures replay reproduces (a scan the model can't read, a model refusal,
+  // which is itself recorded) are fine.
+  const reasonOf = (f: unknown) => String((f as { error?: unknown }).error).split(":")[0] ?? "";
   // Record mode never misses a cassette, so a miss means another worker in replay mode (a running
-  // `pnpm dev`) took these jobs from the shared queues. Don't mark the set as recorded.
-  const stolen = summary.failed.filter((f) => String((f as { error?: unknown }).error).startsWith("cassette_missing"));
+  // `pnpm dev`) took these jobs from the shared queues.
+  const stolen = summary.failed.filter((f) => reasonOf(f) === "cassette_missing");
+  const unrecorded = summary.failed.filter((f) => NO_RESPONSE_FAILURES.has(reasonOf(f)));
   if (stolen.length > 0) {
     console.error(
       `\n${stolen.length} document(s) failed with cassette_missing, which record mode never causes: another worker ` +
         "(probably `pnpm dev`) processed this run's jobs in replay mode. Stop it and re-run; cassettes recorded so far are kept.",
     );
     process.exitCode = 1;
-  } else {
-    await writeFile(
-      join(config.cassetteDir, "recorded.json"),
-      `${JSON.stringify({ recordedAt: new Date().toISOString(), fixtures: manifest.items.length, liveCalls: summary.calls.live, spentUsd: Number(summary.calls.spent.toFixed(4)) }, null, 2)}\n`,
+  } else if (unrecorded.length > 0) {
+    console.error(
+      `\n${unrecorded.length} document(s) failed without a recorded response (${[...new Set(unrecorded.map(reasonOf))].join(", ")}), ` +
+        `so ${model} isn't marked as recorded. Re-run later: cassettes recorded so far are kept, and only missing ones are sent.`,
     );
+    process.exitCode = 1;
+  } else {
+    await markRecorded(config.cassetteDir, model, {
+      recordedAt: new Date().toISOString(),
+      fixtures: manifest.items.length,
+      effort,
+      liveCalls: summary.calls.live,
+      spentUsd: Number(summary.calls.spent.toFixed(4)),
+    });
     console.log(`done: cassettes are in ${config.cassetteDir}; commit them (and recorded.json).`);
   }
 } finally {

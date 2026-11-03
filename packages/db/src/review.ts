@@ -267,6 +267,16 @@ export async function releaseClaim(
   return rows.length === 1;
 }
 
+/** The document a task is about, read before a decision's transaction (e.g. to copy its source). */
+export async function loadTaskDocument(tx: TenantTx, taskId: string) {
+  const [row] = await tx.db
+    .select({ document: documents })
+    .from(reviewTasks)
+    .innerJoin(documents, eq(documents.id, reviewTasks.documentId))
+    .where(eq(reviewTasks.id, taskId));
+  return row?.document ?? null;
+}
+
 /**
  * Locks the task's document, then the task, and checks the caller still holds a live claim with this
  * token. Every decision starts here. Null when the task isn't visible.

@@ -1,6 +1,6 @@
 import { type AutomationMode, type Effort, isModelRef, type ModelRef, modelInfo } from "@ai-triage/core";
-import { and, eq, isNull, max } from "drizzle-orm";
-import { pipelineConfigCategories, pipelineConfigs, tenantSettings } from "./schema";
+import { and, asc, desc, eq, inArray, isNull, max } from "drizzle-orm";
+import { pipelineConfigCategories, pipelineConfigs, promptVersions, tenantSettings } from "./schema";
 import type { TenantTx } from "./tenant-tx";
 
 // Pipeline configs are immutable versions (triggers in 0002_rls.sql). Changing anything means
@@ -109,4 +109,97 @@ export async function getConfig(tx: TenantTx, configId: string): Promise<Pipelin
     .from(pipelineConfigCategories)
     .where(eq(pipelineConfigCategories.configId, configId));
   return { ...config, categories };
+}
+
+/** A category's routing settings in a candidate version. */
+export interface CategoryChange {
+  category: string;
+  threshold: number;
+  automation: AutomationMode;
+  auditRate: number;
+}
+
+export interface CandidateConfig {
+  /** The version this one starts from: everything not overridden is copied, `policy` verbatim. */
+  parentId: string;
+  name: string;
+  classify?: Partial<StageConfig>;
+  extract?: Partial<StageConfig>;
+  /** Categories not listed keep the parent's settings. The category set and schema versions are the parent's. */
+  categories?: CategoryChange[];
+  createdBy?: string;
+}
+
+/** A new (unfrozen, inactive) version derived from another: the evals page's way to try a change. */
+export async function createCandidateConfig(tx: TenantTx, input: CandidateConfig): Promise<PipelineConfig> {
+  const parent = await getConfig(tx, input.parentId);
+  if (!parent) throw new ConfigError(`config ${input.parentId} not found`);
+  const unknown = (input.categories ?? []).filter((c) => !parent.categories.some((p) => p.category === c.category));
+  if (unknown.length > 0) throw new ConfigError(`unknown categories: ${unknown.map((c) => c.category).join(", ")}`);
+  return createConfigVersion(tx, {
+    name: input.name,
+    parentId: parent.id,
+    classify: {
+      model: input.classify?.model ?? (parent.classifyModel as ModelRef),
+      effort: input.classify?.effort ?? (parent.classifyEffort as Effort),
+      promptVersionId: input.classify?.promptVersionId ?? parent.classifyPromptVersionId,
+    },
+    extract: {
+      model: input.extract?.model ?? (parent.extractModel as ModelRef),
+      effort: input.extract?.effort ?? (parent.extractEffort as Effort),
+      promptVersionId: input.extract?.promptVersionId ?? parent.extractPromptVersionId,
+    },
+    policy: parent.policy as Record<string, unknown>,
+    categories: parent.categories.map((p) => {
+      const change = input.categories?.find((c) => c.category === p.category);
+      return {
+        category: p.category,
+        schemaVersionId: p.schemaVersionId,
+        threshold: change?.threshold ?? Number(p.threshold),
+        automation: change?.automation ?? p.automation,
+        auditRate: change?.auditRate ?? Number(p.auditRate),
+      };
+    }),
+    createdBy: input.createdBy,
+  });
+}
+
+export interface ConfigListEntry extends PipelineConfig {
+  active: boolean;
+}
+
+/** Every version, newest first, with its categories and whether it is the tenant's active one. */
+export async function listConfigs(tx: TenantTx): Promise<ConfigListEntry[]> {
+  const [settings] = await tx.db.select({ configId: tenantSettings.activeConfigId }).from(tenantSettings);
+  const configs = await tx.db.select().from(pipelineConfigs).orderBy(desc(pipelineConfigs.version));
+  const categories =
+    configs.length === 0
+      ? []
+      : await tx.db
+          .select()
+          .from(pipelineConfigCategories)
+          .where(
+            inArray(
+              pipelineConfigCategories.configId,
+              configs.map((c) => c.id),
+            ),
+          )
+          .orderBy(asc(pipelineConfigCategories.category));
+  return configs.map((c) => ({
+    ...c,
+    categories: categories.filter((k) => k.configId === c.id),
+    active: c.id === settings?.configId,
+  }));
+}
+
+export async function listPromptVersions(tx: TenantTx) {
+  return tx.db
+    .select({
+      id: promptVersions.id,
+      stage: promptVersions.stage,
+      version: promptVersions.version,
+      createdAt: promptVersions.createdAt,
+    })
+    .from(promptVersions)
+    .orderBy(asc(promptVersions.stage), desc(promptVersions.version));
 }

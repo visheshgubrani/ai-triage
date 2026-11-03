@@ -84,6 +84,20 @@ export type LlmCallContext = { runId: string } | { evalRunId: string; evalItemId
 export const LLM_CALL_MODES = ["live", "replay"] as const;
 export type LlmCallMode = (typeof LLM_CALL_MODES)[number];
 
+/** How the deployment calls models: `replay` (cassettes, the default), `record` (live, saved) or `live`. */
+export const LLM_MODES = ["replay", "record", "live"] as const;
+export type LlmMode = (typeof LLM_MODES)[number];
+
+/** Replay is the default so a fresh clone never spends money. Live must be explicit. */
+export function getLlmMode(value = process.env.LLM_MODE): LlmMode {
+  if (value === undefined || value === "") return "replay";
+  if ((LLM_MODES as readonly string[]).includes(value)) return value as LlmMode;
+  throw new Error(`Invalid LLM_MODE "${value}". Expected one of: ${LLM_MODES.join(", ")}`);
+}
+
+/** How a mode's calls are stored in llm_calls: record calls the live API, so its calls are `live`. */
+export const callModeOf = (mode: LlmMode): LlmCallMode => (mode === "replay" ? "replay" : "live");
+
 /**
  * Effort levels across providers (Claude's `output_config.effort`, OpenAI-style `reasoning_effort`).
  * `none` means no reasoning, or no effort control at all. Each model lists the ones it accepts
@@ -104,6 +118,10 @@ export const QUEUES = {
   deliver: "action.deliver",
   /** Dead-letter queue of `action.deliver`: marks the action failed once retries are exhausted. */
   deliveryFailed: "action.failed",
+  /** One eval item of one eval run: parse, classify, extract, evaluate and grade, then store the result. */
+  evalItem: "eval.item",
+  /** Dead-letter queue of `eval.item`: stores an error result once retries are exhausted. */
+  evalFailed: "eval.failed",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -156,6 +174,15 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
     deadLetter: QUEUES.deliveryFailed,
   },
   [QUEUES.deliveryFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
+  // An item makes up to two LLM calls in one job, so it gets the stages' expiry for both.
+  [QUEUES.evalItem]: {
+    retryLimit: 3,
+    retryDelay: 5,
+    retryBackoff: true,
+    expireInSeconds: 1800,
+    deadLetter: QUEUES.evalFailed,
+  },
+  [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
 };
 
 /** Payload of every pipeline stage job (and of its dead-letter copy). */
@@ -169,6 +196,13 @@ export interface StageJob {
 export interface DeliverJob {
   tenantId: string;
   actionId: string;
+}
+
+/** Payload of an `eval.item` job (and of its dead-letter copy). */
+export interface EvalItemJob {
+  tenantId: string;
+  evalRunId: string;
+  evalItemId: string;
 }
 
 // ── Review and delivery ──────────────────────────────────────────────────────────────────────
@@ -194,6 +228,18 @@ export const REVIEW_ERROR_CODES = [
   "not_redeliverable",
 ] as const;
 export type ReviewErrorCode = (typeof REVIEW_ERROR_CODES)[number];
+
+/** Machine-readable reasons an eval request was refused (409 or 422), shown as `code` in ErrorResponse. */
+export const EVAL_ERROR_CODES = [
+  "config_not_frozen",
+  "config_frozen",
+  "empty_split",
+  "not_calib_run",
+  "run_not_done",
+  "runs_not_comparable",
+  "invalid_config",
+] as const;
+export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 
 /** Headers of a webhook delivery. Receivers dedupe on the Idempotency-Key, which is the action id. */
 export const WEBHOOK_HEADERS = {
