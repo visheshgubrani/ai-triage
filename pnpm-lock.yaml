@@ -267,6 +267,9 @@ importers:
       '@ai-triage/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@ai-triage/evals':
+        specifier: workspace:*
+        version: link:../../packages/evals
       '@ai-triage/fixtures':
         specifier: workspace:*
         version: link:../../fixtures

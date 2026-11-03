@@ -14,6 +14,7 @@
   "dependencies": {
     "@ai-triage/core": "workspace:*",
     "@ai-triage/db": "workspace:*",
+    "@ai-triage/evals": "workspace:*",
     "@ai-triage/fixtures": "workspace:*",
     "@ai-triage/ingest": "workspace:*",
     "@ai-triage/llm": "workspace:*",

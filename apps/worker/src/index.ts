@@ -1,9 +1,10 @@
 import { auditDraw } from "@ai-triage/core/pipeline";
 import { assertAppRole, createBoss, createPool } from "@ai-triage/db";
-import { createTransport, getLlmMode } from "@ai-triage/llm";
+import { callModeOf, createTransport, getLlmMode } from "@ai-triage/llm";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { workerConfig } from "./config";
 import { registerDelivery } from "./delivery/register";
+import { registerEvals } from "./evals/register";
 import { createDbLlmGateway } from "./llm";
 import { registerPipeline } from "./pipeline/register";
 
@@ -22,18 +23,21 @@ const boss = createBoss(connectionString);
 boss.on("error", (err) => console.error("pg-boss error", err));
 await boss.start();
 
+const storage = createStorage(storageConfigFromEnv());
+const llm = createDbLlmGateway({ pool, mode, transport: createTransport(mode, config.cassetteDir) });
+const limits = { maxPdfPages: config.maxPdfPages };
+const now = () => new Date();
+
 await registerPipeline(
   boss,
-  {
-    pool,
-    boss,
-    storage: createStorage(storageConfigFromEnv()),
-    llm: createDbLlmGateway({ pool, mode, transport: createTransport(mode, config.cassetteDir) }),
-    limits: { maxPdfPages: config.maxPdfPages },
-    auditDraw,
-    now: () => new Date(),
-  },
+  { pool, boss, storage, llm, limits, auditDraw, now },
   { llmConcurrency: config.llmConcurrency },
+);
+// Eval runs: the same parsing, requests and evaluation, but results only (no queue, actions or delivery).
+await registerEvals(
+  boss,
+  { pool, storage, llm, limits, llmMode: callModeOf(mode), now },
+  { concurrency: config.evalConcurrency },
 );
 // Signed webhooks for approved actions. These deps have no LLM or storage: delivery only posts.
 await registerDelivery(boss, { pool, boss, fetch, now: () => new Date(), timeoutMs: config.webhookTimeoutMs });

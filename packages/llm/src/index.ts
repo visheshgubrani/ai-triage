@@ -1,5 +1,10 @@
+import type { LlmCallMode } from "@ai-triage/core";
+
 export const LLM_MODES = ["replay", "record", "live"] as const;
 export type LlmMode = (typeof LLM_MODES)[number];
+
+/** How a mode's calls are stored in llm_calls: record calls the live API, so its calls are `live`. */
+export const callModeOf = (mode: LlmMode): LlmCallMode => (mode === "replay" ? "replay" : "live");
 
 /** Replay is the default so a fresh clone never spends money. Live must be explicit. */
 export function getLlmMode(value = process.env.LLM_MODE): LlmMode {
