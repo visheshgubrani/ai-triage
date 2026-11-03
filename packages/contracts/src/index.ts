@@ -236,6 +236,11 @@ export const DocumentDetail = z.object({
   ),
   /** Categories of the active config: where a reviewer may reclassify to. */
   categories: z.array(z.string()),
+  /**
+   * For mail synced from a connected mailbox: which one, and a link that finds the message in Gmail
+   * (by its Message-ID; null when it had none).
+   */
+  mailbox: z.object({ email: z.string(), gmailUrl: z.string().nullable() }).nullable(),
 });
 export type DocumentDetail = z.infer<typeof DocumentDetail>;
 
@@ -578,6 +583,8 @@ export const CandidateConfigRequest = z.object({
     .object({
       require: z.boolean(),
       trustedAuthServIds: z.array(z.string().trim().min(1).max(253)).max(20),
+      /** Mail synced from a connected mailbox must be authenticated (default true). */
+      mailbox: z.object({ require: z.boolean() }).optional(),
     })
     .optional(),
 });

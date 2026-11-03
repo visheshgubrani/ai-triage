@@ -126,6 +126,7 @@ export async function writeStoredEmail(
     attachments,
     // Only when present, so emails without them store exactly what they did before.
     ...(email.authResults.length > 0 ? { authResults: email.authResults } : {}),
+    ...(email.receivedBy ? { receivedBy: email.receivedBy } : {}),
   };
   const json = new TextEncoder().encode(JSON.stringify(stored));
   await storage.put(keys.email, json, EMAIL_SOURCE_MIME);

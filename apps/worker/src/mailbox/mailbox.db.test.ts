@@ -12,6 +12,7 @@ import {
   withTenantTx,
 } from "@ai-triage/db";
 import { newTenant, tenantQuery, testDbUrls } from "@ai-triage/db/testing";
+import { snapshotDocumentSource } from "@ai-triage/ingest";
 import {
   authorizationUrl,
   exchangeCode,
@@ -23,6 +24,7 @@ import {
 import { FakeGoogle } from "@ai-triage/mailbox/testing";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { loadSender } from "../pipeline/source";
 import type { MailboxDeps } from "./deps";
 import { drainMailboxJobs } from "./drain";
 import { pollMailboxes, syncMailbox } from "./sync";
@@ -261,5 +263,40 @@ describe("Gmail sync", () => {
     await sync(tenantId, connectionId);
     await drainMailboxJobs(deps, tenantId);
     expect(await docs(tenantId)).toEqual([]);
+  });
+
+  it("records the mailbox as the sender's provenance, which an eval snapshot keeps", async () => {
+    const { tenantId, email, connectionId } = await connected();
+    const trace =
+      "Received: from mail.vendor.test (mail.vendor.test. [203.0.113.5])\r\n        by mx.google.com with ESMTPS id a1; Tue, 3 Nov 2026 02:00:00 -0800\r\n" +
+      "Authentication-Results: mx.google.com; dkim=pass header.i=@vendor.test; dmarc=pass header.from=vendor.test\r\n" +
+      "Authentication-Results: mx.google.com; dmarc=fail (forged below Google's trace)\r\n";
+    google.deliver(email, `${trace}${eml("signed")}`);
+    await sync(tenantId, connectionId);
+    await drainMailboxJobs(deps, tenantId);
+    const [row] = await tenantQuery<{ source_key: string; mime: string; title: string; external_id: string }>(
+      pool,
+      tenantId,
+      "select source_key, mime, title, external_id from documents",
+    );
+    if (!row) throw new Error("no document");
+    const sender = await loadSender(deps.storage, { sourceKey: row.source_key, mime: row.mime, title: row.title });
+    expect(sender).toEqual({
+      authResults: ["mx.google.com; dkim=pass header.i=@vendor.test; dmarc=pass header.from=vendor.test"],
+      receivedBy: "google",
+    });
+    const snapshot = await snapshotDocumentSource(deps.storage, tenantId, {
+      sourceKey: row.source_key,
+      mime: row.mime,
+      title: row.title,
+      externalId: row.external_id,
+    });
+    expect(
+      await loadSender(deps.storage, {
+        sourceKey: snapshot.sourceKey,
+        mime: snapshot.sourceMime,
+        title: snapshot.sourceTitle,
+      }),
+    ).toEqual(sender);
   });
 });

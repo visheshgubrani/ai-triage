@@ -103,7 +103,8 @@ export async function fetchMessage(deps: MailboxDeps, job: MailboxFetchJob): Pro
   };
   let email: Awaited<ReturnType<typeof normalizeEml>>;
   try {
-    email = await normalizeEml(message.raw);
+    // Read from Google's own mailbox: only the results Google's servers wrote count (sender gate).
+    email = await normalizeEml(message.raw, { receivedBy: "google" });
   } catch {
     return settle(deps, job, { status: "skipped", reason: "unreadable", ...facts });
   }

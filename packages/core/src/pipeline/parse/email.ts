@@ -1,5 +1,6 @@
 import { convert } from "html-to-text";
 import { simpleParser } from "mailparser";
+import { MAILBOX_AUTHSERV_IDS, type MailboxProvider } from "../../index";
 
 // Emails arrive as Postmark inbound JSON or as .eml files. Ingestion normalizes both to a
 // NormalizedEmail, stores each attachment as its own object and the rest as a StoredEmail (JSON),
@@ -30,6 +31,11 @@ export interface NormalizedEmail {
    * the sender gate trusts only those from the tenant's trusted servers (pipeline/untrusted.ts).
    */
   authResults: string[];
+  /**
+   * Set when the app read the message from this provider's mailbox itself (Gmail sync), never from
+   * content: then `authResults` holds only what the provider's own servers wrote.
+   */
+  receivedBy?: MailboxProvider;
 }
 
 export interface StoredAttachment {
@@ -51,6 +57,8 @@ export interface StoredEmail {
   attachments: StoredAttachment[];
   /** Absent in emails stored before it was recorded (treated as none). */
   authResults?: string[];
+  /** Synced from this provider's mailbox (see NormalizedEmail). Absent for forwarded mail and uploads. */
+  receivedBy?: MailboxProvider;
 }
 
 /** The subset of Postmark's inbound webhook payload this app reads. */
@@ -125,7 +133,43 @@ export function normalizePostmark(payload: PostmarkInbound): NormalizedEmail {
   };
 }
 
-export async function normalizeEml(bytes: Uint8Array): Promise<NormalizedEmail> {
+/**
+ * The Authentication-Results a provider's receiving servers wrote, found by position, never by what
+ * a header claims. Gmail prepends its trace on receipt, so headers above its inbound hop
+ * (`Received: ... by mx.google.com`) are Google's, and so is the Authentication-Results it writes
+ * right below that hop (after Received-SPF). Everything further down came with the message and
+ * proves nothing, whatever authserv-id it names. ARC-Authentication-Results lose their `i=N;`
+ * prefix so the gate reads them like the plain header. No hop: nothing is trusted.
+ */
+export function providerAuthResults(
+  headerLines: readonly { key: string; line: string }[],
+  provider: MailboxProvider,
+): string[] {
+  const servId = MAILBOX_AUTHSERV_IDS[provider];
+  const value = (line: string) => unfold(line.replace(/^[^:]+:\s*/, ""));
+  const byProvider = (results: string) => results.split(";")[0]?.trim().toLowerCase() === servId;
+  const hop = headerLines.findIndex(
+    (h) => h.key === "received" && new RegExp(`\\bby\\s+${servId.replace(/\./g, "\\.")}\\b`, "i").test(value(h.line)),
+  );
+  if (hop < 0) return [];
+  const trusted: string[] = [];
+  for (const h of headerLines.slice(0, hop)) {
+    if (h.key !== "arc-authentication-results") continue;
+    const results = value(h.line).replace(/^i=\d+\s*;\s*/i, "");
+    if (byProvider(results)) trusted.push(results);
+  }
+  for (const h of headerLines.slice(hop + 1)) {
+    if (h.key === "received-spf") continue;
+    if (h.key === "authentication-results" && byProvider(value(h.line))) trusted.push(value(h.line));
+    break;
+  }
+  return trusted;
+}
+
+export async function normalizeEml(
+  bytes: Uint8Array,
+  options: { receivedBy?: MailboxProvider } = {},
+): Promise<NormalizedEmail> {
   const mail = await simpleParser(Buffer.from(bytes), { skipImageLinks: true });
   const addresses = (field: typeof mail.to) =>
     (Array.isArray(field) ? field : field ? [field] : []).flatMap((a) => a.value.map((v) => v.address ?? ""));
@@ -141,9 +185,12 @@ export async function normalizeEml(bytes: Uint8Array): Promise<NormalizedEmail> 
       ...new Set([...addresses(mail.to), ...addresses(mail.cc)].map((r) => r.toLowerCase()).filter(Boolean)),
     ],
     text: clean(mail.text) ?? (mail.html ? htmlToText(mail.html) : ""),
-    authResults: mail.headerLines
-      .filter((h) => h.key === "authentication-results")
-      .map((h) => unfold(h.line.replace(/^authentication-results:\s*/i, ""))),
+    authResults: options.receivedBy
+      ? providerAuthResults(mail.headerLines, options.receivedBy)
+      : mail.headerLines
+          .filter((h) => h.key === "authentication-results")
+          .map((h) => unfold(h.line.replace(/^authentication-results:\s*/i, ""))),
+    ...(options.receivedBy ? { receivedBy: options.receivedBy } : {}),
     attachments: mail.attachments.map((a, i) => ({
       filename: clean(a.filename) ?? `attachment-${i + 1}`,
       mime: a.contentType.toLowerCase(),

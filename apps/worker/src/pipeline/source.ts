@@ -1,6 +1,7 @@
 import { DOCUMENT_MIMES, type Effort, EMAIL_SOURCE_MIME, type LlmStage, type ModelRef } from "@ai-triage/core";
 import {
   type CategoryOption,
+  type EmailSender,
   isContentAttachment,
   type ParsedPart,
   type ParseLimits,
@@ -42,10 +43,10 @@ export async function parseSource(storage: Storage, source: SourceRef, limits: P
  * stored before they were recorded), or null for a file. Read from the source, like the parts, so
  * production and evals see the same thing.
  */
-export async function loadSender(storage: Storage, source: SourceRef): Promise<{ authResults: string[] } | null> {
+export async function loadSender(storage: Storage, source: SourceRef): Promise<EmailSender | null> {
   if (source.mime !== EMAIL_SOURCE_MIME) return null;
   const email = JSON.parse(new TextDecoder().decode(await storage.get(source.sourceKey))) as StoredEmail;
-  return { authResults: email.authResults ?? [] };
+  return { authResults: email.authResults ?? [], ...(email.receivedBy ? { receivedBy: email.receivedBy } : {}) };
 }
 
 const BINARY = new Set<string>([DOCUMENT_MIMES.pdf, DOCUMENT_MIMES.png, DOCUMENT_MIMES.jpeg]);

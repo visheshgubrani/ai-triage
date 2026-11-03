@@ -12,6 +12,7 @@ import {
   listDocuments,
   loadDocument,
   loadPart,
+  mailboxOfDocument,
   purgeDocument,
   recordAudit,
   withTenantTx,
@@ -50,7 +51,21 @@ function summary(row: ListRow): DocumentSummary {
   };
 }
 
-function detail(d: NonNullable<Awaited<ReturnType<typeof getDocumentDetail>>>, now: Date): DocumentDetail {
+/**
+ * Gmail's search for a Message-ID, in the synced mailbox's account. Documents without a Message-ID
+ * are keyed by a content hash (`sha256:`), which Gmail can't search.
+ */
+export function gmailSearchUrl(mailbox: string, externalId: string): string | null {
+  if (externalId.startsWith("sha256:")) return null;
+  const query = encodeURIComponent(`rfc822msgid:${externalId}`);
+  return `https://mail.google.com/mail/u/${encodeURIComponent(mailbox)}/#search/${query}`;
+}
+
+function detail(
+  d: NonNullable<Awaited<ReturnType<typeof getDocumentDetail>>>,
+  mailbox: { email: string } | null,
+  now: Date,
+): DocumentDetail {
   const { document: doc, run, extraction, task } = d;
   // Pages of one PDF share a stored file; the UI opens it once, by its first part's index.
   const fileIndex = new Map<string, number>();
@@ -148,6 +163,7 @@ function detail(d: NonNullable<Awaited<ReturnType<typeof getDocumentDetail>>>, n
       createdAt: a.createdAt.toISOString(),
     })),
     categories: d.categories,
+    mailbox: mailbox ? { email: mailbox.email, gmailUrl: gmailSearchUrl(mailbox.email, doc.externalId) } : null,
   };
 }
 
@@ -165,11 +181,13 @@ export const documentRoutes = (deps: AppDeps) =>
       return c.json(body, 200);
     })
     .get("/:id", idParam, async (c) => {
-      const found = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
-        getDocumentDetail(tx, c.req.valid("param").id),
-      );
+      const id = c.req.valid("param").id;
+      const found = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const doc = await getDocumentDetail(tx, id);
+        return doc ? { doc, mailbox: doc.document.source === "gmail" ? await mailboxOfDocument(tx, id) : null } : null;
+      });
       if (!found) return c.json({ error: "Not found" }, 404);
-      return c.json(detail(found, deps.now()), 200);
+      return c.json(detail(found.doc, found.mailbox, deps.now()), 200);
     })
     // Deletes the document and everything derived from it (docs/security.md, privacy). Admins only;
     // the audit event keeps the id and a hash of the external id, never content.

@@ -1,3 +1,4 @@
+import { MAILBOX_AUTHSERV_IDS, type MailboxProvider } from "../index";
 // Deterministic checks on content the sender controls (docs/security.md, M5). Both can only send a
 // document to review, never approve one: a false positive costs a human glance, a false negative
 // leaves the model's judgment, the audit sample and the per-category opt-in as the defences.
@@ -52,9 +53,19 @@ export function findInjection(texts: readonly string[]): string | null {
 export interface SenderPolicy {
   require: boolean;
   trustedAuthServIds: readonly string[];
+  /**
+   * Mail synced from a connected mailbox (StoredEmail.receivedBy): the provider's own results are
+   * reliable, so authentication is required by default. A config turns it off with
+   * `sender.mailbox.require: false`.
+   */
+  mailbox: { require: boolean };
 }
 
-export const DEFAULT_SENDER_POLICY: SenderPolicy = { require: false, trustedAuthServIds: [] };
+export const DEFAULT_SENDER_POLICY: SenderPolicy = {
+  require: false,
+  trustedAuthServIds: [],
+  mailbox: { require: true },
+};
 
 export function senderPolicy(policy: unknown): SenderPolicy {
   const sender = ((policy ?? {}) as { sender?: Partial<SenderPolicy> }).sender ?? {};
@@ -63,6 +74,7 @@ export function senderPolicy(policy: unknown): SenderPolicy {
     trustedAuthServIds: Array.isArray(sender.trustedAuthServIds)
       ? sender.trustedAuthServIds.filter((s): s is string => typeof s === "string").map((s) => s.toLowerCase())
       : [],
+    mailbox: { require: sender.mailbox?.require !== false },
   };
 }
 
@@ -96,8 +108,30 @@ export function trustedAuthResults(headers: readonly string[], trusted: readonly
  * Authenticated: DMARC passed, or (when the trusted server doesn't evaluate DMARC) DKIM passed. SPF
  * alone isn't enough: forwarding breaks it, and it says nothing about the From address.
  */
-export function senderAuthenticated(headers: readonly string[], policy: SenderPolicy): boolean {
+export function senderAuthenticated(
+  headers: readonly string[],
+  policy: Pick<SenderPolicy, "trustedAuthServIds">,
+): boolean {
   const results = trustedAuthResults(headers, policy.trustedAuthServIds);
   if (!results) return false;
   return results.dmarc === "pass" || (results.dmarc === null && results.dkim === "pass");
+}
+
+/** What the sender gate sees of an email: its results, and the mailbox it was synced from, if any. */
+export interface EmailSender {
+  authResults: readonly string[];
+  receivedBy?: MailboxProvider;
+}
+
+/**
+ * Whether the sender gate passes. Synced mail is checked against its provider's own servers (by
+ * default); other mail only when the config requires it, against the servers it names.
+ */
+export function senderPasses(sender: EmailSender | null, policy: SenderPolicy): boolean {
+  if (!sender) return true;
+  if (sender.receivedBy) {
+    if (!policy.mailbox.require) return true;
+    return senderAuthenticated(sender.authResults, { trustedAuthServIds: [MAILBOX_AUTHSERV_IDS[sender.receivedBy]] });
+  }
+  return !policy.require || senderAuthenticated(sender.authResults, policy);
 }

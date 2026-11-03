@@ -211,7 +211,7 @@ describe("gates and evaluateExtraction", () => {
   });
 
   it("holds unauthenticated email back from auto-approval when the config requires it", () => {
-    const require = { require: true, trustedAuthServIds: ["mx.google.com"] };
+    const require = { require: true, trustedAuthServIds: ["mx.google.com"], mailbox: { require: true } };
     const forged = { authResults: ["evil.example; dmarc=pass"] };
     const held = evaluateExtraction({ ...evaluateInput(), sender: forged, senderPolicy: require });
     expect(held.route.reasons).toEqual(["sender_unauthenticated"]);
@@ -221,6 +221,24 @@ describe("gates and evaluateExtraction", () => {
     );
     // Files have no sender to check.
     expect(evaluateExtraction({ ...evaluateInput(), sender: null, senderPolicy: require }).route.decision).toBe("auto");
+  });
+
+  it("requires synced mail to be authenticated by its provider by default, unless the config opts out", () => {
+    const lax = { require: false, trustedAuthServIds: [], mailbox: { require: true } };
+    const unauthenticated = { authResults: [], receivedBy: "google" as const };
+    expect(
+      evaluateExtraction({ ...evaluateInput(), sender: unauthenticated, senderPolicy: lax }).route.reasons,
+    ).toEqual(["sender_unauthenticated"]);
+    const google = { authResults: ["mx.google.com; dkim=pass; spf=pass; dmarc=pass"], receivedBy: "google" as const };
+    expect(evaluateExtraction({ ...evaluateInput(), sender: google, senderPolicy: lax }).route.decision).toBe("auto");
+    // A forwarded copy (no receivedBy) with the same headers stays under the config's own rule.
+    expect(
+      evaluateExtraction({ ...evaluateInput(), sender: { authResults: [] }, senderPolicy: lax }).route.decision,
+    ).toBe("auto");
+    const off = { ...lax, mailbox: { require: false } };
+    expect(evaluateExtraction({ ...evaluateInput(), sender: unauthenticated, senderPolicy: off }).route.decision).toBe(
+      "auto",
+    );
   });
 
   it("auto-approves a clean, fully evidenced extraction", () => {

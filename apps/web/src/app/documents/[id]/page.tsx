@@ -60,9 +60,21 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
         {me?.role === "admin" && <DeleteDocumentButton id={d.document.id} />}
       </div>
       <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-neutral-600 dark:text-neutral-400">
-        <Badge value={stateOf(d.document)} /> {d.document.source} · {d.document.mime ?? "unknown type"} · processing{" "}
-        <Badge value={d.document.processingStatus} /> review <Badge value={d.document.reviewStatus} /> delivery{" "}
-        <Badge value={d.document.deliveryStatus} />
+        <Badge value={stateOf(d.document)} />{" "}
+        {d.mailbox ? (
+          <>
+            Gmail · {d.mailbox.email}
+            {d.mailbox.gmailUrl && (
+              <a href={d.mailbox.gmailUrl} target="_blank" rel="noopener noreferrer" className="underline">
+                Open in Gmail
+              </a>
+            )}
+          </>
+        ) : (
+          d.document.source
+        )}{" "}
+        · {d.document.mime ?? "unknown type"} · processing <Badge value={d.document.processingStatus} /> review{" "}
+        <Badge value={d.document.reviewStatus} /> delivery <Badge value={d.document.deliveryStatus} />
       </p>
 
       {d.run?.error && (

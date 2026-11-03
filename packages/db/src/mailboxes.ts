@@ -518,3 +518,14 @@ export async function pruneMailboxMessages(tx: TenantTx, now: Date): Promise<num
     .returning({ id: mailboxMessages.id });
   return rows.length;
 }
+
+/** The mailbox a synced document came from (through the ledger), or null. */
+export async function mailboxOfDocument(tx: TenantTx, documentId: string): Promise<{ email: string } | null> {
+  const [row] = await tx.db
+    .select({ email: mailboxConnections.email })
+    .from(mailboxMessages)
+    .innerJoin(mailboxConnections, eq(mailboxConnections.id, mailboxMessages.connectionId))
+    .where(eq(mailboxMessages.documentId, documentId))
+    .limit(1);
+  return row ?? null;
+}
