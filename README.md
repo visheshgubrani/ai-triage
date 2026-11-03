@@ -25,7 +25,7 @@ Sign in at http://localhost:3000/sign-in as `admin@demo.test` or `reviewer@demo.
 
 The app connects to Postgres as a restricted role (`DATABASE_URL`), so row-level security always applies. Only migrations and seeds use the owner (`DATABASE_OWNER_URL`).
 
-LLM calls default to **replay mode** (recorded responses, no API key, no spend). Set `LLM_MODE=live` and `ANTHROPIC_API_KEY` to call Claude for real.
+LLM calls default to **replay mode** (recorded responses, no API key, no spend). The demo tenant uses GPT-6.1 Terra (`DEMO_MODEL`), the model its responses were recorded with; configs can use Claude, OpenAI, DeepSeek, OpenRouter or a local server. Set `LLM_MODE=live` and the provider's key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) to call a model for real.
 
 ## Reviewing
 

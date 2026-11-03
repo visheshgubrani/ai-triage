@@ -8,6 +8,7 @@ import {
   createBoss,
   createPool,
   DEMO_CATEGORY_SETTINGS,
+  DEMO_MODEL,
   getDocumentDetail,
   type PgBoss,
   setWebhook,
@@ -71,7 +72,7 @@ describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
       Object.entries(DEMO_CATEGORY_SETTINGS).map(([k, v]) => [k, { ...v, auditRate: 0 }]),
     );
     await withTenantTx(pool, tenantId, async (tx) => {
-      await buildPipelineConfig(tx, { categories });
+      await buildPipelineConfig(tx, { classify: DEMO_MODEL, extract: DEMO_MODEL, categories });
       const { port } = receiver.address() as AddressInfo;
       await setWebhook(tx, { url: `http://127.0.0.1:${port}/hook`, secret });
     });

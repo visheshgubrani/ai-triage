@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import type pg from "pg";
 import { getActiveConfig } from "../configs";
 import { createDb } from "../index";
-import { buildPipelineConfig, DEMO_CATEGORY_SETTINGS } from "../pipeline-config";
+import { buildPipelineConfig, DEMO_CATEGORY_SETTINGS, DEMO_MODEL } from "../pipeline-config";
 import { tenants } from "../schema";
 import { getWebhookSettings, setWebhook } from "../settings";
 import { withTenantTx } from "../tenant-tx";
@@ -44,11 +44,16 @@ export async function seedDemo(appPool: pg.Pool): Promise<DemoSeed> {
   return { tenantId, userIds };
 }
 
-/** The demo tenant's active pipeline config: built-in categories, v1 prompts, Opus 5.5 at low effort. */
+/** The demo tenant's active pipeline config: built-in categories, v1 prompts, DEMO_MODEL for both stages. */
 export async function seedPipelineConfig(appPool: pg.Pool, demo: DemoSeed): Promise<void> {
   await withTenantTx(appPool, demo.tenantId, async (tx) => {
     if (await getActiveConfig(tx)) return;
-    await buildPipelineConfig(tx, { name: "Demo config", categories: DEMO_CATEGORY_SETTINGS });
+    await buildPipelineConfig(tx, {
+      name: "Demo config",
+      classify: DEMO_MODEL,
+      extract: DEMO_MODEL,
+      categories: DEMO_CATEGORY_SETTINGS,
+    });
   });
 }
 

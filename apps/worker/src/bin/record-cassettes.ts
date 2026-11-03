@@ -10,6 +10,7 @@ import {
   createPool,
   createTenant,
   DEMO_CATEGORY_SETTINGS,
+  DEMO_MODEL,
   getActiveConfig,
   loadClassification,
   loadDocument,
@@ -45,7 +46,7 @@ const { values } = parseArgs({
     all: { type: "boolean" },
     cap: { type: "string", default: "25" },
     // Both stages use this model, at low effort (or its only effort). The default is the demo's model.
-    model: { type: "string", default: "claude-opus-5-5" },
+    model: { type: "string", default: DEMO_MODEL.model },
   },
 });
 const config = workerConfig();

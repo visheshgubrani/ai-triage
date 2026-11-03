@@ -38,6 +38,13 @@ export interface PipelineConfigOptions {
 
 const DEFAULT_CATEGORY: CategorySettings = { threshold: 0.9, automation: "review_all", auditRate: 0.1 };
 
+/**
+ * The model the demo tenant uses for both stages, and so the model the committed cassettes are
+ * recorded with (a cassette is keyed by the exact request, model included). The recorder defaults to
+ * it, and the replay e2e test uses it. Changing it means re-recording: `pnpm cassettes:record --all`.
+ */
+export const DEMO_MODEL: { model: ModelRef; effort: Effort } = { model: "openai:gpt-6.1-terra", effort: "low" };
+
 /** The demo tenant's routing: invoices and support requests may auto-approve; contracts never do. */
 export const DEMO_CATEGORY_SETTINGS: Record<string, Partial<CategorySettings>> = {
   invoice: { automation: "auto_when_confident" },
