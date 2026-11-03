@@ -142,7 +142,7 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 
 ## Security
 
-[docs/security.md](docs/security.md) has the threat model, the controls and the production checklist. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+Production refuses to start on the demo's defaults. Webhooks can't reach private networks, and their secrets are encrypted at rest. Admins need TOTP 2FA. Every security-relevant change is in an audit log, and documents can be deleted or expire on a retention schedule. [docs/security.md](docs/security.md) has the threat model, the controls and the production checklist. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -273,7 +273,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 3. **Review (done):** the inbox, detail view, claim token, approve/edit/reclassify/reject/retry, extraction revisions, audit sampling, the actions outbox, signed delivery, the failures views, and a local webhook catcher.
 4. **Evals (done):** datasets and splits, the review UI's "Add to eval set", realtime runs, metrics, the threshold sweep with reliability table and Freeze, test-split gating, run diff, the production tab with replay labeling, and the README: screenshots plus the **demo walkthrough** (§10) as a short GIF.
 
-5. **Security (in progress):** the threat model and controls are in [security.md](security.md). Milestones:
+5. **Security (done):** the threat model and controls are in [security.md](security.md). Milestones:
    - M0: a lean AGENTS.md and the security docs.
    - M1: HTTP edge (headers, CSP, Origin checks, body limits, safe startup config).
    - M2: an audit log.

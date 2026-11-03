@@ -1,6 +1,6 @@
 # Security
 
-> The threat model, the controls that answer it, and what an operator must set before going live. Controls land in phase 5 (milestones M1–M8, [architecture.md](architecture.md) §9). The **Status** column tracks them.
+> The threat model, the controls that answer it, and what an operator must set before going live. The controls landed in phase 5 (milestones M1–M8, [architecture.md](architecture.md) §9).
 
 ai-triage has to be safe both **self-hosted** (one company per instance) and **hosted** (many companies as tenants of one instance). The hosted case is the stricter one, so it sets the bar.
 
@@ -59,7 +59,7 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 | Sender spoofing | Authentication-Results headers stored with each email; the `sender_unauthenticated` gate trusts only headers from receiving servers the config names (`policy.sender.trustedAuthServIds`) and needs DMARC (or DKIM) pass. **Opt-in per config** (API: `sender` on a candidate config); on by default once Gmail sync supplies reliable results (phase 7) | Done (M5), opt-in |
 | Accounts | TOTP 2FA with backup codes (Better Auth `twoFactor`; code checks rate-limited, BA locks out repeated failures); admin-only routes need it when `REQUIRE_ADMIN_2FA` is on (the default outside the demo); session list and revoke; a password change signs out other sessions; API keys created, listed (prefix only) and revoked from Settings, with optional expiry. All audited | Done (M6) |
 | Privacy | `purge_document()`: a SECURITY DEFINER function owned by `app_purger`, the only role the immutability guards let delete, deletes a document and everything derived from it within the caller's tenant; its objects are deleted by a `storage.delete` job enqueued in the same transaction. Admins delete documents (audited with the id and a hash of the external id). Per-tenant retention purges finished documents nightly; abandoned uploads are dropped; `pnpm tenant:delete` offboards a tenant | Done (M7) |
-| Supply chain | Least-privilege CI, SHA-pinned actions, CodeQL, `pnpm audit`, Dependabot, a minimum release age, digest-pinned images, a read-only app tree in the container | M8 |
+| Supply chain | CI with read-only permissions and SHA-pinned actions; `pnpm audit` (high fails); CodeQL (security-extended); Dependabot for npm, actions and images; `minimumReleaseAge` of a day; digest-pinned base images; app files in the container owned by root | Done (M8) |
 
 ## Deliberate non-goals and residual risks
 

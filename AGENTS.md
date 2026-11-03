@@ -14,7 +14,7 @@ Context for coding agents (and humans). Keep it lean: only what every session ne
 
 It's an MVP and a portfolio project: correct where correctness is cheap, runnable by a stranger with no API key, and readable.
 
-**Status:** phases 1–4 (foundation, pipeline, review, evals) are done. Phase 5 (security) is in progress, see architecture §9.
+**Status:** phases 1–5 (foundation, pipeline, review, evals, security) are done. Next: reliability, then Google Workspace / Gmail (architecture §9).
 
 ## Repo map
 
@@ -85,6 +85,7 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 7. **Evals can't act (§8):** the runner has no actions or delivery ports, and eval items never create `documents` rows.
 8. **No surprise spend (docs/llm.md):** `LLM_MODE` defaults to `replay`, a missing cassette is a hard error, live is opt-in, budget is reserved atomically, replayed figures are labeled as recorded.
 9. **Correct auto-approval (§6)** = right category **and** every required field correct. Thresholds come from `calib`, the config is frozen, then `test` runs; always show n and the Wilson bound.
+10. **Security (docs/security.md):** document content is untrusted data (gates may send it to review, never approve it); stored files are served with a server-chosen type; webhook egress goes through the SSRF guard; secrets are encrypted at rest; security-relevant changes are audited in the same transaction; deletion goes only through `purge_document()`.
 
 ## When you change X, also do Y
 

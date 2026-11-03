@@ -29,7 +29,7 @@ x-app-env: &app-env
 
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
     environment:
       POSTGRES_USER: triage
       POSTGRES_PASSWORD: triage
@@ -82,7 +82,7 @@ services:
   # Local webhook receiver: verifies X-Triage-Signature and lists deliveries at http://localhost:9030.
   # The demo tenant's webhook points here (DEMO_WEBHOOK_URL / DEMO_WEBHOOK_SECRET in .env).
   webhook-catcher:
-    image: node:24-alpine
+    image: node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
     command: ["node", "/app/catcher.mjs"]
     environment:
       PORT: "9030"
