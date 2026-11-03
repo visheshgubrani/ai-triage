@@ -1,4 +1,6 @@
+import { INVITATION_ACCEPT_METHODS, INVITATION_STATUSES } from "@ai-triage/core";
 import { boolean, index, integer, pgTable, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { oneOf } from "./_helpers";
 
 // Better Auth tables (better-auth 1.7, core + organization and twoFactor plugins), renamed through `modelName`
 // in src/auth.ts. The drizzle adapter looks tables up by these export names and columns by their
@@ -133,7 +135,11 @@ export const memberships = pgTable(
   ],
 );
 
-/** Better Auth "invitation". Table only; the invitation flow comes later. */
+/**
+ * Better Auth "invitation", written only by the app's own invitation flow (src/members.ts): Better
+ * Auth's organization endpoints aren't mounted. The link carries a random token; only its SHA-256 is
+ * stored. `inviter_id` is null for invitations made by the CLI (`pnpm tenant:create`).
+ */
 export const invitations = pgTable(
   "invitations",
   {
@@ -141,14 +147,22 @@ export const invitations = pgTable(
     organizationId: uuid("organization_id")
       .notNull()
       .references(() => tenants.id, { onDelete: "cascade" }),
+    /** Lowercase. */
     email: text("email").notNull(),
     role: text("role"),
     status: text("status").notNull().default("pending"),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    inviterId: uuid("inviter_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
+    inviterId: uuid("inviter_id").references(() => users.id, { onDelete: "cascade" }),
+    tokenHash: text("token_hash").unique("invitations_token_hash_key"),
+    acceptWith: text("accept_with").notNull().default("google"),
+    acceptedBy: uuid("accepted_by").references(() => users.id, { onDelete: "set null" }),
+    acceptedAt: timestamp("accepted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index("invitations_organization_id_idx").on(t.organizationId)],
+  (t) => [
+    index("invitations_organization_id_idx").on(t.organizationId),
+    index("invitations_email_idx").on(t.email),
+    oneOf("invitations_status_check", t.status, INVITATION_STATUSES),
+    oneOf("invitations_accept_with_check", t.acceptWith, INVITATION_ACCEPT_METHODS),
+  ],
 );

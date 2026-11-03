@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import * as schema from "./schema";
 
+export * from "./admission";
 export * from "./audit";
 export * from "./auth";
 export * from "./boss";
@@ -14,6 +15,7 @@ export * from "./documents";
 export * from "./errors";
 export * from "./evals";
 export * from "./llm-calls";
+export * from "./members";
 export * from "./metrics";
 export * from "./pipeline";
 export * from "./pipeline-config";

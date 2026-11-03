@@ -38,7 +38,8 @@ describe("API keys", () => {
     const { id, key, prefix } = await withTenantTx(app, tenantA, (tx) => createApiKey(tx, { name: "test" }));
     expect(key.startsWith(`${prefix}_`)).toBe(true);
     expect(await resolveApiKey(db, key)).toEqual({ tenantId: tenantA, keyId: id });
-    expect(await resolveApiKey(db, `${key.slice(0, -1)}x`)).toBeNull();
+    // Change the last character (to one it isn't, or the "changed" key is the key itself).
+    expect(await resolveApiKey(db, `${key.slice(0, -1)}${key.endsWith("x") ? "y" : "x"}`)).toBeNull();
     expect(await resolveApiKey(db, "not-a-key")).toBeNull();
 
     await withTenantTx(app, tenantA, (tx) => revokeApiKey(tx, id));

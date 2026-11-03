@@ -2,82 +2,18 @@ import { randomUUID } from "node:crypto";
 import { AuthProvidersResponse, ErrorResponse } from "@ai-triage/contracts";
 import { addMembership, createTenant, ensurePasswordUser, listAuditEvents, withTenantTx } from "@ai-triage/db";
 import { DEMO_PASSWORD } from "@ai-triage/db/seed";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { cookiesOf, createTestApp, mergeCookies, TEST_GOOGLE, totp, WEB_ORIGIN } from "./test-app";
+import { googleProfile, stubGoogle } from "./test-google";
 
-// Sign in with Google (phase 6, M1). Google's token endpoint is stubbed: Better Auth only decodes the
-// ID token it returns (it comes straight from Google over TLS), so an unsigned one carries the
-// profile. Checked here: linking only verified emails, no sign-up for strangers, no Google tokens
+// Sign in with Google (phase 6, M1), against a stubbed Google (test-google.ts). Checked here: linking only verified emails, no sign-up for strangers, no Google tokens
 // kept, the TOTP step after Google, and the recent sign-in rule for passwordless 2FA changes.
 
 const t = await createTestApp({ google: TEST_GOOGLE });
 const { app, db, pool } = t;
 afterAll(t.close);
 
-/** The profile the stubbed token endpoint puts in the next ID token. */
-let profile: Record<string, unknown> = {};
-const realFetch = globalThis.fetch;
-const idToken = (claims: Record<string, unknown>) => {
-  const part = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
-  const now = Math.floor(Date.now() / 1000);
-  const payload = { iss: "https://accounts.google.com", aud: TEST_GOOGLE.clientId, iat: now, exp: now + 3600 };
-  return `${part({ alg: "RS256", kid: "test" })}.${part({ ...payload, ...claims })}.signature`;
-};
-vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
-  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  if (!url.startsWith(`${TEST_GOOGLE.tokenUrl}/token`)) return realFetch(input, init);
-  return Response.json({
-    access_token: "ya29.test-access-token",
-    refresh_token: "1//test-refresh-token",
-    expires_in: 3599,
-    token_type: "Bearer",
-    scope: "openid email profile",
-    id_token: idToken(profile),
-  });
-});
-
-const post = (path: string, body: unknown, cookie = "") =>
-  app.request(`/api/auth${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", origin: WEB_ORIGIN, cookie },
-    body: JSON.stringify(body),
-  });
-
-/** A Google account's profile claims (`sub` is the account id). */
-const googleProfile = (email: string, extra: Record<string, unknown> = {}) => ({
-  sub: `g-${randomUUID()}`,
-  email,
-  email_verified: true,
-  name: "Ada Google",
-  picture: "https://example.test/ada.png",
-  ...extra,
-});
-
-/** Starts a Google sign-in (or, with `link`, links Google to the signed-in user), then returns from Google. */
-async function viaGoogle(claims: Record<string, unknown>, options: { cookie?: string; link?: boolean } = {}) {
-  profile = claims;
-  const cookie = options.cookie ?? "";
-  const start = options.link
-    ? await post("/link-social", { provider: "google", callbackURL: `${WEB_ORIGIN}/settings/security` }, cookie)
-    : await post(
-        "/sign-in/social",
-        { provider: "google", callbackURL: `${WEB_ORIGIN}/`, errorCallbackURL: `${WEB_ORIGIN}/sign-in` },
-        cookie,
-      );
-  expect(start.status).toBe(200);
-  const { url } = (await start.json()) as { url: string };
-  const state = new URL(url).searchParams.get("state") ?? "";
-  const jar = mergeCookies(cookie, cookiesOf(start));
-  const res = await app.request(`/api/auth/callback/google?code=test-code&state=${encodeURIComponent(state)}`, {
-    headers: { cookie: jar },
-  });
-  return { status: res.status, location: res.headers.get("location") ?? "", cookie: mergeCookies(jar, cookiesOf(res)) };
-}
-
-async function sessionOf(cookie: string) {
-  const res = await app.request("/api/auth/get-session", { headers: { cookie } });
-  return (await res.json()) as { user: { id: string; email: string } } | null;
-}
+const { viaGoogle, sessionOf, post } = stubGoogle(app);
 
 async function memberUser(options: { verified?: boolean } = {}) {
   const { id: tenantId } = await createTenant(pool, { name: "G", slug: `g-${randomUUID().slice(0, 8)}` });
@@ -107,10 +43,6 @@ async function googleAccounts(userId: string) {
 /** Makes a user Google-only (no password to sign in or confirm with). */
 const dropPassword = (userId: string) =>
   pool.query("delete from accounts where user_id = $1 and provider_id = 'credential'", [userId]);
-
-beforeEach(() => {
-  profile = {};
-});
 
 describe("Sign in with Google", () => {
   it("is offered when the instance has a Google client", async () => {

@@ -14,6 +14,9 @@ import {
   EVAL_SPLITS,
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
+  INVITATION_ACCEPT_METHODS,
+  JOIN_ROLES,
+  MEMBER_ERROR_CODES,
   MEMBER_ROLES,
   PART_KINDS,
   PROCESSING_STATUSES,
@@ -71,7 +74,7 @@ export type Issue = z.infer<typeof Issue>;
  */
 export const ErrorResponse = z.object({
   error: z.string(),
-  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES, ...API_ERROR_CODES]).optional(),
+  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES, ...API_ERROR_CODES, ...MEMBER_ERROR_CODES]).optional(),
   issues: z.array(Issue).optional(),
   details: z.record(z.string(), z.unknown()).optional(),
   /** Set on 500s: quote it when reporting a problem; the server log carries the same id. */
@@ -653,3 +656,80 @@ export interface ProductionResponse extends ProductionMetrics {
   until: string;
   days: number;
 }
+
+// ── Members and invitations ──────────────────────────────────────────────────────────────────
+
+export const InvitationAcceptMethod = z.enum(INVITATION_ACCEPT_METHODS);
+export type InvitationAcceptMethod = z.infer<typeof InvitationAcceptMethod>;
+
+export const Member = z.object({
+  userId: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: MemberRole,
+  joinedAt: isoDate,
+  twoFactorEnabled: z.boolean(),
+  /** The Google Workspace domain the user signed up with, if any. */
+  hostedDomain: z.string().nullable(),
+  /** `credential` (a password) and/or `google`. */
+  signInMethods: z.array(z.string()),
+});
+export type Member = z.infer<typeof Member>;
+
+export const Invitation = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: MemberRole,
+  acceptWith: InvitationAcceptMethod,
+  expiresAt: isoDate,
+  createdAt: isoDate,
+});
+export type Invitation = z.infer<typeof Invitation>;
+
+/** GET /members (admin): members, pending invitations, and the Workspace domain auto-join setting. */
+export const MemberList = z.object({
+  members: z.array(Member),
+  invitations: z.array(Invitation),
+  workspaceDomain: z.object({ domain: z.string(), joinRole: z.enum(JOIN_ROLES) }).nullable(),
+  /** Whether this instance has a Google client (Google invitations and auto-join need one). */
+  google: z.boolean(),
+});
+export type MemberList = z.infer<typeof MemberList>;
+
+export const UpdateMemberRequest = z.object({ role: MemberRole });
+export type UpdateMemberRequest = z.infer<typeof UpdateMemberRequest>;
+
+export const CreateInvitationRequest = z.object({
+  email: z.email().max(320),
+  role: MemberRole,
+  acceptWith: InvitationAcceptMethod.default("google"),
+});
+export type CreateInvitationRequest = z.infer<typeof CreateInvitationRequest>;
+
+/** The link is shown once: only the token's hash is stored. */
+export const InvitationCreated = z.object({ invitation: Invitation, link: z.string() });
+export type InvitationCreated = z.infer<typeof InvitationCreated>;
+
+/** Invitation tokens are 32 random bytes, base64url (43 characters). */
+export const InvitationTokenRequest = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+export type InvitationTokenRequest = z.infer<typeof InvitationTokenRequest>;
+
+/** POST /invitations/lookup (public): what the invite page shows before anyone signs in. */
+export const InvitationPreview = z.object({
+  tenantName: z.string(),
+  email: z.string(),
+  role: MemberRole,
+  acceptWith: InvitationAcceptMethod,
+  expiresAt: isoDate,
+  google: z.boolean(),
+});
+export type InvitationPreview = z.infer<typeof InvitationPreview>;
+
+export const AcceptWithPasswordRequest = InvitationTokenRequest.extend({
+  name: z.string().trim().min(1).max(200),
+  password: z.string().min(12).max(128),
+});
+export type AcceptWithPasswordRequest = z.infer<typeof AcceptWithPasswordRequest>;
+
+export const InvitationAccepted = z.object({ tenantId: z.string(), email: z.string() });
+export type InvitationAccepted = z.infer<typeof InvitationAccepted>;

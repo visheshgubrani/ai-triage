@@ -141,6 +141,13 @@
       "when": 1793729197566,
       "tag": "0019_google_sign_in",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793729696001,
+      "tag": "0020_invitations",
+      "breakpoints": true
     }
   ]
 }

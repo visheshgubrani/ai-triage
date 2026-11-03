@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { type FormEvent, useEffect, useState } from "react";
 import { GoogleButton } from "@/components/google-button";
 import { authClient } from "@/lib/auth-client";
-import { googleEnabled, signInErrorText } from "@/lib/google";
+import { googleEnabled, safeNext, signInErrorText } from "@/lib/google";
 
 const input =
   "mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700";
@@ -19,6 +19,7 @@ export default function SignInPage() {
   const [needsCode, setNeedsCode] = useState(false);
   const [backup, setBackup] = useState(false);
   const [google, setGoogle] = useState(false);
+  const [next, setNext] = useState("/");
 
   // Back from Google: `?step=two-factor` (the account has 2FA, so the code comes next) or `?error=`.
   // Read once from the URL, without useSearchParams, so the page needs no Suspense boundary.
@@ -27,11 +28,12 @@ export default function SignInPage() {
     if (params.get("step") === "two-factor") setNeedsCode(true);
     const code = params.get("error");
     if (code) setError(signInErrorText(code));
+    setNext(safeNext(params.get("next")));
     void googleEnabled().then(setGoogle);
   }, []);
 
   function done() {
-    router.push("/");
+    router.push(next);
     router.refresh();
   }
 
@@ -94,7 +96,7 @@ export default function SignInPage() {
         <>
           {google && (
             <div className="mt-6 space-y-4">
-              <GoogleButton onError={setError} />
+              <GoogleButton returnTo={next} onError={setError} />
               <p className="text-center text-xs text-neutral-500">or with your email and password</p>
             </div>
           )}

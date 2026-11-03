@@ -15,12 +15,12 @@ export async function googleEnabled(): Promise<boolean> {
  * Starts a Google sign-in. Google sends the browser back to the API, which lands it on `returnTo`
  * (or on /sign-in?error=… when it can't sign the person in; see signInErrorText).
  */
-export async function signInWithGoogle(returnTo = "/"): Promise<string | null> {
+export async function signInWithGoogle(returnTo = "/", errorTo = "/sign-in"): Promise<string | null> {
   const origin = window.location.origin;
   const { error } = await authClient.signIn.social({
     provider: "google",
     callbackURL: `${origin}${returnTo}`,
-    errorCallbackURL: `${origin}/sign-in`,
+    errorCallbackURL: `${origin}${errorTo}`,
   });
   return error ? authErrorText(error, "Couldn't start Google sign-in") : null;
 }
@@ -45,4 +45,9 @@ export function signInErrorText(code: string): string {
     default:
       return `Google sign-in didn't work (${code}).`;
   }
+}
+
+/** A same-site path to go to after signing in (`?next=`), or "/": never another origin. */
+export function safeNext(value: string | null): string {
+  return value?.startsWith("/") && !value.startsWith("//") && !value.startsWith("/\\") ? value : "/";
 }

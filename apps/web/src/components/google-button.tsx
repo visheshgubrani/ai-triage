@@ -4,7 +4,16 @@ import { useState } from "react";
 import { signInWithGoogle } from "@/lib/google";
 
 /** "Continue with Google": a full-width secondary button with Google's mark. */
-export function GoogleButton({ returnTo = "/", onError }: { returnTo?: string; onError: (message: string) => void }) {
+export function GoogleButton({
+  returnTo = "/",
+  errorTo = "/sign-in",
+  onError,
+}: {
+  returnTo?: string;
+  /** Where Google errors land (`?error=` is appended). */
+  errorTo?: string;
+  onError: (message: string) => void;
+}) {
   const [pending, setPending] = useState(false);
   return (
     <button
@@ -12,7 +21,7 @@ export function GoogleButton({ returnTo = "/", onError }: { returnTo?: string; o
       disabled={pending}
       onClick={async () => {
         setPending(true);
-        const problem = await signInWithGoogle(returnTo);
+        const problem = await signInWithGoogle(returnTo, errorTo);
         if (problem) {
           setPending(false);
           onError(problem);

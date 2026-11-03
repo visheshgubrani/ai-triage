@@ -1,6 +1,6 @@
 import { HealthResponse } from "@ai-triage/contracts";
 import Link from "next/link";
-import { getMe } from "@/components/header";
+import { getSessionState } from "@/components/header";
 import { SignOutButton } from "@/components/sign-out-button";
 import { api } from "@/lib/api";
 
@@ -30,7 +30,7 @@ const sections = [
 ] as { name: string; detail: string; href?: string }[];
 
 export default async function Home() {
-  const [health, me] = await Promise.all([getHealth(), getMe()]);
+  const [health, { me, noWorkspace }] = await Promise.all([getHealth(), getSessionState()]);
   return (
     <main className="mx-auto max-w-3xl px-4 py-16">
       <h1 className="text-3xl font-semibold tracking-tight">AI Triage</h1>
@@ -46,6 +46,13 @@ export default async function Home() {
             <p className="text-sm">
               Signed in as <span className="font-medium">{me.user.email}</span> · tenant{" "}
               <span className="font-medium">{me.tenant.name}</span> · {me.role}
+            </p>
+            <SignOutButton />
+          </div>
+        ) : noWorkspace ? (
+          <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm">
+              You're signed in, but not a member of any workspace. Ask an admin of yours for an invitation link.
             </p>
             <SignOutButton />
           </div>

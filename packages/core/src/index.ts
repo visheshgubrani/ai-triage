@@ -384,6 +384,24 @@ export const API_ERROR_CODES = [
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
+/** Why a members or invitations request was refused, shown as `code` in ErrorResponse. */
+export const MEMBER_ERROR_CODES = [
+  /** The change would leave the workspace without an admin. */
+  "last_admin",
+  "not_member",
+  "already_member",
+  /** The invitation link doesn't exist, was used or revoked, or has expired. */
+  "invitation_invalid",
+  /** The signed-in user isn't the invited email. */
+  "email_mismatch",
+  /** A Google-only invitation needs a verified email (sign in with Google). */
+  "email_not_verified",
+  "password_not_allowed",
+  /** Accepting with a password, for an email that already has an account. */
+  "user_exists",
+] as const;
+export type MemberErrorCode = (typeof MEMBER_ERROR_CODES)[number];
+
 /** Who did something recorded in the audit log: a member, a tenant API key, or the system (CLI, cron). */
 export const AUDIT_ACTOR_TYPES = ["user", "api_key", "system"] as const;
 export type AuditActorType = (typeof AUDIT_ACTOR_TYPES)[number];
