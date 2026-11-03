@@ -104,12 +104,27 @@ try {
   // Missing-only: serve requests that already have a cassette from it, record the rest.
   const record = recordTransport(liveTransport(), config.cassetteDir);
   const replay = replayTransport(config.cassetteDir);
-  const transport: Transport = values.all
-    ? record
-    : {
-        send: (request, meta) =>
-          (existsSync(cassettePath(config.cassetteDir, meta.hash)) ? replay : record).send(request, meta),
-      };
+  // Every call is logged as it starts and ends, so a slow or failing provider is visible as it happens
+  // (the SDK itself retries a 429/5xx twice before an error reaches us).
+  let calls = 0;
+  const transport: Transport = {
+    async send(request, meta) {
+      const cached = !values.all && existsSync(cassettePath(config.cassetteDir, meta.hash));
+      if (cached) return replay.send(request, meta);
+      const n = ++calls;
+      const started = Date.now();
+      const elapsed = () => `${((Date.now() - started) / 1000).toFixed(1)}s`;
+      console.log(`  → call ${n} ${meta.stage} ${meta.hash.slice(0, 10)}`);
+      try {
+        const result = await record.send(request, meta);
+        console.log(`  ✓ call ${n} ${meta.stage} in ${elapsed()}`);
+        return result;
+      } catch (err) {
+        console.log(`  ✗ call ${n} ${meta.stage} after ${elapsed()}: ${String((err as Error).message).slice(0, 160)}`);
+        throw err;
+      }
+    },
+  };
 
   const storage = createStorage(storageConfigFromEnv());
   const documents = new Map<string, string>();
@@ -119,6 +134,23 @@ try {
     });
     documents.set(item.id, documentId);
   }
+  // Progress every 20 s: where the documents are in the pipeline.
+  const progress = setInterval(() => {
+    void withTenantTx(pool, tenantId, (tx) =>
+      tx.queueDb.executeSql(
+        "select processing_status as status, count(*)::int as n from documents group by 1 order by 1",
+      ),
+    )
+      .then(({ rows }) => {
+        const by = Object.fromEntries((rows as { status: string; n: number }[]).map((r) => [r.status, r.n]));
+        console.log(
+          `progress: ${by.done ?? 0} done, ${by.failed ?? 0} failed of ${manifest.items.length} documents ${JSON.stringify(by)}; ${calls} live calls started`,
+        );
+      })
+      .catch(() => {});
+  }, 20_000);
+  progress.unref();
+
   const deps = {
     pool,
     boss,
@@ -155,6 +187,7 @@ try {
   console.log(`reclassify pass: ${reclassified} misclassified fixture(s) re-extracted with their labeled category`);
   if (reclassified > 0) await drainTenantJobs(deps, tenantId);
 
+  clearInterval(progress);
   const summary = await withTenantTx(pool, tenantId, async (tx) => {
     const calls = await tx.queueDb.executeSql(
       "select count(*)::int as calls, count(*) filter (where mode = 'live')::int as live, coalesce(sum(cost_usd) filter (where mode = 'live'), 0)::float as spent from llm_calls",
