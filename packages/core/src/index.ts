@@ -104,6 +104,10 @@ export const QUEUES = {
   deliver: "action.deliver",
   /** Dead-letter queue of `action.deliver`: marks the action failed once retries are exhausted. */
   deliveryFailed: "action.failed",
+  /** One eval item of one eval run: parse, classify, extract, evaluate and grade, then store the result. */
+  evalItem: "eval.item",
+  /** Dead-letter queue of `eval.item`: stores an error result once retries are exhausted. */
+  evalFailed: "eval.failed",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -156,6 +160,15 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
     deadLetter: QUEUES.deliveryFailed,
   },
   [QUEUES.deliveryFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
+  // An item makes up to two LLM calls in one job, so it gets the stages' expiry for both.
+  [QUEUES.evalItem]: {
+    retryLimit: 3,
+    retryDelay: 5,
+    retryBackoff: true,
+    expireInSeconds: 1800,
+    deadLetter: QUEUES.evalFailed,
+  },
+  [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
 };
 
 /** Payload of every pipeline stage job (and of its dead-letter copy). */
@@ -169,6 +182,13 @@ export interface StageJob {
 export interface DeliverJob {
   tenantId: string;
   actionId: string;
+}
+
+/** Payload of an `eval.item` job (and of its dead-letter copy). */
+export interface EvalItemJob {
+  tenantId: string;
+  evalRunId: string;
+  evalItemId: string;
 }
 
 // ── Review and delivery ──────────────────────────────────────────────────────────────────────
@@ -194,6 +214,18 @@ export const REVIEW_ERROR_CODES = [
   "not_redeliverable",
 ] as const;
 export type ReviewErrorCode = (typeof REVIEW_ERROR_CODES)[number];
+
+/** Machine-readable reasons an eval request was refused (409 or 422), shown as `code` in ErrorResponse. */
+export const EVAL_ERROR_CODES = [
+  "config_not_frozen",
+  "config_frozen",
+  "empty_split",
+  "not_calib_run",
+  "run_not_done",
+  "runs_not_comparable",
+  "invalid_config",
+] as const;
+export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 
 /** Headers of a webhook delivery. Receivers dedupe on the Idempotency-Key, which is the action id. */
 export const WEBHOOK_HEADERS = {

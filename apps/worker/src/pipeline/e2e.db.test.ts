@@ -1,7 +1,5 @@
-import { existsSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { join } from "node:path";
 import { auditDraw } from "@ai-triage/core/pipeline";
 import {
   buildPipelineConfig,
@@ -16,7 +14,7 @@ import {
 } from "@ai-triage/db";
 import { newTenant, testDbUrls } from "@ai-triage/db/testing";
 import { type FixtureItem, loadManifest } from "@ai-triage/fixtures";
-import { replayTransport } from "@ai-triage/llm";
+import { isRecorded, replayTransport } from "@ai-triage/llm";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { workerConfig } from "../config";
@@ -28,12 +26,13 @@ import { drainTenantJobs } from "./drain";
 
 // End to end in replay mode (docs/architecture.md §10): every fixture through ingestion and the
 // real pipeline, with Claude's responses served from the committed cassettes. Runs once cassettes
-// have been recorded (`LLM_MODE=record pnpm cassettes:record --yes` writes recorded.json); after
+// have been recorded for the demo model (`LLM_MODE=record pnpm cassettes:record --yes` marks it in
+// recorded.json); after
 // that, a missing cassette fails the affected documents, and this test with them. Auto-approved
 // documents are then delivered to an in-process receiver, as the worker would send them.
 
 const config = workerConfig();
-const recorded = existsSync(join(config.cassetteDir, "recorded.json"));
+const recorded = isRecorded(config.cassetteDir, DEMO_MODEL.model);
 
 describe.skipIf(!recorded)("pipeline end to end (replay)", async () => {
   const { appUrl } = testDbUrls();

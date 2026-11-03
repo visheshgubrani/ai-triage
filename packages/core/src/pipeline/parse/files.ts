@@ -68,9 +68,20 @@ async function parseBinary(file: Binary, limits: ParseLimits): Promise<Part[] | 
   }
 }
 
-/** Numbers the parts; drops NUL characters, which some PDFs contain and Postgres text can't store. */
+/** Unpaired UTF-16 surrogates; Postgres stores each as U+FFFD (what `String#toWellFormed` does). */
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
+/**
+ * Numbers the parts; drops NUL characters, which some PDFs contain and Postgres text can't store,
+ * and replaces lone surrogates as Postgres would, so parts held in memory (an eval run) equal parts
+ * read back from the database (production) and build the same request.
+ */
 const numbered = (parts: Part[]): ParsedPart[] =>
-  parts.map((p, partIndex) => ({ ...p, text: p.text.replaceAll("\u0000", ""), partIndex }));
+  parts.map((p, partIndex) => ({
+    ...p,
+    text: p.text.replaceAll("\u0000", "").replace(LONE_SURROGATE, "\uFFFD"),
+    partIndex,
+  }));
 
 /** Parses an uploaded or API file. An unsupported type fails the run. */
 export async function parseFile(

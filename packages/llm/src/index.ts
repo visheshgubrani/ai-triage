@@ -14,6 +14,7 @@ export * from "./gateway";
 export * from "./hash";
 export * from "./output";
 export * from "./providers";
+export * from "./recorded";
 export * from "./transports";
 
 import { liveTransport, recordTransport, replayTransport, type Transport } from "./transports";

@@ -1,6 +1,8 @@
 {
-  "recordedAt": "2026-11-03T08:15:23.154Z",
-  "fixtures": 60,
-  "liveCalls": 110,
-  "spentUsd": 0.1813
+  "openai:gpt-6.1-terra": {
+    "recordedAt": "2026-11-03T08:15:23.154Z",
+    "fixtures": 60,
+    "liveCalls": 110,
+    "spentUsd": 0.1813
+  }
 }

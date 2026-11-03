@@ -1,6 +1,4 @@
 import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { type Effort, isModelRef, modelInfo, parseModelRef } from "@ai-triage/core";
 import { auditDraw } from "@ai-triage/core/pipeline";
@@ -23,6 +21,7 @@ import {
   cassettePath,
   getLlmMode,
   liveTransport,
+  markRecorded,
   providerKeyEnv,
   recordTransport,
   replayTransport,
@@ -179,10 +178,12 @@ try {
     );
     process.exitCode = 1;
   } else {
-    await writeFile(
-      join(config.cassetteDir, "recorded.json"),
-      `${JSON.stringify({ recordedAt: new Date().toISOString(), fixtures: manifest.items.length, liveCalls: summary.calls.live, spentUsd: Number(summary.calls.spent.toFixed(4)) }, null, 2)}\n`,
-    );
+    await markRecorded(config.cassetteDir, model, {
+      recordedAt: new Date().toISOString(),
+      fixtures: manifest.items.length,
+      liveCalls: summary.calls.live,
+      spentUsd: Number(summary.calls.spent.toFixed(4)),
+    });
     console.log(`done: cassettes are in ${config.cassetteDir}; commit them (and recorded.json).`);
   }
 } finally {
