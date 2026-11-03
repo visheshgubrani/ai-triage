@@ -8,6 +8,8 @@ import { join } from "node:path";
 
 export interface RecordedSet {
   recordedAt: string;
+  /** The effort both stages were recorded at (absent: the recorder's default, low). */
+  effort?: string;
   fixtures: number;
   liveCalls: number;
   spentUsd: number;

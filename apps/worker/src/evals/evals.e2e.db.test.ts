@@ -1,4 +1,4 @@
-import { type Effort, EVAL_SPLITS, type EvalSplit, isModelRef, type ModelRef, modelInfo } from "@ai-triage/core";
+import { EVAL_SPLITS, type EvalSplit, isModelRef, type ModelRef } from "@ai-triage/core";
 import { auditDraw } from "@ai-triage/core/pipeline";
 import {
   buildPipelineConfig,
@@ -20,6 +20,7 @@ import { workerConfig } from "../config";
 import { importFixtureDataset, ingestFixture } from "../fixtures";
 import { createDbLlmGateway } from "../llm";
 import { drainTenantJobs } from "../pipeline/drain";
+import { recordedStage } from "../recorded-model";
 import { drainEvalJobs } from "./drain";
 
 // Eval runs in replay mode over every fixture (docs/architecture.md §10): the eval runner must send
@@ -43,11 +44,8 @@ afterAll(async () => {
   await pool.end();
 });
 
-/** The model at low effort (or its only one), as the recorder records it. */
-function stageModel(model: ModelRef): { model: ModelRef; effort: Effort } {
-  const { efforts } = modelInfo(model);
-  return { model, effort: efforts.includes("low") ? "low" : (efforts[0] ?? "none") };
-}
+/** The model at the effort its cassettes were recorded with. */
+const stageModel = (model: ModelRef) => recordedStage(config.cassetteDir, model);
 
 // The demo's routing without audit sampling, so production's decisions are comparable.
 const categories = Object.fromEntries(

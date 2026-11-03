@@ -1,4 +1,4 @@
-import { type EvalSplit, type ModelRef, modelInfo } from "@ai-triage/core";
+import type { EvalSplit, ModelRef } from "@ai-triage/core";
 import {
   createCandidateConfig,
   createEvalRun,
@@ -16,6 +16,7 @@ import type { FixtureManifest } from "@ai-triage/fixtures";
 import { isRecorded } from "@ai-triage/llm";
 import type { Storage } from "@ai-triage/storage";
 import { importFixtureDataset } from "./fixtures";
+import { recordedStage } from "./recorded-model";
 
 // The demo's eval data (`pnpm db:seed`): the fixtures as the labeled Main dataset, and the runs the
 // evals page shows on first load, enqueued for the worker (in replay, from the committed cassettes):
@@ -27,12 +28,6 @@ import { importFixtureDataset } from "./fixtures";
 export const DEEPSEEK_MODEL: ModelRef = "deepseek:deepseek-flash";
 const DEEPSEEK_CANDIDATE = "DeepSeek Flash candidate";
 const FROZEN_DEMO = "Demo config (frozen)";
-
-/** The model at low effort (or its only one), as the cassette recorder records it. */
-const recordedStage = (model: ModelRef) => {
-  const { efforts } = modelInfo(model);
-  return { model, effort: efforts.includes("low") ? ("low" as const) : (efforts[0] ?? "none") };
-};
 
 export interface EvalSeedResult {
   datasetId: string;
@@ -83,7 +78,7 @@ export async function seedEvalDemo(input: {
     await ensureRun(demo.id, "dev");
     if (isRecorded(input.cassetteDir, DEEPSEEK_MODEL)) {
       const deepseek = await ensureConfig(DEEPSEEK_CANDIDATE, async (t) => {
-        const stage = recordedStage(DEEPSEEK_MODEL);
+        const stage = recordedStage(input.cassetteDir, DEEPSEEK_MODEL);
         return (
           await createCandidateConfig(t, {
             parentId: demo.id,

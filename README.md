@@ -87,7 +87,7 @@ Open http://localhost:3000/evals. The same code that runs in production (parsing
 **A second model.** The demo's replay cassettes cover GPT-6.1 Terra. To compare DeepSeek Flash in replay, record it once (stop `pnpm dev` first; this spends a few cents with your key), then re-run `pnpm db:seed` to add a DeepSeek candidate and its dev run:
 
 ```bash
-DEEPSEEK_API_KEY=… LLM_MODE=record pnpm cassettes:record --yes --model deepseek:deepseek-flash
+DEEPSEEK_API_KEY=… LLM_MODE=record pnpm cassettes:record --yes --model deepseek:deepseek-flash --effort high
 ```
 
 DeepSeek Flash can't read PDFs, so scanned documents fail as `unsupported_file` and text PDFs go as text: the run diff shows the difference honestly. With `LLM_MODE=live`, eval runs call the model for real (admins confirm the item count first) and draw on the tenant's daily budget.
