@@ -21,6 +21,7 @@ export async function Header() {
   const links = [
     { href: "/review", label: "Review" },
     { href: "/documents", label: "Documents" },
+    { href: "/evals", label: "Evals" },
     ...(me?.role === "admin" ? [{ href: "/settings", label: "Settings" }] : []),
   ];
   return (

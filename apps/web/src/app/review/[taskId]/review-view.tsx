@@ -1,7 +1,14 @@
 "use client";
 
 import type { DecisionRequest, DocumentDetail, InboxTask, Issue } from "@ai-triage/contracts";
-import { ACTIONS_BY_TASK_KIND, HEARTBEAT_SECONDS, OTHER_CATEGORY, type ReviewAction } from "@ai-triage/core";
+import {
+  ACTIONS_BY_TASK_KIND,
+  EVAL_SPLITS,
+  type EvalSplit,
+  HEARTBEAT_SECONDS,
+  OTHER_CATEGORY,
+  type ReviewAction,
+} from "@ai-triage/core";
 import { fieldDiff, gateFieldMarks } from "@ai-triage/core/review";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -62,6 +69,9 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
   const [picker, setPicker] = useState<"reclassify" | "reject" | null>(null);
   const [category, setCategory] = useState("");
   const [note, setNote] = useState("");
+  // "Add to eval set": unset follows the edit (on for edits, off for plain approvals) until toggled.
+  const [addToEval, setAddToEval] = useState<boolean | null>(null);
+  const [evalSplit, setEvalSplit] = useState<EvalSplit>("dev");
   const [focus, setFocus] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [missing, setMissing] = useState(false);
@@ -73,6 +83,7 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
     setBanner(null);
     setIssues([]);
     setPicker(null);
+    setAddToEval(null);
     const taskRes = await browserApi.review.tasks[":id"].$get({ param: { id: taskId } });
     if (taskRes.status === 404) return setMissing(true);
     if (!taskRes.ok) return setBanner({ tone: "error", text: (await readError(taskRes)).error });
@@ -201,9 +212,13 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
 
   const approve = useCallback(() => {
     if (!claim || !detail?.extraction) return;
-    const base = { claimToken: claim.token, extractionId: detail.extraction.id };
+    const base = {
+      claimToken: claim.token,
+      extractionId: detail.extraction.id,
+      ...((addToEval ?? dirty) ? { addToEvalSet: { split: evalSplit } } : {}),
+    };
     void decide(dirty ? { action: "edit_approve", ...base, fields: values } : { action: "approve", ...base });
-  }, [claim, detail, dirty, values, decide]);
+  }, [claim, detail, dirty, values, decide, addToEval, evalSplit]);
 
   const skip = useCallback(async () => {
     // Claim the next task before releasing this one, so the queue can't hand this one straight back.
@@ -307,6 +322,34 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
               <Button variant="primary" shortcut="a" disabled={!can("approve")} onClick={approve}>
                 {dirty ? "Save & approve" : "Approve"}
               </Button>
+            )}
+            {allowed.includes("approve") && (
+              <span className="flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-400">
+                <label
+                  className="flex items-center gap-1"
+                  title="Keep this document, with the values you approve, as a labeled eval example"
+                >
+                  <input
+                    type="checkbox"
+                    checked={addToEval ?? dirty}
+                    onChange={(e) => setAddToEval(e.target.checked)}
+                  />
+                  Add to eval set
+                </label>
+                <select
+                  aria-label="Eval split"
+                  value={evalSplit}
+                  onChange={(e) => setEvalSplit(e.target.value as EvalSplit)}
+                  disabled={!(addToEval ?? dirty)}
+                  className="rounded border border-neutral-300 bg-transparent px-1 py-0.5 dark:border-neutral-700"
+                >
+                  {EVAL_SPLITS.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </span>
             )}
             {allowed.includes("retry") && (
               <Button

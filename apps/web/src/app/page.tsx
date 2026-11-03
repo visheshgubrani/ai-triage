@@ -22,7 +22,11 @@ const sections = [
     detail: "Items awaiting a human: approve, edit, reclassify, reject or retry",
     href: "/review",
   },
-  { name: "Evals", detail: "Accuracy per category, cost and latency per request (phase 4)" },
+  {
+    name: "Evals",
+    detail: "Accuracy per category, auto-approval precision with its bound, cost and latency per request",
+    href: "/evals",
+  },
 ] as { name: string; detail: string; href?: string }[];
 
 export default async function Home() {
@@ -32,7 +36,7 @@ export default async function Home() {
       <h1 className="text-3xl font-semibold tracking-tight">AI Triage</h1>
       <p className="mt-2 text-neutral-600 dark:text-neutral-400">
         Documents are classified and extracted, uncertain ones wait for a reviewer, and approvals go out as signed
-        webhooks. Evals come next.
+        webhooks. Evals measure all of it on labeled data, so thresholds and models rest on numbers.
       </p>
 
       <section className="mt-8 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
