@@ -1,6 +1,6 @@
 import { afterAll, expect, it } from "vitest";
 import { createPool } from "./index";
-import { runSeed } from "./seed";
+import { MODEL_PRICE_SEED, runSeed } from "./seed";
 import { testDbUrls } from "./testing";
 
 const urls = testDbUrls();
@@ -25,7 +25,7 @@ it("is idempotent: a second run changes no row counts", async () => {
   const before = (await owner.query(COUNTS)).rows[0];
   expect(before).toMatchObject({
     tenants: "1",
-    prices: "4",
+    prices: String(MODEL_PRICE_SEED.length),
     inbound: "1",
     configs: "1",
     schemas: "3",

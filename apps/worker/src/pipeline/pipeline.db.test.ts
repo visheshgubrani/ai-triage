@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { QUEUES, type StageJob } from "@ai-triage/core";
+import { type Effort, type ModelRef, QUEUES, type StageJob } from "@ai-triage/core";
 import {
   buildPipelineConfig,
   createBoss,
@@ -142,10 +142,29 @@ function reply(output: unknown, overrides: Partial<Message> = {}): Message {
 }
 
 function scripted() {
-  return fakeTransport((params, meta) => {
-    const name = JSON.stringify(params.messages).match(/SCENARIO ([a-z-]+)/)?.[1] ?? "";
+  return fakeTransport((request, meta) => {
+    const name = JSON.stringify(request.params.messages).match(/SCENARIO ([a-z-]+)/)?.[1] ?? "";
     const scenario = SCENARIOS[name];
     if (!scenario) throw new Error(`no scenario in request (${name})`);
+    const output = meta.stage === "classify" ? scenario.classify : scenario.extract;
+    if (request.provider !== "anthropic") {
+      // A Chat Completions response, as OpenAI-compatible providers send it.
+      return {
+        id: `chatcmpl_${randomUUID()}`,
+        object: "chat.completion",
+        created: 0,
+        model: request.params.model,
+        choices: [
+          {
+            index: 0,
+            finish_reason: "stop",
+            logprobs: null,
+            message: { role: "assistant", content: JSON.stringify(output), refusal: null },
+          },
+        ],
+        usage: { prompt_tokens: 1200, completion_tokens: 150, total_tokens: 1350 },
+      };
+    }
     if (scenario.refuse) {
       return reply(null, {
         content: [],
@@ -153,16 +172,25 @@ function scripted() {
         stop_details: { type: "refusal", category: "cyber", explanation: null },
       } as never);
     }
-    return reply(meta.stage === "classify" ? scenario.classify : scenario.extract);
+    return reply(output);
   });
 }
 
 // ── Harness ──────────────────────────────────────────────────────────────────────────────────
 
-async function setup(options: { capUsd?: number; hooks?: GatewayHooks; auditDraw?: number } = {}) {
+async function setup(
+  options: {
+    capUsd?: number;
+    hooks?: GatewayHooks;
+    auditDraw?: number;
+    model?: { model: ModelRef; effort: Effort };
+  } = {},
+) {
   const tenantId = await newTenant(pool);
   await withTenantTx(pool, tenantId, async (tx) => {
     await buildPipelineConfig(tx, {
+      classify: options.model,
+      extract: options.model,
       categories: {
         invoice: { automation: "auto_when_confident", auditRate: 0 },
         support_request: { automation: "auto_when_confident", auditRate: 0 },
@@ -310,7 +338,7 @@ describe("happy paths", () => {
       ["email_body", "text", null],
       ["attachment", "pdf_text", 1],
     ]);
-    const sent = t.transport.calls[0]?.params.messages[0]?.content as { type: string }[];
+    const sent = t.transport.calls[0]?.request.params.messages[0]?.content as { type: string }[];
     expect(sent.map((b) => b.type)).toEqual(["text", "document", "text"]);
     expect(d?.extraction).toMatchObject({ decision: "auto" });
     const gates = d?.extraction?.gateResults as
@@ -319,6 +347,50 @@ describe("happy paths", () => {
     const checks = gates?.evidence.checks ?? [];
     expect(checks).toHaveLength(4);
     expect(checks.every((c) => c.status === "verified" && c.page === 1)).toBe(true);
+  });
+
+  it("sends a text PDF as page text to a model that can't read PDFs, and prices it at that model", async () => {
+    const t = await setup({ model: { model: "deepseek:deepseek-flash", effort: "none" } });
+    const pdf = await samplePdf([
+      "Globex Corporation",
+      "Invoice GX-2026-114",
+      "Issued 2026-09-30",
+      "Amount due: 480.50",
+    ]);
+    const { documentId } = await ingestEmail(
+      { pool, boss, storage },
+      t.tenantId,
+      {
+        messageId: `${randomUUID()}@globex.test`,
+        subject: "Invoice GX-2026-114",
+        from: "billing@globex.test",
+        date: "Mon, 2 Nov 2026 09:00:00 +0000",
+        recipients: [],
+        text: "SCENARIO pdf-invoice\nPlease find the invoice attached.",
+        attachments: [
+          { filename: "GX-2026-114.pdf", mime: "application/pdf", size: pdf.length, contentId: null, content: pdf },
+        ],
+      },
+      { source: "email" },
+    );
+    await t.drain();
+    const first = t.transport.calls[0]?.request;
+    expect(first?.provider).toBe("deepseek");
+    const sent = first?.params.messages[1]?.content as { type: string; text: string }[];
+    expect(sent.map((b) => b.type)).toEqual(["text", "text", "text"]);
+    expect(sent[1]?.text).toContain('page="1">\nGlobex Corporation');
+    const d = await t.detail(documentId);
+    expect(d?.extraction).toMatchObject({ decision: "auto" });
+    const gates = d?.extraction?.gateResults as { evidence: { checks: { status: string }[] } } | undefined;
+    expect(gates?.evidence.checks.every((c) => c.status === "verified")).toBe(true);
+    const calls = await t.rows<{ model: string; stop_reason: string; cost_usd: string }>(
+      "select model, stop_reason, cost_usd from llm_calls order by created_at",
+    );
+    expect(calls).toHaveLength(2);
+    for (const call of calls) {
+      expect(call).toMatchObject({ model: "deepseek:deepseek-flash", stop_reason: "end_turn" });
+      expect(Number(call.cost_usd)).toBeCloseTo((1200 * 0.3 + 150 * 1.2) / 1e6, 10);
+    }
   });
 
   it("routes low confidence, review_all categories and `other` to the right tasks", async () => {

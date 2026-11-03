@@ -8,8 +8,8 @@ export class CassetteMissError extends PipelineError {
   ) {
     super(
       "cassette_missing",
-      `no cassette for ${stage} request ${hash}. Replay never calls Claude; record it with ` +
-        "`LLM_MODE=record pnpm cassettes:record --yes` (needs ANTHROPIC_API_KEY and spends money).",
+      `no cassette for ${stage} request ${hash}. Replay never calls a model; record it with ` +
+        "`LLM_MODE=record pnpm cassettes:record --yes` (needs the provider's API key and spends money).",
     );
     this.name = "CassetteMissError";
   }
@@ -17,7 +17,7 @@ export class CassetteMissError extends PipelineError {
 
 export class RefusalError extends PipelineError {
   constructor(readonly category: string | null) {
-    super("llm_refusal", `Claude declined the request${category ? ` (${category})` : ""}`);
+    super("llm_refusal", `the model declined the request${category ? ` (${category})` : ""}`);
     this.name = "RefusalError";
   }
 }

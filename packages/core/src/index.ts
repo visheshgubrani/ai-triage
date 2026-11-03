@@ -84,12 +84,12 @@ export type LlmCallContext = { runId: string } | { evalRunId: string; evalItemId
 export const LLM_CALL_MODES = ["live", "replay"] as const;
 export type LlmCallMode = (typeof LLM_CALL_MODES)[number];
 
-/** Exact model ids, no date suffixes (AGENTS.md). Plain text in the DB, validated here. */
-export const MODEL_IDS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"] as const;
-export type ModelId = (typeof MODEL_IDS)[number];
-
-/** `output_config.effort` levels accepted by every model in MODEL_IDS. */
-export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
+/**
+ * Effort levels across providers (Claude's `output_config.effort`, OpenAI-style `reasoning_effort`).
+ * `none` means no reasoning, or no effort control at all. Each model lists the ones it accepts
+ * (`MODEL_CATALOG` in ./models); configs are validated against that list.
+ */
+export const EFFORTS = ["none", "low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORTS)[number];
 
 /** Every pg-boss queue. `db:migrate` creates them, because `send()` refuses unknown queues. */
@@ -227,3 +227,5 @@ export type FailureReason = (typeof FAILURE_REASONS)[number];
 export function isOneOf<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === "string" && (values as readonly string[]).includes(value);
 }
+
+export * from "./models";

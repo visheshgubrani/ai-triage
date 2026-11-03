@@ -62,7 +62,7 @@ apps/api        Hono on Node: UI REST, public API (tenant API keys), Postmark we
 apps/worker     pg-boss handlers + cron (lease reaper, delivery retries)
 packages/db         Drizzle schema, RLS + composite-FK migrations, withTenantTx(), seeds
 packages/core       pure pipeline: parse, classify, extract, verifyEvidence, gates, route → {decision, proposedAction}
-packages/llm        Claude wrapper: call → llm_calls (tokens, cost, latency); live | record | replay modes
+packages/llm        model gateway (Claude + OpenAI-compatible adapters): call → llm_calls (tokens, cost, latency); live | record | replay modes
 packages/schemas    category templates (Zod) → JSON Schema; toApiSchema(); Ajv validators
 packages/evals      comparators, metrics, Wilson interval, threshold sweep, run diff
 packages/contracts  Zod API types shared by api + web
@@ -104,7 +104,7 @@ infra/              docker-compose (postgres, rustfs, webhook-catcher), Dockerfi
 | `uploads` | server-issued `storage_key`, expected size/mime, `expires_at`, `completed_at` |
 | `documents` | `source`, `external_id` (Message-ID header, else Postmark MessageID, else content hash), unique `(tenant_id, source, external_id)`, `source_key`, **`processing_status`**, **`review_status`**, **`delivery_status`**, `current_run_id`, `current_extraction_id` |
 | `document_parts` | text with offsets, or per-page PDF text, plus `evidence_mode` (`text`/`pdf_text`/`unverifiable`) |
-| `pipeline_configs` | **immutable versions** (triggers): model, effort and prompt version per stage as explicit columns, `policy`, `parent_id`. The only allowed update sets `frozen_at` once, after calibration. `tenant_settings.active_config_id` points at the active one |
+| `pipeline_configs` | **immutable versions** (triggers): model ref (a `MODEL_CATALOG` key, e.g. `claude-opus-5-5` or `deepseek:deepseek-flash`), effort and prompt version per stage as explicit columns, `policy`, `parent_id`. The only allowed update sets `frozen_at` once, after calibration. `tenant_settings.active_config_id` points at the active one |
 | `pipeline_config_categories` | per config and category: `schema_version_id` (a composite FK that also matches the category), `threshold`, `automation`, `audit_rate`. Insert-only, and closed once the config is frozen |
 | `category_schema_versions`, `prompt_versions` | immutable |
 | `processing_runs` | document, `config_id`, trigger (`ingest`/`retry`/`reclassify`), `forced_category`, status, `superseded_by` |
@@ -185,6 +185,12 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 - **Cost** = Σ(token class × price) / 1e6, computed at write time and stored with `price_id`. Seed prices: Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50 per MTok (verify these when scaffolding).
 - **Latency** is wall-clock around the call. Note that the first request with a new schema pays a one-time compile cost.
 
+**Other providers (OpenAI-compatible).** A config may also use OpenAI, DeepSeek, OpenRouter or any OpenAI-compatible server (`compat`), through the official `openai` SDK with a `baseURL`. The gateway, attempts, budget, cassettes and Ajv checks are shared; only the adapter in `packages/llm/src/providers/` differs.
+- `response_format` is a strict `json_schema` (the same `toApiSchema()` output, which already lists every key as required and closes every object). JSON-mode-only models (DeepSeek) get `json_object` with the schema in the system prompt, and Ajv decides.
+- PDFs go as `file` parts and images as `image_url` data URLs. A model that can't read PDFs gets a text-layer PDF as per-page text; a scan or image it can't read fails the run as `unsupported_file`.
+- The response is normalized: `finish_reason` `stop`/`length`/`content_filter` (or `message.refusal`) map to `end_turn`/`max_tokens`/`refusal`, and the cached part of `prompt_tokens` is priced as a cache read. There is no server-side fallback.
+- Models and their capabilities are a closed catalog in `packages/core`, each with a seeded price, so budget reservation works the same for every provider. Keys come from the deployment environment.
+
 ---
 
 ## 6. Score, gates, routing
@@ -239,7 +245,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 3. **Review:** the inbox, detail view, claim token, approve/edit/reclassify/reject/retry, extraction revisions, audit sampling, the actions outbox, signed delivery, and the failures views.
 4. **Evals:** datasets and splits, realtime runs, metrics, the threshold sweep with reliability table and Freeze, test-split gating, run diff, the production tab with replay labeling, and the README: screenshots plus the **demo walkthrough** (§10) as a short GIF.
 
-**Later:** a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Gmail/Outlook sync, per-tenant fairness and budgets, a retention purge, SSE, OpenTelemetry, and dual-run agreement.
+**Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Gmail/Outlook sync, per-tenant fairness and budgets, a retention purge, SSE, OpenTelemetry, and dual-run agreement.
 
 ---
 

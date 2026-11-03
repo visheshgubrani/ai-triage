@@ -1,6 +1,6 @@
 import { TEMPLATES, toJsonSchema } from "@ai-triage/schemas";
 import { describe, expect, it } from "vitest";
-import { BUILTIN_CATEGORIES } from "../index";
+import { BUILTIN_CATEGORIES, MODEL_CATALOG, MODEL_REFS, parseModelRef } from "../index";
 import { PipelineError } from "./errors";
 import { evaluateExtraction } from "./evaluate";
 import { gateReason, runGates } from "./gates";
@@ -82,6 +82,55 @@ describe("requests", () => {
     expect(() =>
       buildClassifyRequest({ model, promptBody: "{{categories}}", categories, parts: [pdfPage(1)], blobs: huge }),
     ).toThrow(expect.objectContaining({ reason: "request_too_large" }));
+  });
+
+  it("send a text-layer PDF as per-page text to a model that can't read PDFs", () => {
+    const request = buildClassifyRequest({
+      model: { model: "deepseek:deepseek-flash", effort: "none", maxTokens: 4096 },
+      promptBody: "{{categories}}",
+      categories,
+      parts: [email, pdfPage(1), pdfPage(2)],
+      blobs,
+    });
+    expect(request.content.map((c) => c.type)).toEqual(["text", "text", "text", "text"]);
+    expect(request.content[2]).toEqual({
+      type: "text",
+      text: '<part index="2" kind="attachment" name="inv  9 .pdf" page="2">\npage 2\n</part>',
+    });
+  });
+
+  it("refuse scans and images for a model that can't read them", () => {
+    const scan = { ...pdfPage(1), evidenceMode: "unverifiable" as const };
+    const image: ParsedPart = { ...pdfPage(1), mime: "image/png", page: null, evidenceMode: "unverifiable" };
+    const compat = { model: "compat:qwen3" as const, effort: "none" as const, maxTokens: 4096 };
+    for (const part of [scan, image]) {
+      expect(() =>
+        buildClassifyRequest({ model: compat, promptBody: "{{categories}}", categories, parts: [part], blobs }),
+      ).toThrow(expect.objectContaining({ reason: "unsupported_file" }));
+    }
+    // DeepSeek Flash reads images, so only the scan fails there.
+    const deepseek = { ...compat, model: "deepseek:deepseek-flash" as const };
+    expect(() =>
+      buildClassifyRequest({ model: deepseek, promptBody: "{{categories}}", categories, parts: [image], blobs }),
+    ).not.toThrow();
+  });
+});
+
+describe("model refs", () => {
+  it("split into provider and model, with bare ids on Claude", () => {
+    expect(parseModelRef("claude-opus-5-5")).toEqual({ provider: "anthropic", model: "claude-opus-5-5" });
+    expect(parseModelRef("openrouter:openai/gpt-6.1-terra")).toEqual({
+      provider: "openrouter",
+      model: "openai/gpt-6.1-terra",
+    });
+    expect(() => parseModelRef("acme:model")).toThrow(/provider/);
+  });
+
+  it("all parse, and every Claude model refuses the none effort", () => {
+    for (const ref of MODEL_REFS) {
+      expect(parseModelRef(ref).provider).toBe(MODEL_CATALOG[ref].provider);
+      if (MODEL_CATALOG[ref].provider === "anthropic") expect(MODEL_CATALOG[ref].efforts).not.toContain("none");
+    }
   });
 });
 

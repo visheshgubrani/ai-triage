@@ -45,6 +45,8 @@ It's an MVP and a portfolio project. Be correct where correctness is cheap, keep
 - 60 labeled synthetic fixtures (`fixtures/manifest.json`, with dev/calib/test splits), seeded into the demo tenant by `pnpm db:seed`.
 - `apps/web`: a read-only `/documents` page (upload, statuses, and a detail view with parts, extraction and gate results).
 
+**Model providers:** besides Claude, configs can use OpenAI, DeepSeek, OpenRouter or a local OpenAI-compatible server (see "Model providers" below). The cassette format is 2 (the hash includes the provider).
+
 **Cassettes are not recorded yet.** Until someone runs `LLM_MODE=record pnpm cassettes:record --yes` (needs `ANTHROPIC_API_KEY`, costs a few dollars), every document fails at classify with `cassette_missing`, and the replay e2e test (`apps/worker/src/pipeline/e2e.db.test.ts`, gated on `fixtures/cassettes/recorded.json`) is skipped.
 
 Not built yet: phases 3–4 (§9 of `docs/architecture.md`), plus the Dockerfile and the compose `init` service. `action.deliver` jobs are enqueued by route but wait for the phase 3 delivery handler.
@@ -57,7 +59,7 @@ apps/worker     pg-boss handlers + cron
 apps/web        Next.js UI only (no business logic, no DB access)
 packages/db         Drizzle schema + migrations. The ONLY package that imports drizzle-orm / pg.
 packages/core       Closed sets (`.`, web-safe) and the pure pipeline (`./pipeline`, Node-only). No I/O.
-packages/llm        Claude wrapper + llm_calls recording + replay/record/live
+packages/llm        Model gateway (Claude + OpenAI-compatible providers) + llm_calls recording + replay/record/live
 packages/schemas    Category templates, prompts, toApiSchema(), Ajv, rules (a leaf: no workspace deps)
 packages/storage    S3 client, presigned URLs, server-issued storage keys
 packages/ingest     Ingestion paths: store the source, then create document + run + parse job
@@ -79,7 +81,7 @@ pnpm db:seed                 # prices, demo tenant (admin@demo.test / reviewer@d
 pnpm ingest <file>           # .pdf/.docx/.eml/.png/.txt via the REST API (TRIAGE_API_KEY), .json as a Postmark payload
 pnpm api-key:create --tenant demo   # prints a tenant API key once
 pnpm fixtures:generate       # regenerate fixtures/manifest.json (files are kept unless --force, which invalidates cassettes)
-LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY: records missing cassettes (--all re-records)
+LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY: records missing cassettes (--all re-records, --model <ref> picks the model)
 pnpm dev                     # api :8787, web :3000, worker
 pnpm typecheck && pnpm lint && pnpm test && pnpm build   # must all pass before you're done (pnpm test needs infra:up)
 pnpm test:unit               # unit tests only, no Postgres needed
@@ -129,6 +131,21 @@ Ports are deliberately non-default (5440, 9020/9021, 8787) to avoid clashing wit
   - Forced `tool_choice` returns a 400 on Opus/Sonnet 5.5.
 - Refusals: always check `stop_reason` before reading content. Use `fallbacks: "default"` with beta `server-side-fallback-2026-07-01`. It isn't available on Batches or Haiku.
 - Usage fields for cost: `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`. Prices per MTok (input/output): Opus 5.5 $4/$20, Sonnet 5.5 $2/$10, Haiku 5.5 $0.10/$0.50 (prompts ≤100K tokens; $0.50/$2.50 above). Cache reads are 0.05x input on Opus/Sonnet 5.5 ($0.20/$0.10) and 0.1x on Haiku. Writes are 1.25x (5m) or 2x (1h). Batch is 0.5x. These are seeded in `packages/db/src/seed/prices.ts` (verified 2026-11-03); re-verify before changing them.
+
+## Model providers
+
+- **Model refs.** A bare Claude id (`claude-opus-5-5`) or `provider:model` for the rest: `openai:gpt-6.1-terra`, `deepseek:deepseek-flash`, `openrouter:openai/gpt-6.1-terra`, `compat:qwen3`. `compat` is any OpenAI-compatible server (Ollama, vLLM, LM Studio) at `OPENAI_COMPAT_BASE_URL`. Refs are stored as they are in `pipeline_configs`, `llm_calls.model` and `model_prices.model`.
+- **`MODEL_CATALOG`** (`packages/core/src/models.ts`) is the closed set of usable models, with capabilities: `structuredOutput` (`json_schema`, or `json_object` for DeepSeek, whose schema goes in the system prompt and is enforced only by Ajv), `inputs` (`pdf`, `images`) and the `efforts` the model accepts (`none` means no reasoning or no effort control). Config validation checks both the ref and the effort against it.
+- **Adding a model:** one `MODEL_CATALOG` entry plus a `MODEL_PRICE_SEED` row (`packages/db/src/seed/prices.ts`). Live calls reserve budget at the model's price, so an unpriced model can't be called. Check ids, capabilities and prices against the provider's docs.
+- **Text-only models.** A model without `pdf` input gets a text-layer PDF as per-page text (page-cited evidence still verifies). Scans and images it can't read fail the run as `unsupported_file`.
+- **Adapters** live in `packages/llm/src/providers/`: `anthropic.ts` (Messages API) and `openai-compatible.ts` (Chat Completions through the official `openai` SDK with a `baseURL`). Each turns an `LlmRequest` into exact wire params and normalizes the raw response (stop reason in Claude's names, usage by price class). Cassettes hash `{ provider, params }` (`CASSETTE_FORMAT` 2) and store the raw provider response.
+- **Keys** live in the deployment `.env` (`OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`, `OPENAI_COMPAT_*`). Clients are built on first use, so a key matters only for a provider the active config uses. Replay builds no client.
+- **Why not the Vercel AI SDK or `zodResponseFormat`:** output schemas are versioned JSON Schemas stored per tenant, so compile-time Zod types add nothing (Ajv against the full schema is the check). An abstraction SDK would also own the wire format (breaking exact-params cassettes), hide raw usage, fallback hops and refusal details, and could pick forced `tool_choice`, which 400s on Opus/Sonnet 5.5.
+- Provider quirks:
+  - OpenAI takes `max_completion_tokens`; the others take `max_tokens`.
+  - Effort goes as `reasoning_effort` on OpenAI and DeepSeek, and as `reasoning.effort` on OpenRouter (which also gets `provider.require_parameters` so it only routes to upstreams that honor `response_format`).
+  - `prompt_tokens` includes cached tokens, so uncached input is the difference (DeepSeek also reports `prompt_cache_hit_tokens`).
+  - DeepSeek's prices have peak and off-peak rates; the seed uses peak, so its recorded cost is an upper bound. OpenRouter's seed price is the highest listed upstream, with no cache discount.
 
 - **Core subpaths.** `@ai-triage/core` stays constants-only so web can import it; parsers and pipeline logic live in `@ai-triage/core/pipeline`.
 - **Stage commit order:** guarded status advance first (it locks the document row and detects stale or duplicate jobs), then the stage result, then pointers (`current_extraction_id` after the extraction insert: the FK isn't deferrable), then `markCanonical`, then enqueue. Stage jobs get deterministic ids (`stageJobId`), so a duplicate send is a no-op.

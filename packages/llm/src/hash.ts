@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 
 /** Bump to invalidate every cassette on purpose (for example, after changing the cassette format). */
-export const CASSETTE_FORMAT = 1;
+export const CASSETTE_FORMAT = 2;
 
 /** JSON with object keys sorted at every level, so equal params always serialize the same way. */
 export function canonicalJson(value: unknown): string {
@@ -16,7 +16,7 @@ export function canonicalJson(value: unknown): string {
   );
 }
 
-/** The cassette key of a request: SHA-256 of its canonical params plus the cassette format. */
+/** The cassette key of a request: SHA-256 of its canonical wire request (provider + params) and the cassette format. */
 export function requestHash(params: unknown): string {
   return createHash("sha256")
     .update(`cassette-v${CASSETTE_FORMAT}\n${canonicalJson(params)}`)

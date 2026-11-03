@@ -1,16 +1,16 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import type { LlmCallMode, LlmStage } from "@ai-triage/core";
+import type { LlmCallMode, LlmStage, Provider } from "@ai-triage/core";
 import { PipelineError } from "@ai-triage/core/pipeline";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 import { CassetteMissError } from "./errors";
 import { CASSETTE_FORMAT } from "./hash";
-import type { MessageParams } from "./params";
-
-export type Message = Anthropic.Beta.Messages.BetaMessage;
+import type { OpenAiCompatibleProvider, WireRequest } from "./providers";
 
 export interface SendResult {
-  message: Message;
+  /** The provider's raw response (a Messages API message or a chat completion). */
+  response: unknown;
   /** Wall-clock latency; in replay, the latency recorded when the cassette was made. */
   latencyMs: number;
   requestId: string | null;
@@ -22,40 +22,102 @@ export interface RequestMeta {
   stage: LlmStage;
 }
 
-/** Sends one request. live and record call Claude; replay reads cassettes; fake is for tests. */
+/** Sends one request. live and record call the provider; replay reads cassettes; fake is for tests. */
 export interface Transport {
-  send(params: MessageParams, meta: RequestMeta): Promise<SendResult>;
+  send(request: WireRequest, meta: RequestMeta): Promise<SendResult>;
+}
+
+/** Where each OpenAI-compatible provider lives and which env vars configure it. */
+export const OPENAI_COMPATIBLE_ENDPOINTS: Record<
+  OpenAiCompatibleProvider,
+  { keyEnv: string; baseUrlEnv: string; baseUrl: string | null; keyRequired: boolean }
+> = {
+  openai: { keyEnv: "OPENAI_API_KEY", baseUrlEnv: "OPENAI_BASE_URL", baseUrl: null, keyRequired: true },
+  deepseek: {
+    keyEnv: "DEEPSEEK_API_KEY",
+    baseUrlEnv: "DEEPSEEK_BASE_URL",
+    baseUrl: "https://api.deepseek.com",
+    keyRequired: true,
+  },
+  openrouter: {
+    keyEnv: "OPENROUTER_API_KEY",
+    baseUrlEnv: "OPENROUTER_BASE_URL",
+    baseUrl: "https://openrouter.ai/api/v1",
+    keyRequired: true,
+  },
+  // Local servers usually ignore the key.
+  compat: { keyEnv: "OPENAI_COMPAT_API_KEY", baseUrlEnv: "OPENAI_COMPAT_BASE_URL", baseUrl: null, keyRequired: false },
+};
+
+/** The env var holding a provider's API key (for preflight checks such as the cassette recorder). */
+export const providerKeyEnv = (provider: Provider) =>
+  provider === "anthropic" ? "ANTHROPIC_API_KEY" : OPENAI_COMPATIBLE_ENDPOINTS[provider].keyEnv;
+
+const missing = (name: string) => new PipelineError("llm_bad_request", `${name} is not set`);
+
+function openAiClient(provider: OpenAiCompatibleProvider, env: NodeJS.ProcessEnv): OpenAI {
+  const endpoint = OPENAI_COMPATIBLE_ENDPOINTS[provider];
+  const apiKey = env[endpoint.keyEnv] || (endpoint.keyRequired ? undefined : "unused");
+  if (!apiKey) throw missing(endpoint.keyEnv);
+  const baseURL = env[endpoint.baseUrlEnv] || endpoint.baseUrl;
+  if (provider === "compat" && !baseURL) throw missing(endpoint.baseUrlEnv);
+  return new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+}
+
+/** Errors retrying can't fix become PipelineErrors, so the run fails at once. */
+function classify(err: unknown, sdk: typeof Anthropic | typeof OpenAI): unknown {
+  if (err instanceof sdk.APIError && err.status === 413) return new PipelineError("request_too_large", err.message);
+  if (
+    err instanceof sdk.BadRequestError ||
+    err instanceof sdk.NotFoundError ||
+    err instanceof sdk.UnprocessableEntityError
+  ) {
+    return new PipelineError("llm_bad_request", err.message);
+  }
+  return err;
 }
 
 /**
- * Calls the Messages API. Errors retrying can't fix (400, 404, 413, 422) become PipelineErrors so
- * the run fails at once; rate limits, server errors and connection errors propagate for a retry
- * (after the SDK's own retries).
+ * Calls the provider's API: the Messages API for Claude, Chat Completions for the rest. Clients are
+ * built on first use, so a missing key only matters for a provider a config actually uses. Errors
+ * retrying can't fix (400, 404, 413, 422, a missing key) become PipelineErrors so the run fails at
+ * once; rate limits, server errors and connection errors propagate for a retry (after the SDK's own).
  */
-export function liveTransport(client: Anthropic = new Anthropic()): Transport {
+export function liveTransport(options: { anthropic?: Anthropic; env?: NodeJS.ProcessEnv } = {}): Transport {
+  const env = options.env ?? process.env;
+  let anthropic = options.anthropic;
+  const openai = new Map<OpenAiCompatibleProvider, OpenAI>();
   return {
-    async send(params) {
+    async send(request) {
       const started = performance.now();
+      const done = (response: unknown, requestId: string | null): SendResult => ({
+        response,
+        latencyMs: Math.round(performance.now() - started),
+        requestId,
+        mode: "live",
+      });
+      if (request.provider === "anthropic") {
+        if (!anthropic) {
+          if (!env.ANTHROPIC_API_KEY) throw missing("ANTHROPIC_API_KEY");
+          anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+        }
+        try {
+          const { data, request_id } = await anthropic.beta.messages.create(request.params).withResponse();
+          return done(data, request_id ?? null);
+        } catch (err) {
+          throw classify(err, Anthropic);
+        }
+      }
+      let client = openai.get(request.provider);
+      if (!client) {
+        client = openAiClient(request.provider, env);
+        openai.set(request.provider, client);
+      }
       try {
-        const { data, request_id } = await client.beta.messages.create(params).withResponse();
-        return {
-          message: data,
-          latencyMs: Math.round(performance.now() - started),
-          requestId: request_id ?? null,
-          mode: "live",
-        };
+        const { data, request_id } = await client.chat.completions.create(request.params).withResponse();
+        return done(data, request_id ?? data.id ?? null);
       } catch (err) {
-        if (err instanceof Anthropic.APIError && err.status === 413) {
-          throw new PipelineError("request_too_large", err.message);
-        }
-        if (
-          err instanceof Anthropic.BadRequestError ||
-          err instanceof Anthropic.NotFoundError ||
-          err instanceof Anthropic.UnprocessableEntityError
-        ) {
-          throw new PipelineError("llm_bad_request", err.message);
-        }
-        throw err;
+        throw classify(err, OpenAI);
       }
     },
   };
@@ -64,6 +126,7 @@ export function liveTransport(client: Anthropic = new Anthropic()): Transport {
 export interface Cassette {
   format: number;
   hash: string;
+  provider: Provider;
   stage: LlmStage;
   model: string;
   recordedAt: string;
@@ -71,39 +134,41 @@ export interface Cassette {
   requestId: string | null;
   /** What was asked, without base64 payloads, for reviewing a cassette diff. */
   request: unknown;
-  response: Message;
+  /** The provider's raw response. */
+  response: unknown;
 }
 
 export const cassettePath = (dir: string, hash: string) => join(dir, hash.slice(0, 2), `${hash}.json`);
 
-/** The params with document and image data replaced by their size, for a readable cassette. */
-function summarize(params: MessageParams): unknown {
+/** The params with document and image data (raw or as data: URLs) replaced by their size. */
+function summarize(params: unknown): unknown {
   return JSON.parse(
-    JSON.stringify(params, (key, value) =>
-      key === "data" && typeof value === "string"
-        ? `<${value.length} base64 chars>`
-        : key === "schema"
-          ? "<schema>"
-          : value,
-    ),
+    JSON.stringify(params, (key, value) => {
+      if (key === "schema") return "<schema>";
+      if (typeof value !== "string") return value;
+      if (key === "data") return `<${value.length} base64 chars>`;
+      const dataUrl = value.match(/^data:([^;,]+);base64,/);
+      return dataUrl ? `<${dataUrl[1]}, ${value.length - dataUrl[0].length} base64 chars>` : value;
+    }),
   );
 }
 
 /** Calls through `inner` (live) and writes each response as a cassette keyed by request hash. */
 export function recordTransport(inner: Transport, dir: string): Transport {
   return {
-    async send(params, meta) {
-      const result = await inner.send(params, meta);
+    async send(request, meta) {
+      const result = await inner.send(request, meta);
       const cassette: Cassette = {
         format: CASSETTE_FORMAT,
         hash: meta.hash,
+        provider: request.provider,
         stage: meta.stage,
-        model: params.model,
+        model: request.params.model,
         recordedAt: new Date().toISOString(),
         latencyMs: result.latencyMs,
         requestId: result.requestId,
-        request: summarize(params),
-        response: result.message,
+        request: summarize(request.params),
+        response: result.response,
       };
       const path = cassettePath(dir, meta.hash);
       await mkdir(dirname(path), { recursive: true });
@@ -117,7 +182,7 @@ export function recordTransport(inner: Transport, dir: string): Transport {
 /** Serves recorded responses. A missing cassette is a hard error, never a live call. */
 export function replayTransport(dir: string): Transport {
   return {
-    async send(_params, meta) {
+    async send(_request, meta) {
       let raw: string;
       try {
         raw = await readFile(cassettePath(dir, meta.hash), "utf8");
@@ -127,7 +192,7 @@ export function replayTransport(dir: string): Transport {
       }
       const cassette = JSON.parse(raw) as Cassette;
       return {
-        message: cassette.response,
+        response: cassette.response,
         latencyMs: cassette.latencyMs,
         requestId: cassette.requestId,
         mode: "replay",
@@ -136,15 +201,15 @@ export function replayTransport(dir: string): Transport {
   };
 }
 
-/** Scripted responses for tests; records every call. */
-export function fakeTransport(respond: (params: MessageParams, meta: RequestMeta) => Message | Promise<Message>) {
-  const calls: { params: MessageParams; meta: RequestMeta }[] = [];
+/** Scripted raw responses for tests; records every call. */
+export function fakeTransport(respond: (request: WireRequest, meta: RequestMeta) => unknown) {
+  const calls: { request: WireRequest; meta: RequestMeta }[] = [];
   const transport: Transport & { calls: typeof calls } = {
     calls,
-    async send(params, meta) {
-      calls.push({ params, meta });
+    async send(request, meta) {
+      calls.push({ request, meta });
       return {
-        message: await respond(params, meta),
+        response: await respond(request, meta),
         latencyMs: 5,
         requestId: `req_fake_${calls.length}`,
         mode: "live",

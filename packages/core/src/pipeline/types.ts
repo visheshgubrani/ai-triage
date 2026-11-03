@@ -1,4 +1,4 @@
-import type { Effort, EvidenceMode, LlmStage, ModelId, PartKind } from "../index";
+import type { Effort, EvidenceMode, LlmStage, ModelRef, PartKind } from "../index";
 
 /** One parsed part of a document, as stored in document_parts (partIndex is its position). */
 export interface ParsedPart {
@@ -15,10 +15,10 @@ export interface ParsedPart {
   storageKey: string | null;
 }
 
-/** A provider-neutral Claude request. packages/llm turns it into SDK params and hashes those. */
+/** A provider-neutral model request. packages/llm turns it into the provider's wire params and hashes those. */
 export interface LlmRequest {
   stage: LlmStage;
-  model: ModelId;
+  model: ModelRef;
   effort: Effort;
   maxTokens: number;
   /** Cached prefix: instructions, category definitions, examples. */
@@ -35,7 +35,7 @@ export type LlmContent =
   | { type: "image"; mime: "image/png" | "image/jpeg"; data: string };
 
 export interface StageModel {
-  model: ModelId;
+  model: ModelRef;
   effort: Effort;
   maxTokens: number;
 }
