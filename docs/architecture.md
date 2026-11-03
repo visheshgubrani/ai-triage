@@ -92,6 +92,13 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 - Review decisions and actions resolve every referenced id inside the tenant transaction. Webhook targets come only from tenant settings.
 - **Short transactions:** read under the tenant context and commit, call Claude with no transaction open, then commit the result with revision checks.
 - Auth: Better Auth with the organizations plugin, whose organization *is* the `tenants` table (`modelName` renames: `users`, `sessions`, `accounts`, `verifications`, `tenants`, `memberships`, `invitations`, all with uuid ids). These auth tables are global (no RLS) and keep BA's `organization_id` naming. Roles are `admin`, `reviewer` and `viewer`. Public sign-up and user-created organizations are disabled. The API mounts only the Better Auth endpoints the web uses (sign-in/out, session, password, sessions list/revoke, TOTP 2FA); admin-only routes require the admin's 2FA when `REQUIRE_ADMIN_2FA` is on. Tenants are created by `createTenant()` (tenant, settings and inbound address in one transaction). A new session lands in the user's first tenant, and the API re-checks membership on every request.
+- **Google and members (phase 6):** one Google OAuth client serves Sign in with Google (Better Auth; identity only, the Google tokens are dropped) and mailbox connections ([google.md](google.md)).
+  - **Admission:** Better Auth may create a user only through `admissionRefusal()` (`packages/db/src/admission.ts`, the `user.create.before` hook): a verified Google email that holds a pending invitation, or a Workspace account whose `hd` a tenant claimed for auto-join.
+  - **Linking:** a Google sign-in joins an existing user only when Google verified the email and so did we. Google isn't a Better Auth "trusted provider".
+  - **2FA:** a Google sign-in asks for TOTP like a password sign-in (`auth-oauth-2fa.ts`). A Google-only user changes 2FA with a sign-in from the last 10 minutes instead of a password.
+  - **Invitations** (`members.ts`) are copyable links `/invite#<token>`: only the token's SHA-256 is stored, and each works once within 7 days and can be revoked. Accepted with Google (the verified email must match), or with a password when the admin allows it (that user stays unverified, so Google can't take the account over). `pnpm tenant:create` makes a tenant with a default config and its first admin's link.
+  - **Members:** role changes and removal keep at least one admin, under a lock on the tenant's admin memberships.
+  - **Workspace domain:** claimed by signing in to a Workspace account in it (`hd=*`; the domain is the ID token's `hd`), with one tenant per domain. New users from it join as viewer or reviewer at creation only.
 
 ---
 
@@ -118,6 +125,10 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 | `actions` | document (NOT NULL), **`extraction_id`** (unique), **frozen `payload`** (a trigger allows only the delivery columns to change), status, attempts, `last_error`. The action `id` is the `Idempotency-Key` |
 | `tenant_settings.retention_days` | Finished documents older than this are purged by the nightly `system.maintenance` job (null keeps them). Deletion goes only through `purge_document()` (0016_purge.sql), owned by `app_purger`, the one role the immutability guards let delete |
 | `audit_events` | Security-relevant changes per tenant: actor (user / API key / system), action (`AUDIT_ACTIONS`), target, `details` (never secrets), ip, user agent, request id. Written in the same transaction as the change; **insert-only** (no UPDATE/DELETE grant, plus a trigger). Review decisions keep their own trail |
+| `oauth_states` | One OAuth round trip started by an admin (mailbox or Workspace domain): the `state`, PKCE verifier, used once by the same user within 10 minutes |
+| `mailbox_connections` | A connected mailbox: provider, address, status (`active`/`paused`/`reauth_required`/`disconnected`), intake label, **encrypted** refresh and access tokens (AAD `${tenant}:mailbox:${id}`), the history cursor with a CAS `cursor_version`, `next_sync_at`. Unique per tenant, provider and address |
+| `mailbox_messages` | The sync ledger: one row per message seen (`queued`/`ingested`/`duplicate`/`skipped`/`deferred`/`failed`/`purged`) with a reason and `document_id`. Ids only, no content; purging a document leaves a `purged` tombstone |
+| `tenants.workspace_domain` | Auto-join domain (unique) and `workspace_join_role` |
 | `model_prices` | per model and prompt-size tier (`prompt_tokens_above`): per-MTok input, output, 5m and 1h cache write, cache read; batch multiplier; `effective_from`. Global and read-only for the app |
 | `llm_budget_days` | `(tenant_id, day)` → `cap_usd`, `spent_usd`, `reserved_usd` |
 | `eval_datasets`, `eval_items` | immutable source snapshot (`source_key`, `source_mime`, `source_title`, stored exactly as a document's source), `content_key` (derived like `external_id`; unique per dataset among active items), `expected_category`, `expected_fields`, **`split` (`dev`/`calib`/`test`)**, origin and `origin_ref`, tags, `retired_at` (set once; items are otherwise immutable). No link to `documents` |
@@ -133,6 +144,11 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 - **Postmark:** basic auth credentials in the HTTPS webhook URL (optionally an IP allowlist). The parsed JSON payload is stored as `source.json`, and attachments are decoded into separate objects.
 - **Uploads:** the two-step flow in §3.
 - **REST/CLI:** the same path, authenticated with a tenant API key.
+- **Gmail sync (phase 6):** a minute cron (`mailbox.poll`) lists due mailboxes through the SECURITY DEFINER resolver `due_mailbox_connections()` and enqueues one `mailbox.sync` each (an `exclusive` queue).
+  - **Sync:** reads the cursor, then asks Gmail's history for messages added to the intake label (or labelled into it) with no transaction open. It then commits, in one transaction: the cursor (CAS on `cursor_version`), the new ledger rows, and one `mailbox.fetch` per new message (deterministic job ids).
+  - **Expired cursor:** about a week of history is kept. A 404 reads the profile's `historyId` first, then lists recent mail within the label (at most 7 days back).
+  - **Dead grant:** an `invalid_grant` marks the mailbox `reauth_required` (audited), and polling stops.
+  - **Fetch:** downloads the raw message. Drafts, sent mail, spam, trash, deleted and oversized mail are skipped with a reason. Over the tenant's inbound limit (shared with Postmark) a message is deferred. Otherwise it's ingested like an `.eml` (`source = gmail`, raw kept as `source.eml`), with the ledger row committing with the document (`ingestEmail`'s `within`).
 - In every case, inserting the document, creating `processing_run` #1 and enqueueing `doc.parse` happen in one transaction. A duplicate `external_id` returns 200 and does nothing.
 
 **Each stage handler (parse → classify → extract → route) follows the same three steps:**
@@ -215,6 +231,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
   - The category is `other`.
   - **Injection suspected:** the text addresses the triage system (a short, documented set of patterns in `pipeline/untrusted.ts`, such as "ignore … instructions" or a forged `<part>` tag). Part delimiters inside document text are also escaped before sending.
   - **Sender unauthenticated** (when the config's `policy.sender.require` is on): no DMARC (or DKIM) pass in an Authentication-Results header from a receiving server the config trusts.
+    - **Mail synced from Gmail** (`StoredEmail.receivedBy`) is checked by default (`policy.sender.mailbox.require`, default true), against only the results Google wrote. Those are found by position (`providerAuthResults`): ARC results above Google's inbound `Received … by mx.google.com` hop, and the Authentication-Results just below it. Anything further down came with the message.
 - **Score = the classification's `self_confidence`.** It is the only number compared against a threshold. Extraction quality is handled by the gates, not by multiplying scores together.
 - **Decision:** auto only if every gate passes, `score ≥ threshold[category]`, and the category's `automation` is `auto_when_confident`, and the run wasn't triggered by a reclassify. The default is `review_all`, so automation is opt-in per category.
 - **A correct auto-approval (one definition, used everywhere):** the right category **and** every required field correct under its comparator. Category accuracy alone never counts as a correct approval.
@@ -283,10 +300,18 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
    - M6: TOTP 2FA, sessions and API key management.
    - M7: deletion and retention.
    - M8: supply chain, CI and container.
-6. **Reliability (planned):** real mail volume and variety (hundreds of email types), per-tenant fairness, observability, backpressure.
-7. **Google Workspace / Gmail (planned):** mailbox sync instead of forwarding, and Sign in with Google, which shares the OAuth client.
+6. **Google Workspace (done):** Google setup is in [google.md](google.md). Milestones:
+   - M0: closed sets, env and docs.
+   - M1: Sign in with Google (no TOTP bypass, admission gate).
+   - M2: `pnpm tenant:create`, members and invitation links.
+   - M3: the Google OAuth module and mailbox connections.
+   - M4: the Gmail sync worker.
+   - M5: Workspace domain auto-join.
+   - M6: sender authentication for synced mail, source display, eval parity.
+   - M7: a fake Google for the demo and e2e, and the security docs.
+7. **Reliability (planned):** real mail volume and variety (hundreds of email types), per-tenant fairness, observability, backpressure.
 
-**Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Outlook sync, a members UI (invitations, role changes), erasing eval items, SSE, OpenTelemetry, and dual-run agreement.
+**Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Microsoft 365 / Outlook sync, Gmail push (Pub/Sub) and Workspace domain-wide delegation, outbound invitation email, erasing eval items, SSE, OpenTelemetry, and dual-run agreement.
 
 ---
 
@@ -312,4 +337,11 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 - **End to end (replay mode in CI, live mode locally):** ingest the fixtures and assert that the clear cases auto-approve (on categories with automation enabled), the ambiguous ones and the scans land in review with the right reasons, the injection fixture doesn't auto-approve, and a duplicate webhook does nothing.
 - **UI (built-in browser):** claim, edit and approve an item and see the signed webhook arrive at the catcher. Reject an item and confirm it stays terminal. Promote it to the dataset, run dev, then calib, freeze, then run test, and check that the metrics show their n and bounds and that the run's cost equals the sum of its `llm_calls`.
 - **Demo walkthrough** (a scripted Playwright e2e in replay mode, and the README GIF): ingest an invoice, show its evidence highlights and routing reasons, correct a field, and approve that exact revision. Then show that a second tab still holding the old revision gets a 409, and that a forced redelivery reaches the catcher with the same `Idempotency-Key` while `actions` still has one row.
+- **Google (phase 6):** against `FakeGoogle` (`@ai-triage/mailbox/testing`) and a stubbed Google token endpoint, covering:
+  - Admission (no user without an invitation or a claimed domain), linking only verified emails, and TOTP after Google.
+  - Invitation links (single use, expiry, revoke, email match), the last-admin guard, and a removed member's next request being refused.
+  - OAuth state (single use, same user, same tenant, ten minutes), a refused grant without Gmail access, and encrypted tokens.
+  - Sync: one document per message, an expired cursor without gaps, CAS, a dead grant stopping the poll, deferral over the limit, and purge tombstones.
+  - Forged authentication results below Google's trace being ignored, and eval snapshots keeping `receivedBy`.
+  - The `e2e/gmail.spec.ts` walkthrough against `pnpm fake-google`.
 - `pnpm typecheck && pnpm lint && pnpm test` all pass.

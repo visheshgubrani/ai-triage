@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { egressPolicy } from "@ai-triage/core/pipeline";
 import {
   addMembership,
@@ -11,6 +12,7 @@ import {
 } from "@ai-triage/db";
 import { DEMO_PASSWORD } from "@ai-triage/db/seed";
 import { testDbUrls } from "@ai-triage/db/testing";
+import type { GoogleConfig } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { createApp } from "./app";
 import { type RateLimits, rateLimitsFromEnv } from "./rate-limit";
@@ -19,6 +21,15 @@ import { type RateLimits, rateLimitsFromEnv } from "./rate-limit";
 
 export const WEB_ORIGIN = "http://localhost:3000";
 export const POSTMARK = { user: "postmark", password: "test-postmark-password" };
+
+/** A Google client for tests: its endpoints are never really called (tests stub fetch). */
+export const TEST_GOOGLE: GoogleConfig = {
+  clientId: "test-client.apps.googleusercontent.com",
+  clientSecret: "test-google-secret",
+  oauthUrl: "https://accounts.google.com",
+  tokenUrl: "https://oauth2.googleapis.com",
+  apiUrl: "https://gmail.googleapis.com",
+};
 
 /**
  * Test DNS: every name resolves to a public address, except names starting with "private.", which
@@ -32,6 +43,10 @@ export async function createTestApp(
     webhookAllowedHosts?: string[];
     rateLimits?: RateLimits;
     requireAdmin2fa?: boolean;
+    /** Turns Google on (sign-in, mailboxes); off by default, as without GOOGLE_CLIENT_ID. */
+    google?: GoogleConfig;
+    /** Where mailbox code sends Google requests (a FakeGoogle's fetch). */
+    googleFetch?: typeof fetch;
   } = {},
 ) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
@@ -39,11 +54,13 @@ export async function createTestApp(
   const { appUrl } = testDbUrls();
   const pool = createPool(appUrl);
   const db = createDb(pool);
+  const google = options.google ?? null;
   const auth = createAuth({
     db,
     secret: "test-only-secret-0123456789abcdef0123456789",
     baseURL: "http://localhost:8787",
-    trustedOrigins: [WEB_ORIGIN],
+    webOrigin: WEB_ORIGIN,
+    google,
   });
   const boss: PgBoss = createBoss(appUrl, { supervise: false, schedule: false });
   await boss.start();
@@ -68,6 +85,10 @@ export async function createTestApp(
     requireAdmin2fa: options.requireAdmin2fa ?? false,
     rateLimits: options.rateLimits ?? rateLimitsFromEnv({ RATE_LIMIT_SCALE: "10000" }),
     llmMode: "replay",
+    google,
+    googleSignIn: google !== null,
+    googleFetch: options.googleFetch ?? (() => Promise.reject(new Error("no Google in this test"))),
+    apiBaseUrl: "http://localhost:8787",
   });
 
   /** Pins the app's clock (null: real time again). */
@@ -104,3 +125,31 @@ export async function createTestApp(
 
   return { app, pool, db, boss, storage, signIn, memberCookie, setNow, close };
 }
+
+/** RFC 6238 TOTP (SHA-1, 30 s, 6 digits), as authenticator apps compute it. */
+export function totp(base32Secret: string, at = Date.now()): string {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let bits = "";
+  for (const ch of base32Secret.replace(/=+$/, "").toUpperCase())
+    bits += alphabet.indexOf(ch).toString(2).padStart(5, "0");
+  const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((b) => Number.parseInt(b, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(at / 30_000)));
+  const mac = createHmac("sha1", key).update(counter).digest();
+  const offset = (mac[mac.length - 1] ?? 0) & 0xf;
+  return String((mac.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
+
+/** The cookies a response sets, as a Cookie header. */
+export const cookiesOf = (res: Response) =>
+  res.headers
+    .getSetCookie()
+    .map((c) => c.split(";")[0])
+    .join("; ");
+
+/** Cookie headers merged by name, later ones winning (Better Auth replaces the session cookie). */
+export const mergeCookies = (...headers: string[]) => {
+  const jar = new Map<string, string>();
+  for (const pair of headers.flatMap((h) => h.split("; ")).filter(Boolean)) jar.set(pair.split("=")[0] ?? "", pair);
+  return [...jar.values()].filter((pair) => !pair.endsWith("=")).join("; ");
+};

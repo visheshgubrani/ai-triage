@@ -1,6 +1,6 @@
-import type { ErrorResponse, HealthResponse, Issue, MeResponse } from "@ai-triage/contracts";
+import type { AuthProvidersResponse, ErrorResponse, HealthResponse, Issue, MeResponse } from "@ai-triage/contracts";
 import { PipelineError } from "@ai-triage/core/pipeline";
-import { ConfigError, EvalRequestError, getTenant, pingDb, ReviewError } from "@ai-triage/db";
+import { ConfigError, EvalRequestError, getTenant, MemberError, pingDb, ReviewError } from "@ai-triage/db";
 import { IngestRejected } from "@ai-triage/ingest";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -15,6 +15,8 @@ import { configRoutes } from "./routes/configs";
 import { documentRoutes } from "./routes/documents";
 import { evalRoutes } from "./routes/evals";
 import { publicApiRoutes, webhookRoutes } from "./routes/ingest";
+import { integrationRoutes, mailboxRoutes } from "./routes/mailboxes";
+import { invitationRoutes, MEMBER_ERROR_STATUS, memberRoutes } from "./routes/members";
 import { reviewRoutes } from "./routes/review";
 import { settingsRoutes } from "./routes/settings";
 import { uploadRoutes } from "./routes/uploads";
@@ -47,6 +49,10 @@ export function createApp(deps: AppDeps) {
       const { issues, ...details } = err.details as { issues?: Issue[] };
       const body: ErrorResponse = { error: err.message, code: err.code, issues, details };
       return c.json(body, REVIEW_ERROR_STATUS[err.code]);
+    }
+    if (err instanceof MemberError) {
+      const body: ErrorResponse = { error: err.message, code: err.code };
+      return c.json(body, MEMBER_ERROR_STATUS[err.code]);
     }
     if (err instanceof EvalRequestError) {
       const body: ErrorResponse = { error: err.message, code: err.code, details: err.details };
@@ -81,6 +87,11 @@ export function createApp(deps: AppDeps) {
         };
         return c.json(body, dbUp ? 200 : 503);
       })
+      // Public: the sign-in page shows "Continue with Google" only when the instance has a client.
+      .get("/auth/providers", (c) => {
+        const body: AuthProvidersResponse = { google: deps.googleSignIn };
+        return c.json(body, 200);
+      })
       .get("/me", requireTenant(deps), async (c) => {
         const { tenantId, role, user, twoFactorEnabled, twoFactorRequired } = c.var.tenant;
         const tenant = await getTenant(db, tenantId);
@@ -93,6 +104,10 @@ export function createApp(deps: AppDeps) {
       .route("/review", reviewRoutes(deps))
       .route("/actions", actionRoutes(deps))
       .route("/settings", settingsRoutes(deps))
+      .route("/members", memberRoutes(deps))
+      .route("/invitations", invitationRoutes(deps))
+      .route("/mailboxes", mailboxRoutes(deps))
+      .route("/integrations", integrationRoutes(deps))
       .route("/evals", evalRoutes(deps))
       .route("/configs", configRoutes(deps))
       .route("/webhooks", webhookRoutes(deps))

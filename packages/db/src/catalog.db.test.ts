@@ -75,6 +75,8 @@ describe("catalog", () => {
     expect(policies).toEqual([
       { table: "api_keys", cmd: "r", roles: ["app_resolver"] },
       { table: "inbound_addresses", cmd: "r", roles: ["app_resolver"] },
+      // The cron poll lists due mailboxes before any tenant is known (0023_mailbox_sync.sql).
+      { table: "mailbox_connections", cmd: "r", roles: ["app_resolver"] },
     ]);
 
     const { rows: functions } = await owner.query<{
@@ -89,6 +91,12 @@ describe("catalog", () => {
       from pg_proc p join pg_namespace n on n.oid = p.pronamespace
       where n.nspname = 'public' and p.prosecdef order by p.proname`);
     expect(functions).toEqual([
+      {
+        name: "due_mailbox_connections",
+        owner: "app_resolver",
+        config: ["search_path=public, pg_temp"],
+        public_exec: false,
+      },
       // The one way past the immutability guards (0016_purge.sql).
       { name: "purge_document", owner: "app_purger", config: ["search_path=public, pg_temp"], public_exec: false },
       { name: "resolve_api_key", owner: "app_resolver", config: ["search_path=public, pg_temp"], public_exec: false },

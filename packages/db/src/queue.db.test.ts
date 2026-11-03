@@ -71,3 +71,21 @@ describe("queue options", () => {
     expect((await boss.getQueue(QUEUES.deliveryFailed))?.deadLetter ?? null).toBeNull();
   });
 });
+
+describe("mailbox sync queue", () => {
+  it("is exclusive: a second sync of the same mailbox isn't queued while one is pending", async () => {
+    expect(await boss.getQueue(QUEUES.mailboxSync)).toMatchObject({ policy: "exclusive" });
+    const job = { tenantId, connectionId: crypto.randomUUID() };
+    const first = await boss.send(QUEUES.mailboxSync, job, { singletonKey: job.connectionId });
+    const second = await boss.send(QUEUES.mailboxSync, job, { singletonKey: job.connectionId });
+    const other = await boss.send(QUEUES.mailboxSync, job, { singletonKey: crypto.randomUUID() });
+    expect(first).toBeTruthy();
+    expect(second).toBeNull();
+    expect(other).toBeTruthy();
+    await boss.deleteJob(QUEUES.mailboxSync, [first ?? "", other ?? ""]);
+  });
+
+  it("dead-letters fetches into mailbox.failed", async () => {
+    expect(await boss.getQueue(QUEUES.mailboxFetch)).toMatchObject({ deadLetter: QUEUES.mailboxFailed });
+  });
+});

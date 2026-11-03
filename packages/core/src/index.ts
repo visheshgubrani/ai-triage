@@ -20,7 +20,8 @@ export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 export const DELIVERY_STATUSES = ["none", "pending", "delivered", "failed"] as const;
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
-export const DOCUMENT_SOURCES = ["email", "upload", "api"] as const;
+/** The channel a document arrived through (not its content type: an .eml upload is `upload`). */
+export const DOCUMENT_SOURCES = ["email", "upload", "api", "gmail"] as const;
 export type DocumentSource = (typeof DOCUMENT_SOURCES)[number];
 
 export const EVIDENCE_MODES = ["text", "pdf_text", "unverifiable"] as const;
@@ -67,6 +68,24 @@ export type ActionStatus = (typeof ACTION_STATUSES)[number];
 
 export const MEMBER_ROLES = ["admin", "reviewer", "viewer"] as const;
 export type MemberRole = (typeof MEMBER_ROLES)[number];
+
+/** Roles a Workspace domain auto-join may grant. Never admin: admins are invited. */
+export const JOIN_ROLES = ["reviewer", "viewer"] as const;
+export type JoinRole = (typeof JOIN_ROLES)[number];
+
+/**
+ * How an invitation may be accepted: with a Google account whose verified email matches it, or
+ * also by setting a password (the link is then the only proof, so Google is the default).
+ */
+export const INVITATION_ACCEPT_METHODS = ["google", "google_or_password"] as const;
+export type InvitationAcceptMethod = (typeof INVITATION_ACCEPT_METHODS)[number];
+
+/** Better Auth's invitation statuses that this app uses. Expiry is read from `expires_at`. */
+export const INVITATION_STATUSES = ["pending", "accepted", "revoked"] as const;
+export type InvitationStatus = (typeof INVITATION_STATUSES)[number];
+
+/** How long an invitation link stays valid. */
+export const INVITATION_TTL_DAYS = 7;
 
 export const EVAL_SPLITS = ["dev", "calib", "test"] as const;
 export type EvalSplit = (typeof EVAL_SPLITS)[number];
@@ -126,6 +145,14 @@ export const QUEUES = {
   maintenance: "system.maintenance",
   /** Deletes a purged document's objects, after the purge committed (the outbox for storage). */
   storageDelete: "storage.delete",
+  /** Every minute (cron): enqueues a sync for each connected mailbox that is due. */
+  mailboxPoll: "mailbox.poll",
+  /** One mailbox: lists new messages since its cursor and enqueues a fetch for each. One per mailbox at a time. */
+  mailboxSync: "mailbox.sync",
+  /** One message of one mailbox: downloads it and ingests it as a document. */
+  mailboxFetch: "mailbox.fetch",
+  /** Dead-letter queue of `mailbox.fetch`: marks the message failed once retries are exhausted. */
+  mailboxFailed: "mailbox.failed",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -152,6 +179,11 @@ export interface QueueSettings {
   /** How long a job may stay active before pg-boss retries it. LLM stages get room for slow calls. */
   expireInSeconds: number;
   deadLetter?: QueueName;
+  /**
+   * pg-boss queue policy (default `standard`). `exclusive` allows one queued or active job per
+   * `singletonKey`, so a mailbox never syncs twice at once. A queue's policy is fixed when it's created.
+   */
+  policy?: "standard" | "exclusive";
 }
 
 const stage = (retryLimit: number, expireInSeconds: number): QueueSettings => ({
@@ -189,10 +221,30 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
   [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
   [QUEUES.maintenance]: { retryLimit: 3, retryDelay: 60, retryBackoff: true, expireInSeconds: 900 },
   [QUEUES.storageDelete]: { retryLimit: 10, retryDelay: 30, retryBackoff: true, expireInSeconds: 300 },
+  // A missed minute is caught by the next one, so the poll never retries.
+  [QUEUES.mailboxPoll]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 60 },
+  [QUEUES.mailboxSync]: {
+    retryLimit: 2,
+    retryDelay: 30,
+    retryBackoff: true,
+    expireInSeconds: 300,
+    policy: "exclusive",
+  },
+  [QUEUES.mailboxFetch]: {
+    retryLimit: 5,
+    retryDelay: 30,
+    retryBackoff: true,
+    expireInSeconds: 300,
+    deadLetter: QUEUES.mailboxFailed,
+  },
+  [QUEUES.mailboxFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
 };
 
 /** When the maintenance job runs (cron, UTC). */
 export const MAINTENANCE_CRON = "15 3 * * *";
+
+/** When the mailbox poll runs: every minute, pg-boss's finest cron granularity. */
+export const MAILBOX_POLL_CRON = "* * * * *";
 
 /** Payload of `storage.delete`: objects and key prefixes, all inside `t/{tenantId}/`. */
 export interface StorageDeleteJob {
@@ -220,6 +272,81 @@ export interface EvalItemJob {
   evalRunId: string;
   evalItemId: string;
 }
+
+/** Payload of a `mailbox.sync` job (its singletonKey is the connection id). */
+export interface MailboxSyncJob {
+  tenantId: string;
+  connectionId: string;
+}
+
+/** Payload of a `mailbox.fetch` job (and of its dead-letter copy). `messageId` is the provider's id. */
+export interface MailboxFetchJob {
+  tenantId: string;
+  connectionId: string;
+  messageId: string;
+}
+
+// ── Mailboxes ────────────────────────────────────────────────────────────────────────────────
+
+/** Mail providers a tenant can connect a mailbox from. Microsoft comes later. */
+export const MAILBOX_PROVIDERS = ["google"] as const;
+export type MailboxProvider = (typeof MAILBOX_PROVIDERS)[number];
+
+/**
+ * The authserv-id each provider's receiving servers write into Authentication-Results. Mail synced
+ * from a provider's mailbox is checked against these results only (pipeline/untrusted.ts).
+ */
+export const MAILBOX_AUTHSERV_IDS: Record<MailboxProvider, string> = { google: "mx.google.com" };
+
+/**
+ * A connection's state. `reauth_required`: the provider refused its refresh token (revoked, or a
+ * Testing-mode token expired), so polling stops until an admin reconnects.
+ */
+export const MAILBOX_STATUSES = ["active", "paused", "reauth_required", "disconnected"] as const;
+export type MailboxStatus = (typeof MAILBOX_STATUSES)[number];
+
+/** A synced message's state in the `mailbox_messages` ledger. `purged`: its document was deleted. */
+export const MAILBOX_MESSAGE_STATUSES = [
+  "queued",
+  "ingested",
+  "duplicate",
+  "skipped",
+  "deferred",
+  "failed",
+  "purged",
+] as const;
+export type MailboxMessageStatus = (typeof MAILBOX_MESSAGE_STATUSES)[number];
+
+/** Why a synced message wasn't ingested (`skipped`), or why it failed (`failed`). */
+export const MAILBOX_MESSAGE_REASONS = [
+  /** A draft, sent, spam, trash or chat message, or one no longer in the intake label. */
+  "not_inbound",
+  /** Deleted from the mailbox before it was downloaded. */
+  "deleted",
+  "too_large",
+  "too_many_attachments",
+  "unreadable",
+  /** The mailbox was disconnected before the message was downloaded. */
+  "disconnected",
+  /** `failed`: downloading or ingesting kept failing. */
+  "retries_exhausted",
+] as const;
+export type MailboxMessageReason = (typeof MAILBOX_MESSAGE_REASONS)[number];
+
+/** What an OAuth round trip started by this app is for (`oauth_states.purpose`). */
+export const OAUTH_PURPOSES = ["mailbox", "workspace_domain"] as const;
+export type OAuthPurpose = (typeof OAUTH_PURPOSES)[number];
+
+/** How long an OAuth round trip may take before its state expires. */
+export const OAUTH_STATE_TTL_SECONDS = 600;
+/**
+ * When a mailbox's history cursor expired (unsynced for about a week), the next sync lists recent
+ * mail instead, looking back at most this far.
+ */
+export const MAILBOX_RESYNC_MAX_DAYS = 7;
+/** A connect may import recent mail too: at most this many days, and this many messages. */
+export const MAILBOX_BACKFILL_MAX_DAYS = 7;
+export const MAILBOX_BACKFILL_MAX_MESSAGES = 200;
 
 // ── Review and delivery ──────────────────────────────────────────────────────────────────────
 
@@ -258,8 +385,37 @@ export const EVAL_ERROR_CODES = [
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 
 /** Request-level refusals shared by every route (docs/security.md), shown as `code` in ErrorResponse. */
-export const API_ERROR_CODES = ["bad_origin", "unreadable_file", "rate_limited", "two_factor_required"] as const;
+export const API_ERROR_CODES = [
+  "bad_origin",
+  "unreadable_file",
+  "rate_limited",
+  "two_factor_required",
+  /** A sensitive account change by a user without a password needs a sign-in from the last few minutes. */
+  "recent_sign_in_required",
+] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
+
+/** Why a members or invitations request was refused, shown as `code` in ErrorResponse. */
+export const MEMBER_ERROR_CODES = [
+  /** The change would leave the workspace without an admin. */
+  "last_admin",
+  "not_member",
+  "already_member",
+  /** The invitation link doesn't exist, was used or revoked, or has expired. */
+  "invitation_invalid",
+  /** The signed-in user isn't the invited email. */
+  "email_mismatch",
+  /** A Google-only invitation needs a verified email (sign in with Google). */
+  "email_not_verified",
+  "password_not_allowed",
+  /** Accepting with a password, for an email that already has an account. */
+  "user_exists",
+  /** Another tenant already claimed that Workspace domain. */
+  "domain_taken",
+  /** The Google account used to claim a domain isn't a Workspace account (no `hd`). */
+  "not_workspace_account",
+] as const;
+export type MemberErrorCode = (typeof MEMBER_ERROR_CODES)[number];
 
 /** Who did something recorded in the audit log: a member, a tenant API key, or the system (CLI, cron). */
 export const AUDIT_ACTOR_TYPES = ["user", "api_key", "system"] as const;
@@ -287,6 +443,19 @@ export const AUDIT_ACTIONS = [
   "retention.swept",
   "auth.two_factor_enabled",
   "auth.two_factor_disabled",
+  "auth.google_linked",
+  "auth.google_unlinked",
+  "member.invited",
+  "member.invitation_revoked",
+  "member.joined",
+  "member.role_changed",
+  "member.removed",
+  "tenant.workspace_domain_set",
+  "tenant.workspace_domain_cleared",
+  "mailbox.connected",
+  "mailbox.updated",
+  "mailbox.disconnected",
+  "mailbox.reauth_required",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 

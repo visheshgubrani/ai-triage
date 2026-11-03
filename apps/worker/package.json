@@ -21,6 +21,7 @@
     "@ai-triage/fixtures": "workspace:*",
     "@ai-triage/ingest": "workspace:*",
     "@ai-triage/llm": "workspace:*",
+    "@ai-triage/mailbox": "workspace:*",
     "@ai-triage/schemas": "workspace:*",
     "@ai-triage/storage": "workspace:*",
     "pg-boss": "^12.38.0",

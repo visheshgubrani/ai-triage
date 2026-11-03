@@ -53,6 +53,11 @@ describe("unsafeConfig", () => {
   it("leaves the Postmark check off when the endpoint is disabled", () => {
     expect(unsafeConfig({ ...safe, POSTMARK_INBOUND_PASSWORD: undefined }, "api")).toEqual([]);
   });
+
+  it("refuses a fake Google in either process", () => {
+    expect(unsafeConfig({ ...safe, GOOGLE_OAUTH_URL: "http://fake-google:9040" }, "api").join()).toMatch(/fake Google/);
+    expect(unsafeConfig({ ...safe, GOOGLE_API_URL: "http://fake-google:9040" }, "worker")).toHaveLength(1);
+  });
 });
 
 describe("assertDemoSeedAllowed", () => {

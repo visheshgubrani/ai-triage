@@ -1,4 +1,4 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { ApiKeyCreated, ApiKeyList, ErrorResponse, MeResponse } from "@ai-triage/contracts";
 import {
   addMembership,
@@ -11,7 +11,7 @@ import {
 } from "@ai-triage/db";
 import { DEMO_PASSWORD } from "@ai-triage/db/seed";
 import { afterAll, describe, expect, it } from "vitest";
-import { createTestApp, WEB_ORIGIN } from "./test-app";
+import { cookiesOf, createTestApp, mergeCookies as merge, totp, WEB_ORIGIN } from "./test-app";
 
 // Accounts (docs/security.md, M6): TOTP through the app's own /api/auth routes, the admin 2FA
 // requirement, and API keys managed from Settings.
@@ -19,33 +19,6 @@ import { createTestApp, WEB_ORIGIN } from "./test-app";
 const t = await createTestApp({ requireAdmin2fa: true });
 const { app, pool, db } = t;
 afterAll(t.close);
-
-/** RFC 6238 TOTP (SHA-1, 30 s, 6 digits), as authenticator apps compute it. */
-function totp(base32Secret: string, at = Date.now()): string {
-  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-  let bits = "";
-  for (const ch of base32Secret.replace(/=+$/, "").toUpperCase())
-    bits += alphabet.indexOf(ch).toString(2).padStart(5, "0");
-  const key = Buffer.from((bits.match(/.{8}/g) ?? []).map((b) => Number.parseInt(b, 2)));
-  const counter = Buffer.alloc(8);
-  counter.writeBigUInt64BE(BigInt(Math.floor(at / 30_000)));
-  const mac = createHmac("sha1", key).update(counter).digest();
-  const offset = (mac[mac.length - 1] ?? 0) & 0xf;
-  return String((mac.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
-}
-
-const cookiesOf = (res: Response) =>
-  res.headers
-    .getSetCookie()
-    .map((c) => c.split(";")[0])
-    .join("; ");
-
-/** Cookie headers merged by name, later ones winning (Better Auth replaces the session cookie). */
-const merge = (...headers: string[]) => {
-  const jar = new Map<string, string>();
-  for (const pair of headers.flatMap((h) => h.split("; ")).filter(Boolean)) jar.set(pair.split("=")[0] ?? "", pair);
-  return [...jar.values()].join("; ");
-};
 
 const auth = (path: string, body: unknown, cookie = "") =>
   app.request(`/api/auth${path}`, {

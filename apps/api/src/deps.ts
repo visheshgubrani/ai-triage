@@ -1,6 +1,7 @@
 import type { LlmCallMode } from "@ai-triage/core";
 import type { Auth, Db, KeyRing, PgBoss, Pool } from "@ai-triage/db";
 import type { IngestLimits } from "@ai-triage/ingest";
+import type { GoogleConfig } from "@ai-triage/mailbox";
 import type { Storage } from "@ai-triage/storage";
 import type { parseTrustedProxies } from "./client-ip";
 import type { RateLimits } from "./rate-limit";
@@ -37,4 +38,12 @@ export interface AppDeps {
   rateLimits: RateLimits;
   /** How eval runs started now will call models (from LLM_MODE); the worker refuses a run that differs. */
   llmMode: LlmCallMode;
+  /** The Google OAuth client (GOOGLE_CLIENT_ID / SECRET), for sign-in and mailboxes; null: Google is off. */
+  google: GoogleConfig | null;
+  /** Sign in with Google is offered (a real Google client; never against the demo's fake). */
+  googleSignIn: boolean;
+  /** How mailbox code reaches Google (tests pass a fake). Better Auth's sign-in uses the global fetch. */
+  googleFetch: typeof fetch;
+  /** The API's public URL (BETTER_AUTH_URL), for OAuth redirect URIs. */
+  apiBaseUrl: string;
 }

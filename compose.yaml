@@ -26,6 +26,14 @@ x-app-env: &app-env
   DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
   DEMO_WEBHOOK_URL: http://webhook-catcher:9030/hooks/demo
   DEMO_WEBHOOK_SECRET: ${DEMO_WEBHOOK_SECRET:-whsec_dev_only_demo_webhook_secret}
+  # Google is faked in the demo (the fake-google service): connect a mailbox with no Google project.
+  # For a real client, set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET and empty GOOGLE_OAUTH_URL,
+  # GOOGLE_TOKEN_URL and GOOGLE_API_URL (docs/google.md).
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-demo-fake-google}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-demo-fake-google-secret}
+  GOOGLE_OAUTH_URL: ${GOOGLE_OAUTH_URL-http://localhost:9040}
+  GOOGLE_TOKEN_URL: ${GOOGLE_TOKEN_URL-http://fake-google:9040}
+  GOOGLE_API_URL: ${GOOGLE_API_URL-http://fake-google:9040}
 
 services:
   postgres:
@@ -96,6 +104,22 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+
+  # A fake Google (OAuth consent, tokens, Gmail) for the demo's mailbox sync: the consent screen
+  # agrees at once; deliver mail with `curl --data-binary @mail.eml http://localhost:9040/fake/deliver`.
+  fake-google:
+    image: ai-triage-app
+    pull_policy: never
+    command: ["pnpm", "fake-google"]
+    environment:
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-demo-fake-google}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-demo-fake-google-secret}
+    ports:
+      - "127.0.0.1:9040:9040"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
   # One-shot, idempotent: migrations (app role, pg-boss queues) and the demo seed.
   init:

@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useState } from "react";
+import { GoogleButton } from "@/components/google-button";
 import { authClient } from "@/lib/auth-client";
+import { googleEnabled, safeNext, signInErrorText } from "@/lib/google";
 
 const input =
   "mt-1 w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm dark:border-neutral-700";
@@ -16,9 +18,22 @@ export default function SignInPage() {
   /** After the password: the account has 2FA, so a code from the authenticator app (or a backup code). */
   const [needsCode, setNeedsCode] = useState(false);
   const [backup, setBackup] = useState(false);
+  const [google, setGoogle] = useState(false);
+  const [next, setNext] = useState("/");
+
+  // Back from Google: `?step=two-factor` (the account has 2FA, so the code comes next) or `?error=`.
+  // Read once from the URL, without useSearchParams, so the page needs no Suspense boundary.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("step") === "two-factor") setNeedsCode(true);
+    const code = params.get("error");
+    if (code) setError(signInErrorText(code));
+    setNext(safeNext(params.get("next")));
+    void googleEnabled().then(setGoogle);
+  }, []);
 
   function done() {
-    router.push("/");
+    router.push(next);
     router.refresh();
   }
 
@@ -78,24 +93,32 @@ export default function SignInPage() {
           </button>
         </form>
       ) : (
-        <form onSubmit={onPassword} className="mt-6 space-y-4">
-          <label className="block text-sm font-medium">
-            Email
-            <input name="email" type="email" autoComplete="email" required className={input} />
-          </label>
-          <label className="block text-sm font-medium">
-            Password
-            <input name="password" type="password" autoComplete="current-password" required className={input} />
-          </label>
-          {error && (
-            <p role="alert" className="text-sm text-red-600">
-              {error}
-            </p>
+        <>
+          {google && (
+            <div className="mt-6 space-y-4">
+              <GoogleButton returnTo={next} onError={setError} />
+              <p className="text-center text-xs text-neutral-500">or with your email and password</p>
+            </div>
           )}
-          <button type="submit" disabled={pending} className={button}>
-            {pending ? "Signing in…" : "Sign in"}
-          </button>
-        </form>
+          <form onSubmit={onPassword} className="mt-6 space-y-4">
+            <label className="block text-sm font-medium">
+              Email
+              <input name="email" type="email" autoComplete="email" required className={input} />
+            </label>
+            <label className="block text-sm font-medium">
+              Password
+              <input name="password" type="password" autoComplete="current-password" required className={input} />
+            </label>
+            {error && (
+              <p role="alert" className="text-sm text-red-600">
+                {error}
+              </p>
+            )}
+            <button type="submit" disabled={pending} className={button}>
+              {pending ? "Signing in…" : "Sign in"}
+            </button>
+          </form>
+        </>
       )}
     </main>
   );

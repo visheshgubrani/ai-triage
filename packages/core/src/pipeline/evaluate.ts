@@ -12,7 +12,7 @@ import { type EvidencePart, type EvidenceResult, verifyEvidence } from "./eviden
 import { type GateFailure, gateReason, runGates } from "./gates";
 import type { ExtractOutput } from "./outputs";
 import { type RoutePolicy, type RouteResult, route } from "./route";
-import { findInjection, type SenderPolicy, senderAuthenticated } from "./untrusted";
+import { type EmailSender, findInjection, type SenderPolicy, senderPasses } from "./untrusted";
 
 export interface EvaluateInput {
   category: string;
@@ -25,8 +25,8 @@ export interface EvaluateInput {
   trigger: RunTrigger;
   auditDraw: number;
   ids: { documentId: string; extractionId: string };
-  /** For email sources, the Authentication-Results headers as received; null for files. */
-  sender: { authResults: readonly string[] } | null;
+  /** For email sources, the Authentication-Results headers (and the synced mailbox's provider); null for files. */
+  sender: EmailSender | null;
   /** The config's sender policy (senderPolicy(config.policy)). */
   senderPolicy: SenderPolicy;
 }
@@ -59,8 +59,7 @@ export function evaluateExtraction(input: EvaluateInput): Evaluation {
     evidence,
     rules,
     injection: findInjection(input.parts.map((p) => p.text)),
-    senderAuthenticated:
-      !input.sender || !input.senderPolicy.require || senderAuthenticated(input.sender.authResults, input.senderPolicy),
+    senderAuthenticated: senderPasses(input.sender, input.senderPolicy),
   });
   return {
     validationIssues,

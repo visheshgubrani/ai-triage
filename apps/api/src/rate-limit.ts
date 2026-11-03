@@ -29,6 +29,8 @@ export const RATE_LIMITS = {
   uploadsPerUser: { max: 60, windowSeconds: 60 },
   /** Every other cookie-authenticated write, per user. */
   writesPerUser: { max: 300, windowSeconds: 60 },
+  /** The invite page's lookups and accepts, per address (tokens are unguessable; this caps probing). */
+  invitationsPerIp: { max: 30, windowSeconds: 60 },
 } satisfies Record<string, RateLimitRule>;
 
 export type RateLimits = Record<keyof typeof RATE_LIMITS, RateLimitRule>;

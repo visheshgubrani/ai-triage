@@ -14,6 +14,14 @@ import {
   EVAL_SPLITS,
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
+  INVITATION_ACCEPT_METHODS,
+  JOIN_ROLES,
+  MAILBOX_BACKFILL_MAX_DAYS,
+  MAILBOX_MESSAGE_REASONS,
+  MAILBOX_MESSAGE_STATUSES,
+  MAILBOX_PROVIDERS,
+  MAILBOX_STATUSES,
+  MEMBER_ERROR_CODES,
   MEMBER_ROLES,
   PART_KINDS,
   PROCESSING_STATUSES,
@@ -57,6 +65,10 @@ export const MeResponse = z.object({
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
+/** GET /auth/providers (public): which sign-in methods besides email and password this instance offers. */
+export const AuthProvidersResponse = z.object({ google: z.boolean() });
+export type AuthProvidersResponse = z.infer<typeof AuthProvidersResponse>;
+
 /** A field-level problem: a request that didn't parse, or edited values that don't match the schema. */
 export const Issue = z.object({ field: z.string(), path: z.string(), message: z.string() });
 export type Issue = z.infer<typeof Issue>;
@@ -67,7 +79,7 @@ export type Issue = z.infer<typeof Issue>;
  */
 export const ErrorResponse = z.object({
   error: z.string(),
-  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES, ...API_ERROR_CODES]).optional(),
+  code: z.enum([...REVIEW_ERROR_CODES, ...EVAL_ERROR_CODES, ...API_ERROR_CODES, ...MEMBER_ERROR_CODES]).optional(),
   issues: z.array(Issue).optional(),
   details: z.record(z.string(), z.unknown()).optional(),
   /** Set on 500s: quote it when reporting a problem; the server log carries the same id. */
@@ -224,6 +236,11 @@ export const DocumentDetail = z.object({
   ),
   /** Categories of the active config: where a reviewer may reclassify to. */
   categories: z.array(z.string()),
+  /**
+   * For mail synced from a connected mailbox: which one, and a link that finds the message in Gmail
+   * (by its Message-ID; null when it had none).
+   */
+  mailbox: z.object({ email: z.string(), gmailUrl: z.string().nullable() }).nullable(),
 });
 export type DocumentDetail = z.infer<typeof DocumentDetail>;
 
@@ -566,6 +583,8 @@ export const CandidateConfigRequest = z.object({
     .object({
       require: z.boolean(),
       trustedAuthServIds: z.array(z.string().trim().min(1).max(253)).max(20),
+      /** Mail synced from a connected mailbox must be authenticated (default true). */
+      mailbox: z.object({ require: z.boolean() }).optional(),
     })
     .optional(),
 });
@@ -649,3 +668,144 @@ export interface ProductionResponse extends ProductionMetrics {
   until: string;
   days: number;
 }
+
+// ── Members and invitations ──────────────────────────────────────────────────────────────────
+
+export const InvitationAcceptMethod = z.enum(INVITATION_ACCEPT_METHODS);
+export type InvitationAcceptMethod = z.infer<typeof InvitationAcceptMethod>;
+
+export const Member = z.object({
+  userId: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: MemberRole,
+  joinedAt: isoDate,
+  twoFactorEnabled: z.boolean(),
+  /** The Google Workspace domain the user signed up with, if any. */
+  hostedDomain: z.string().nullable(),
+  /** `credential` (a password) and/or `google`. */
+  signInMethods: z.array(z.string()),
+});
+export type Member = z.infer<typeof Member>;
+
+export const Invitation = z.object({
+  id: z.string(),
+  email: z.string(),
+  role: MemberRole,
+  acceptWith: InvitationAcceptMethod,
+  expiresAt: isoDate,
+  createdAt: isoDate,
+});
+export type Invitation = z.infer<typeof Invitation>;
+
+/** GET /members (admin): members, pending invitations, and the Workspace domain auto-join setting. */
+export const MemberList = z.object({
+  members: z.array(Member),
+  invitations: z.array(Invitation),
+  workspaceDomain: z.object({ domain: z.string(), joinRole: z.enum(JOIN_ROLES) }).nullable(),
+  /** Whether this instance has a Google client (Google invitations and auto-join need one). */
+  google: z.boolean(),
+});
+export type MemberList = z.infer<typeof MemberList>;
+
+export const JoinRole = z.enum(JOIN_ROLES);
+export type JoinRole = z.infer<typeof JoinRole>;
+
+/** POST /members/workspace-domain/verify, PATCH /members/workspace-domain. */
+export const WorkspaceDomainRequest = z.object({ joinRole: JoinRole });
+export type WorkspaceDomainRequest = z.infer<typeof WorkspaceDomainRequest>;
+
+export const UpdateMemberRequest = z.object({ role: MemberRole });
+export type UpdateMemberRequest = z.infer<typeof UpdateMemberRequest>;
+
+export const CreateInvitationRequest = z.object({
+  email: z.email().max(320),
+  role: MemberRole,
+  acceptWith: InvitationAcceptMethod.default("google"),
+});
+export type CreateInvitationRequest = z.infer<typeof CreateInvitationRequest>;
+
+/** The link is shown once: only the token's hash is stored. */
+export const InvitationCreated = z.object({ invitation: Invitation, link: z.string() });
+export type InvitationCreated = z.infer<typeof InvitationCreated>;
+
+/** Invitation tokens are 32 random bytes, base64url (43 characters). */
+export const InvitationTokenRequest = z.object({ token: z.string().regex(/^[A-Za-z0-9_-]{43}$/) });
+export type InvitationTokenRequest = z.infer<typeof InvitationTokenRequest>;
+
+/** POST /invitations/lookup (public): what the invite page shows before anyone signs in. */
+export const InvitationPreview = z.object({
+  tenantName: z.string(),
+  email: z.string(),
+  role: MemberRole,
+  acceptWith: InvitationAcceptMethod,
+  expiresAt: isoDate,
+  google: z.boolean(),
+});
+export type InvitationPreview = z.infer<typeof InvitationPreview>;
+
+export const AcceptWithPasswordRequest = InvitationTokenRequest.extend({
+  name: z.string().trim().min(1).max(200),
+  password: z.string().min(12).max(128),
+});
+export type AcceptWithPasswordRequest = z.infer<typeof AcceptWithPasswordRequest>;
+
+export const InvitationAccepted = z.object({ tenantId: z.string(), email: z.string() });
+export type InvitationAccepted = z.infer<typeof InvitationAccepted>;
+
+// ── Mailboxes ────────────────────────────────────────────────────────────────────────────────
+
+export const MailboxSummary = z.object({
+  id: z.string(),
+  provider: z.enum(MAILBOX_PROVIDERS),
+  email: z.string(),
+  status: z.enum(MAILBOX_STATUSES),
+  labelId: z.string(),
+  labelName: z.string(),
+  lastSyncedAt: isoDate.nullable(),
+  lastError: z.string().nullable(),
+  lastErrorAt: isoDate.nullable(),
+  createdAt: isoDate,
+});
+export type MailboxSummary = z.infer<typeof MailboxSummary>;
+
+/** GET /mailboxes (admin). `google`: whether this instance can connect Google mailboxes. */
+export const MailboxList = z.object({ mailboxes: z.array(MailboxSummary), google: z.boolean() });
+export type MailboxList = z.infer<typeof MailboxList>;
+
+export const MailboxMessage = z.object({
+  id: z.string(),
+  status: z.enum(MAILBOX_MESSAGE_STATUSES),
+  reason: z.enum(MAILBOX_MESSAGE_REASONS).nullable(),
+  documentId: z.string().nullable(),
+  sizeBytes: z.number().nullable(),
+  receivedAt: isoDate.nullable(),
+  createdAt: isoDate,
+});
+export type MailboxMessage = z.infer<typeof MailboxMessage>;
+
+/** GET /mailboxes/:id: the mailbox and what became of its most recent messages. */
+export const MailboxDetail = z.object({ mailbox: MailboxSummary, messages: z.array(MailboxMessage) });
+export type MailboxDetail = z.infer<typeof MailboxDetail>;
+
+/** POST /mailboxes/google/authorize: start connecting; the browser goes to `url`. */
+export const AuthorizeMailboxRequest = z.object({
+  /** Also import this many days of recent mail. */
+  backfillDays: z.number().int().min(0).max(MAILBOX_BACKFILL_MAX_DAYS).default(0),
+  /** Reconnecting a known mailbox: pre-fill Google's account picker. */
+  loginHint: z.email().optional(),
+});
+export type AuthorizeMailboxRequest = z.infer<typeof AuthorizeMailboxRequest>;
+
+export const AuthorizeResponse = z.object({ url: z.string() });
+export type AuthorizeResponse = z.infer<typeof AuthorizeResponse>;
+
+export const MailboxLabels = z.object({
+  labels: z.array(z.object({ id: z.string(), name: z.string(), type: z.string().optional() })),
+});
+export type MailboxLabels = z.infer<typeof MailboxLabels>;
+
+export const UpdateMailboxRequest = z
+  .object({ labelId: z.string().trim().min(1).max(200).optional(), paused: z.boolean().optional() })
+  .refine((v) => v.labelId !== undefined || v.paused !== undefined, { message: "Nothing to change" });
+export type UpdateMailboxRequest = z.infer<typeof UpdateMailboxRequest>;

@@ -49,3 +49,15 @@ describe("GET /me", () => {
     expect(res.ok).toBe(false);
   });
 });
+
+describe("GET /auth/providers", () => {
+  it("offers no Google sign-in without a Google client", async () => {
+    expect(await (await app.request("/auth/providers")).json()).toEqual({ google: false });
+    const social = await app.request("/api/auth/sign-in/social", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: WEB_ORIGIN },
+      body: JSON.stringify({ provider: "google", callbackURL: `${WEB_ORIGIN}/` }),
+    });
+    expect(social.ok).toBe(false);
+  });
+});

@@ -91,11 +91,13 @@ describe("sender authentication", () => {
     expect(senderAuthenticated([], policy)).toBe(false);
   });
 
-  it("reads the policy from a config, off by default", () => {
-    expect(senderPolicy({})).toEqual({ require: false, trustedAuthServIds: [] });
+  it("reads the policy from a config: off by default, except for synced mail", () => {
+    expect(senderPolicy({})).toEqual({ require: false, trustedAuthServIds: [], mailbox: { require: true } });
     expect(senderPolicy({ sender: { require: true, trustedAuthServIds: ["MX.Google.com", 3] } })).toEqual({
       require: true,
       trustedAuthServIds: ["mx.google.com"],
+      mailbox: { require: true },
     });
+    expect(senderPolicy({ sender: { mailbox: { require: false } } }).mailbox).toEqual({ require: false });
   });
 });

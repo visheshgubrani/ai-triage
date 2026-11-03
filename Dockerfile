@@ -19,6 +19,7 @@ COPY packages/db/package.json packages/db/
 COPY packages/evals/package.json packages/evals/
 COPY packages/ingest/package.json packages/ingest/
 COPY packages/llm/package.json packages/llm/
+COPY packages/mailbox/package.json packages/mailbox/
 COPY packages/schemas/package.json packages/schemas/
 COPY packages/storage/package.json packages/storage/
 COPY fixtures/package.json fixtures/

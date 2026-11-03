@@ -1,10 +1,21 @@
 import { parseArgs } from "node:util";
-import { createDb, createPool, deleteTenantData, findTenantBySlug } from "@ai-triage/db";
+import {
+  createDb,
+  createPool,
+  deleteTenantData,
+  findTenantBySlug,
+  keyRingFromEnv,
+  listMailboxes,
+  mailboxTokens,
+  withTenantTx,
+} from "@ai-triage/db";
+import { googleConfigFromEnv, revokeToken } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 
 // `pnpm tenant:delete --tenant <slug> --yes`: deletes a tenant for good (docs/security.md,
 // offboarding): every row it owns, its memberships and queued jobs, and every object under
-// `t/{tenantId}/`. Runs as the database owner. There is no undo.
+// `t/{tenantId}/`. Connected mailboxes are revoked at Google first (best effort). Runs as the
+// database owner. There is no undo.
 
 const { values } = parseArgs({ options: { tenant: { type: "string" }, yes: { type: "boolean", default: false } } });
 if (!values.tenant) {
@@ -21,6 +32,19 @@ try {
   if (!values.yes) {
     console.log(`This deletes tenant "${values.tenant}" (${tenant.id}) and all its data and files. Re-run with --yes.`);
     process.exit(1);
+  }
+  const google = googleConfigFromEnv(process.env);
+  if (google) {
+    const keys = keyRingFromEnv(process.env);
+    const tokens = await withTenantTx(pool, tenant.id, async (tx) => {
+      const mailboxes = await listMailboxes(tx);
+      return Promise.all(mailboxes.map(async (m) => (await mailboxTokens(tx, keys, m.id))?.refreshToken ?? null));
+    });
+    for (const token of tokens.filter((t): t is string => t !== null)) {
+      await revokeToken({ config: google, fetch }, token).catch((err: Error) =>
+        console.warn(`could not revoke a mailbox token at Google: ${err.message}`),
+      );
+    }
   }
   const counts = await deleteTenantData(pool, tenant.id);
   const objects = await createStorage(storageConfigFromEnv()).deletePrefix(`t/${tenant.id}/`);

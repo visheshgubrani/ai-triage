@@ -10,6 +10,7 @@ An open-source AI triage inbox. Emails and documents come in, Claude classifies 
  Postmark inbound ─┐                                     ┌─> Next.js: inbox · review · evals · settings
  Upload (2-step)   ├─> Hono API ─tx─> Postgres (RLS) <───┤   (Hono RPC typed client)
  REST API / CLI   ─┘    insert doc + enqueue (same tx)    │
+ Gmail (sync) ─────> worker: poll → history → fetch ──────┤   (per-mailbox OAuth, read-only)
                         │                                 │
                   RustFS/S3 (server-issued keys)          │
  pg-boss ──> worker: parse → classify → extract → route ──┼─> auto (+not sampled) ─> actions outbox ─> signed webhook
@@ -50,6 +51,16 @@ Sign in at http://localhost:3000/sign-in as `admin@demo.test` or `reviewer@demo.
 The app connects to Postgres as a restricted role (`DATABASE_URL`), so row-level security always applies. Only migrations and seeds use the owner (`DATABASE_OWNER_URL`).
 
 LLM calls default to **replay mode** (recorded responses, no API key, no spend). The demo tenant uses GPT-6.1 Terra (`DEMO_MODEL`), the model its responses were recorded with; configs can use Claude, OpenAI, DeepSeek, OpenRouter or a local server. Set `LLM_MODE=live` and the provider's key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) to call a model for real.
+
+## Google Workspace and Gmail
+
+Real teams sign in with Google, join by invitation link or by their Workspace domain, and connect a mailbox (for example `ap@company.com`), whose new mail becomes documents within about a minute. The app only reads the mailbox. Setup and what Google requires: [docs/google.md](docs/google.md).
+
+```bash
+pnpm tenant:create --name "Acme" --slug acme --admin you@acme.com   # prints the first admin's invite link
+```
+
+The Docker quickstart includes a fake Google, so you can connect a demo mailbox with no Google project: open Settings → Mailboxes, click Connect, then deliver mail into it with `curl --data-binary @fixtures/docs/sup-12.eml http://localhost:9040/fake/deliver`.
 
 ## Reviewing
 
@@ -142,7 +153,7 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 
 ## Security
 
-Production refuses to start on the demo's defaults. Webhooks can't reach private networks, and their secrets are encrypted at rest. Admins need TOTP 2FA. Every security-relevant change is in an audit log, and documents can be deleted or expire on a retention schedule. [docs/security.md](docs/security.md) has the threat model, the controls and the production checklist. To report a vulnerability, see [SECURITY.md](SECURITY.md).
+Production refuses to start on the demo's defaults. Webhooks can't reach private networks, and their secrets (and mailbox tokens) are encrypted at rest. Sign-up is by invitation or Workspace domain only. Admins need TOTP 2FA. Every security-relevant change is in an audit log, and documents can be deleted or expire on a retention schedule. [docs/security.md](docs/security.md) has the threat model, the controls and the production checklist. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
@@ -159,4 +170,5 @@ MIT
 - **Replay evals need cassettes for their exact requests.** Changing a config's model, effort or prompt in replay mode makes its runs fail as `cassette_missing` until recorded; thresholds and automation don't change requests, so calibration works in replay.
 - **Live eval runs share the tenant's daily budget** with production.
 - **Deleting a document keeps its eval-set copies.** Items a reviewer added to an eval dataset are separate snapshots; erasing them comes later.
+- **Gmail sync polls once a minute** (no push). A mailbox unsynced for more than about a week resyncs only its last 7 days, and mail between users of the same Workspace usually carries no authentication results, so it goes to review (docs/google.md).
 - **Replay figures are recorded figures.** In replay mode, tokens, cost and latency come from the cassette, and are labeled as such (`llm_calls.mode = 'replay'`).

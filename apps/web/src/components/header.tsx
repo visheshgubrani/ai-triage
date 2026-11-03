@@ -4,20 +4,28 @@ import Link from "next/link";
 import { api } from "@/lib/api";
 import { SignOutButton } from "./sign-out-button";
 
-/** The signed-in user, read through the API with the browser's cookie (server components only). */
-export async function getMe(): Promise<MeResponse | null> {
+/**
+ * The signed-in user, read through the API with the browser's cookie (server components only).
+ * `noWorkspace`: signed in, but not a member of any tenant (yet, or any more).
+ */
+export async function getSessionState(): Promise<{ me: MeResponse | null; noWorkspace: boolean }> {
   const cookie = (await cookies()).toString();
   try {
     const res = await api.me.$get(undefined, { headers: { cookie } });
-    if (!res.ok) return null;
-    return MeResponse.parse(await res.json());
+    // 403 comes from the tenant middleware, which the RPC types don't list.
+    if (!res.ok) return { me: null, noWorkspace: (res.status as number) === 403 };
+    return { me: MeResponse.parse(await res.json()), noWorkspace: false };
   } catch {
-    return null;
+    return { me: null, noWorkspace: false };
   }
 }
 
+export async function getMe(): Promise<MeResponse | null> {
+  return (await getSessionState()).me;
+}
+
 export async function Header() {
-  const me = await getMe();
+  const { me, noWorkspace } = await getSessionState();
   const links = [
     { href: "/review", label: "Review" },
     { href: "/documents", label: "Documents" },
@@ -48,6 +56,8 @@ export async function Header() {
               </span>
               <SignOutButton />
             </>
+          ) : noWorkspace ? (
+            <SignOutButton />
           ) : (
             <Link href="/sign-in" className="underline underline-offset-2">
               Sign in

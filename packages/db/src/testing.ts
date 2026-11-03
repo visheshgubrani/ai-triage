@@ -15,7 +15,7 @@ import {
   upsertOpenTask,
 } from "./pipeline";
 import { categorySchemaVersions, documents, processingRuns, promptVersions } from "./schema";
-import type { TenantTx } from "./tenant-tx";
+import { type TenantTx, withTenantTx } from "./tenant-tx";
 import { createTenant } from "./tenants";
 import { ensurePasswordUser } from "./users";
 
@@ -193,4 +193,14 @@ export async function seedReviewTask(
   });
   const taskId = await upsertOpenTask(tx, { documentId: doc.id, kind, extractionId: extraction.id, reasons });
   return { documentId: doc.id, runId: run.id, extractionId: extraction.id, taskId };
+}
+
+/** Raw SQL under a tenant's RLS context (for tests outside packages/db, which may not import drizzle). */
+export async function tenantQuery<T = Record<string, unknown>>(
+  pool: pg.Pool,
+  tenantId: string,
+  text: string,
+  values: unknown[] = [],
+): Promise<T[]> {
+  return withTenantTx(pool, tenantId, async (tx) => (await tx.queueDb.executeSql(text, values)).rows as T[]);
 }

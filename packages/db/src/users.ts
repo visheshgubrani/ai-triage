@@ -1,6 +1,6 @@
 import type { MemberRole } from "@ai-triage/core";
 import { hashPassword } from "better-auth/crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Db } from "./index";
 import { accounts, memberships, users } from "./schema";
 
@@ -43,6 +43,15 @@ export async function addMembership(db: Db, userId: string, tenantId: string, ro
     .insert(memberships)
     .values({ organizationId: tenantId, userId, role })
     .onConflictDoNothing({ target: [memberships.organizationId, memberships.userId] });
+}
+
+/** Whether the user can sign in with a password (a `credential` account with a hash). */
+export async function hasPassword(db: Db, userId: string): Promise<boolean> {
+  const rows = await db
+    .select({ password: accounts.password })
+    .from(accounts)
+    .where(and(eq(accounts.userId, userId), eq(accounts.providerId, "credential")));
+  return rows.some((r) => !!r.password);
 }
 
 /** Whether the user has TOTP turned on, and the tenants they belong to (for audit events). */

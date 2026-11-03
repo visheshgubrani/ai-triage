@@ -1,0 +1,19 @@
+{
+  "name": "@ai-triage/mailbox",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mailbox providers (Google OAuth + Gmail REST over an injected fetch)",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/fake-google.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "fake-google": "tsx --env-file-if-exists=../../.env src/testing/serve.ts"
+  },
+  "dependencies": {
+    "@ai-triage/core": "workspace:*",
+    "zod": "^4.6.7"
+  }
+}

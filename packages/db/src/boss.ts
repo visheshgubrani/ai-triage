@@ -50,7 +50,9 @@ export async function installBossSchema(ownerUrl: string): Promise<void> {
     for (const name of [...names.filter(isTarget), ...names.filter((n) => !isTarget(n))]) {
       const options = QUEUE_OPTIONS[name];
       if (await boss.getQueue(name)) {
-        await boss.updateQueue(name, { ...options, deadLetter: options.deadLetter ?? null });
+        // pg-boss fixes a queue's policy at creation and refuses it in an update.
+        const { policy: _policy, ...updatable } = options;
+        await boss.updateQueue(name, { ...updatable, deadLetter: options.deadLetter ?? null });
       } else {
         await boss.createQueue(name, options);
       }
@@ -83,7 +85,14 @@ export type { PgBoss };
  * returns null). The guarded status update in each handler is still the real idempotency check.
  */
 export function stageJobId(runId: string, stage: PipelineStage): string {
-  const b = createHash("sha1").update(`ai-triage:${runId}:${stage}`).digest();
+  return deterministicJobId(runId, stage);
+}
+
+/** A UUIDv5 (name-based, SHA-1) from the parts: the same parts always give the same job id. */
+export function deterministicJobId(...parts: string[]): string {
+  const b = createHash("sha1")
+    .update(`ai-triage:${parts.join(":")}`)
+    .digest();
   b[6] = ((b[6] ?? 0) & 0x0f) | 0x50; // version 5 (name-based, SHA-1)
   b[8] = ((b[8] ?? 0) & 0x3f) | 0x80; // RFC 4122 variant
   const h = b.subarray(0, 16).toString("hex");

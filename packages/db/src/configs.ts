@@ -128,7 +128,7 @@ export interface CandidateConfig {
   /** Categories not listed keep the parent's settings. The category set and schema versions are the parent's. */
   categories?: CategoryChange[];
   /** Replaces the parent's sender policy (`policy.sender`, see senderPolicy() in core). */
-  sender?: { require: boolean; trustedAuthServIds: string[] };
+  sender?: { require: boolean; trustedAuthServIds: string[]; mailbox?: { require: boolean } };
   createdBy?: string;
 }
 
