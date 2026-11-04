@@ -4,7 +4,7 @@ const { WEB_URL = "http://localhost:3000", WALKTHROUGH_VIDEO } = process.env;
 
 // `pnpm e2e`: the demo walkthroughs (docs/architecture.md §10) against a running local stack:
 // `pnpm infra:up && pnpm db:migrate && pnpm db:seed`, then `pnpm dev` (replay mode).
-// WALKTHROUGH_VIDEO=1 records each test as video (test-results/), the source of the README GIF.
+// WALKTHROUGH_VIDEO=1 records each test as video (test-results/). The README's demo video is `pnpm demo:video`.
 export default defineConfig({
   testDir: "e2e",
   timeout: 60_000,

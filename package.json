@@ -1,6 +1,37 @@
 {
   "name": "ai-triage",
   "version": "0.7.0",
+  "description": "Self-hosted AI inbox for business email and documents: an LLM classifies and extracts fields with quoted evidence, checks decide what's safe to automate, and people review the rest.",
+  "keywords": [
+    "ai",
+    "llm",
+    "document-processing",
+    "intelligent-document-processing",
+    "data-extraction",
+    "email-automation",
+    "email-triage",
+    "triage",
+    "human-in-the-loop",
+    "invoice-processing",
+    "llm-evaluation",
+    "evals",
+    "structured-output",
+    "json-schema",
+    "claude",
+    "openai",
+    "ocr",
+    "webhooks",
+    "self-hosted",
+    "multi-tenant"
+  ],
+  "homepage": "https://github.com/visheshgubrani/ai-triage#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/visheshgubrani/ai-triage.git"
+  },
+  "bugs": {
+    "url": "https://github.com/visheshgubrani/ai-triage/issues"
+  },
   "private": true,
   "type": "module",
   "packageManager": "pnpm@12.11.2",
@@ -36,7 +67,10 @@
     "fixtures:generate": "pnpm --filter @ai-triage/fixtures generate",
     "cassettes:record": "pnpm --filter @ai-triage/worker cassettes:record",
     "eval:import": "pnpm --filter @ai-triage/worker eval:import",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "demo:record": "tsx scripts/demo/record.ts",
+    "demo:render": "tsx scripts/demo/render.ts",
+    "demo:video": "pnpm demo:record && pnpm demo:render"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.4",
