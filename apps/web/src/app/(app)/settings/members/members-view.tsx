@@ -1,11 +1,18 @@
 "use client";
 
 import type { InvitationCreated, JoinRole, MemberList, MemberRole } from "@ai-triage/contracts";
+import { Mail, UserMinus } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
+import { Pill } from "@/components/badge";
 import { Button } from "@/components/button";
 import { useConfirm } from "@/components/confirm-dialog";
+import { Field } from "@/components/field";
+import { LoadingBlock } from "@/components/loading";
+import { Notice } from "@/components/notice";
 import { SecretReveal } from "@/components/secret-reveal";
-import { Section } from "@/components/section";
+import { Section, SectionHint } from "@/components/section";
+import { SettingRow, SettingRows } from "@/components/settings-row";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { browserApi } from "@/lib/api";
@@ -13,7 +20,7 @@ import { readError } from "@/lib/api-error";
 import { ago } from "@/lib/format";
 
 const ROLES: MemberRole[] = ["admin", "reviewer", "viewer"];
-const METHOD_LABELS: Record<string, string> = { credential: "password", google: "Google" };
+const METHOD_LABELS: Record<string, string> = { credential: "Password", google: "Google" };
 
 /** Back from Google's domain check: `?domain=` or `?error=` (routes/mailboxes.ts, verifyWorkspaceDomain). */
 const DOMAIN_ERRORS: Record<string, string> = {
@@ -64,45 +71,54 @@ function WorkspaceDomainSection({ list, onChange }: { list: MemberList; onChange
 
   if (!list.google && !current) return null;
   return (
-    <Section title="Workspace domain">
-      {current ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <span>
-            New people from <span className="font-medium">{current.domain}</span> join on their first Google sign-in as
-          </span>
-          <NativeSelect
-            aria-label="Role people join as"
-            value={current.joinRole}
-            onChange={(e) => void setRole(e.target.value as JoinRole)}
+    <Section
+      flush
+      title="Workspace domain"
+      description="People from your Google Workspace can join on their first Google sign-in."
+      footer={
+        message ? (
+          <p role="alert" className="mr-auto text-danger">
+            {message}
+          </p>
+        ) : (
+          <SectionHint>Admins are always invited. Someone you remove doesn't rejoin by signing in.</SectionHint>
+        )
+      }
+    >
+      <SettingRows>
+        {current ? (
+          <SettingRow label={current.domain} hint="Verified with Google." htmlFor="join-role">
+            <span className="text-muted-foreground">Joins as</span>
+            <NativeSelect
+              id="join-role"
+              aria-label="Role people join as"
+              value={current.joinRole}
+              onChange={(e) => void setRole(e.target.value as JoinRole)}
+            >
+              <option value="viewer">viewer</option>
+              <option value="reviewer">reviewer</option>
+            </NativeSelect>
+            <Button variant="ghost" className="text-muted-foreground hover:text-danger" onClick={() => void unlink()}>
+              Unlink
+            </Button>
+          </SettingRow>
+        ) : (
+          <SettingRow
+            label="No domain linked"
+            hint="You sign in to a Workspace account in the domain to prove it's yours."
           >
-            <option value="viewer">viewer</option>
-            <option value="reviewer">reviewer</option>
-          </NativeSelect>
-          <Button variant="danger" onClick={() => void unlink()}>
-            Unlink
-          </Button>
-        </div>
-      ) : (
-        <form onSubmit={verify} className="flex flex-wrap items-center gap-2">
-          <span>Let people from your Google Workspace join as</span>
-          <NativeSelect name="joinRole" defaultValue="viewer" aria-label="Role people join as">
-            <option value="viewer">viewer</option>
-            <option value="reviewer">reviewer</option>
-          </NativeSelect>
-          <Button type="submit" variant="primary">
-            Verify domain with Google
-          </Button>
-        </form>
-      )}
-      <p className="mt-2 text-xs text-muted-foreground">
-        You sign in to a Google Workspace account in the domain to prove it's yours. Admins are always invited. Someone
-        you remove doesn't rejoin by signing in again.
-      </p>
-      {message && (
-        <p role="alert" className="mt-2 text-danger">
-          {message}
-        </p>
-      )}
+            <form onSubmit={verify} className="flex flex-wrap items-center gap-2 md:justify-end">
+              <NativeSelect name="joinRole" defaultValue="viewer" aria-label="Role people join as">
+                <option value="viewer">Join as viewer</option>
+                <option value="reviewer">Join as reviewer</option>
+              </NativeSelect>
+              <Button type="submit" variant="primary">
+                Verify domain with Google
+              </Button>
+            </form>
+          </SettingRow>
+        )}
+      </SettingRows>
     </Section>
   );
 }
@@ -184,27 +200,46 @@ export function MembersView() {
     await load();
   }
 
-  if (!list) return message ? <p className="mt-6 text-sm text-danger">{message}</p> : null;
+  if (!list) return message ? <p className="mt-6 text-sm text-danger">{message}</p> : <LoadingBlock />;
   return (
     <>
       {message && (
-        <p role="alert" className="mt-4 text-sm text-danger">
+        <Notice tone="danger" role="alert" className="mt-6">
           {message}
-        </p>
+        </Notice>
       )}
-      <Section title={`Members (${list.members.length})`}>
+      <Section
+        flush
+        title={
+          <>
+            Members <span className="font-normal text-muted-foreground tabular-nums">{list.members.length}</span>
+          </>
+        }
+      >
         <ul className="divide-y divide-border">
           {list.members.map((m) => (
-            <li key={m.userId} className="flex flex-wrap items-center justify-between gap-2 py-2">
-              <span>
-                <span className="font-medium">{m.name}</span> <span className="text-muted-foreground">{m.email}</span>
-                <span className="block text-xs text-muted-foreground">
-                  Signs in with {m.signInMethods.map((x) => METHOD_LABELS[x] ?? x).join(" and ") || "nothing yet"}
-                  {m.twoFactorEnabled ? " · 2FA on" : ""}
-                  {m.hostedDomain ? ` · Workspace ${m.hostedDomain}` : ""} · joined {ago(m.joinedAt)}
-                </span>
-              </span>
-              <span className="flex items-center gap-2">
+            <li key={m.userId} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
+              <Avatar>
+                <AvatarFallback className="bg-accent font-medium text-accent-foreground">
+                  {(m.name || m.email).trim().charAt(0).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0 flex-1 basis-56">
+                <p className="truncate">
+                  <span className="font-medium">{m.name}</span> <span className="text-muted-foreground">{m.email}</span>
+                </p>
+                <p className="flex flex-wrap items-center gap-x-1.5 text-xs text-muted-foreground">
+                  {m.signInMethods.map((x) => METHOD_LABELS[x] ?? x).join(" and ") || "No sign-in yet"}
+                  {m.hostedDomain && <span>· Workspace {m.hostedDomain}</span>}
+                  <span>· joined {ago(m.joinedAt)}</span>
+                  {m.twoFactorEnabled && (
+                    <Pill tone="success" className="ml-0.5 h-4 px-1.5 text-[11px]">
+                      2FA
+                    </Pill>
+                  )}
+                </p>
+              </div>
+              <div className="flex items-center gap-1">
                 <NativeSelect
                   aria-label={`Role of ${m.email}`}
                   value={m.role}
@@ -216,69 +251,107 @@ export function MembersView() {
                     </option>
                   ))}
                 </NativeSelect>
-                <Button size="sm" variant="danger" onClick={() => void remove(m.userId, m.email)}>
-                  Remove
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="text-muted-foreground hover:text-danger"
+                  aria-label={`Remove ${m.email}`}
+                  onClick={() => void remove(m.userId, m.email)}
+                >
+                  <UserMinus aria-hidden="true" />
                 </Button>
-              </span>
+              </div>
             </li>
           ))}
         </ul>
       </Section>
 
-      <WorkspaceDomainSection list={list} onChange={load} />
-
-      <Section title="Invite someone">
-        <form onSubmit={invite} className="flex flex-wrap items-center gap-2">
-          <Input name="email" type="email" placeholder="name@company.com" required className="w-64" />
-          <NativeSelect name="role" defaultValue="reviewer" aria-label="Role">
-            {ROLES.map((r) => (
-              <option key={r} value={r}>
-                {r}
-              </option>
-            ))}
-          </NativeSelect>
-          <NativeSelect
-            name="acceptWith"
-            defaultValue={list.google ? "google" : "google_or_password"}
-            aria-label="How they accept"
-          >
-            {list.google && <option value="google">Accepts with Google</option>}
-            <option value="google_or_password">
-              {list.google ? "Google or a password" : "Accepts with a password"}
-            </option>
-          </NativeSelect>
-          <Button type="submit" variant="primary">
-            Create link
-          </Button>
+      <Section
+        title="Invite someone"
+        description="Creates a link to send yourself; nothing is emailed. It works once, within seven days."
+      >
+        <form onSubmit={invite} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-end">
+          <Field label="Email">
+            <Input name="email" type="email" placeholder="name@company.com" required />
+          </Field>
+          <Field label="Role">
+            <NativeSelect name="role" defaultValue="reviewer" className="w-full">
+              {ROLES.map((r) => (
+                <option key={r} value={r}>
+                  {r}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Field label="Accepts with">
+            <NativeSelect
+              name="acceptWith"
+              defaultValue={list.google ? "google" : "google_or_password"}
+              className="w-full"
+            >
+              {list.google && <option value="google">Google</option>}
+              <option value="google_or_password">{list.google ? "Google or a password" : "A password"}</option>
+            </NativeSelect>
+          </Field>
+          <div className="flex items-center justify-between gap-3 sm:col-span-3">
+            <p className="text-xs text-muted-foreground">
+              With a password, whoever opens the link can accept it, so send it privately.
+            </p>
+            <Button type="submit" variant="primary">
+              Create link
+            </Button>
+          </div>
         </form>
-        <p className="mt-2 text-xs text-muted-foreground">
-          With Google, the link only works for that Google account. With a password, whoever opens the link can accept
-          it, so send it privately.
-        </p>
         {created && (
           <SecretReveal value={created.link}>
             Send this link to {created.invitation.email}. It won't be shown again, and works once within seven days.
           </SecretReveal>
         )}
-        {list.invitations.length > 0 && (
-          <ul className="mt-4 divide-y divide-border">
+      </Section>
+
+      {list.invitations.length > 0 && (
+        <Section
+          flush
+          title={
+            <>
+              Pending invitations{" "}
+              <span className="font-normal text-muted-foreground tabular-nums">{list.invitations.length}</span>
+            </>
+          }
+        >
+          <ul className="divide-y divide-border">
             {list.invitations.map((i) => (
-              <li key={i.id} className="flex items-center justify-between gap-2 py-2">
-                <span>
-                  {i.email} <span className="text-muted-foreground">· {i.role}</span>
-                  <span className="block text-xs text-muted-foreground">
+              <li key={i.id} className="flex items-center gap-4 px-4 py-3">
+                <Avatar>
+                  <AvatarFallback>
+                    <Mail aria-hidden="true" className="size-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate">
+                    <span className="font-medium">{i.email}</span>{" "}
+                    <span className="text-muted-foreground">as {i.role}</span>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
                     {i.acceptWith === "google" ? "Google" : "Google or password"} · sent {ago(i.createdAt)} · expires{" "}
                     {new Date(i.expiresAt).toLocaleDateString()}
-                  </span>
-                </span>
-                <Button size="sm" onClick={() => void revoke(i.id)}>
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-muted-foreground hover:text-danger"
+                  onClick={() => void revoke(i.id)}
+                >
                   Revoke
                 </Button>
               </li>
             ))}
           </ul>
-        )}
-      </Section>
+        </Section>
+      )}
+
+      <WorkspaceDomainSection list={list} onChange={load} />
     </>
   );
 }

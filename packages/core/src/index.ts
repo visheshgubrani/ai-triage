@@ -593,7 +593,7 @@ export const WEBHOOK_HEADERS = {
   signature: "X-Triage-Signature",
 } as const;
 export const WEBHOOK_EVENT = "document.approved";
-/** Settings → Send test event: a signed delivery with a throwaway Idempotency-Key and no document. */
+/** Settings → Webhooks → Send test event: a signed delivery with a throwaway Idempotency-Key and no document. */
 export const WEBHOOK_PING_EVENT = "ping";
 /** How far a receiver should let the signed timestamp drift before rejecting a delivery. */
 export const WEBHOOK_TOLERANCE_SECONDS = 300;

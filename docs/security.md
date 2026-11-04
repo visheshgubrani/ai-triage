@@ -102,7 +102,7 @@ Set these before exposing an instance. `TRIAGE_DEMO` must be unset; the api and 
 - [ ] Every admin turns on 2FA (Settings → Security); `REQUIRE_ADMIN_2FA` stays unset (on).
 - [ ] `RATE_LIMIT_SCALE`: only if legitimate traffic hits the default limits (it multiplies them all).
 - [ ] No demo seed. `pnpm db:seed` loads demo users, and production refuses it.
-- [ ] A retention period (Settings → Retention) that matches your data policy.
+- [ ] A retention period (Settings → General → Retention) that matches your data policy.
 - [ ] Backups for Postgres and the bucket, with restores tested (and expiring, so purged data leaves them too).
 - [ ] Google (if used, [google.md](google.md)): the OAuth client's two redirect URIs, `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` in the api **and** worker, no `GOOGLE_OAUTH_URL` / `GOOGLE_TOKEN_URL` / `GOOGLE_API_URL`. An External app needs Google's restricted-scope verification before real users; Testing mode expires mailbox grants weekly.
 - [ ] GitHub: secret scanning with push protection, and private vulnerability reporting.

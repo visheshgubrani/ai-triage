@@ -109,7 +109,7 @@ Use `json_schema` (draft 2020-12) to validate or generate types for webhook payl
 
 ## Webhook receiver contract
 
-Set the URL in **Settings → Webhook**. **Send test event** posts a signed `ping` and shows your receiver's answer.
+Set the URL in **Settings → Webhooks**. **Send test event** posts a signed `ping` and shows your receiver's answer.
 
 Each approved document is POSTed as JSON (the action payload: `document_id`, `extraction_id`, `category`, `fields`, `approved_by`, `approved_at`) with these headers:
 

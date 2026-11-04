@@ -3,13 +3,14 @@
 import type { ModelOption, PipelineChangeRequest, PipelineSettings } from "@ai-triage/contracts";
 import Link from "next/link";
 import { type FormEvent, useEffect, useState } from "react";
+import { Pill } from "@/components/badge";
 import { Button } from "@/components/button";
 import { useConfirm } from "@/components/confirm-dialog";
 import { DataTable } from "@/components/data-table";
-import { ToggleRow } from "@/components/field";
 import { LoadingBlock } from "@/components/loading";
 import { FormMessage } from "@/components/notice";
-import { Section } from "@/components/section";
+import { Section, SectionHint } from "@/components/section";
+import { SettingRow, SettingRows } from "@/components/settings-row";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Switch } from "@/components/ui/switch";
 import { browserApi } from "@/lib/api";
@@ -30,8 +31,7 @@ function StagePicker({
 }) {
   const model = models.find((m) => m.ref === stage.model);
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span className="w-20 font-medium">{label}</span>
+    <>
       <NativeSelect
         aria-label={`${label} model`}
         value={stage.model}
@@ -58,8 +58,8 @@ function StagePicker({
           </option>
         ))}
       </NativeSelect>
-      {model && !model.available && <span className="text-xs text-warning">{model.reason}</span>}
-    </div>
+      {model && !model.available && <p className="w-full text-xs text-warning md:text-right">{model.reason}</p>}
+    </>
   );
 }
 
@@ -123,59 +123,91 @@ export function PipelineView() {
   }
 
   return (
-    <div className="space-y-8">
-      <Section title="Active version">
-        <p className="text-muted-foreground">
-          v{settings.config.version} {settings.config.name}
-          {settings.config.frozenAt ? " · frozen (calibrated)" : ""}
-        </p>
-        <DataTable>
+    <>
+      <Section
+        title="Active version"
+        actions={
+          <>
+            <Pill tone="accent">v{settings.config.version}</Pill>
+            {settings.config.frozenAt && (
+              <Pill tone="success" dot>
+                Frozen
+              </Pill>
+            )}
+          </>
+        }
+        description={settings.config.name}
+        footer={
+          <SectionHint>
+            Auto-approval is turned on per category from a calibrated version:{" "}
+            <Link href="/evals" className="font-medium text-foreground underline-offset-2 hover:underline">
+              Evals
+            </Link>{" "}
+            → run calib → Freeze → Activate.
+          </SectionHint>
+        }
+      >
+        <DataTable className="-mt-1">
           <thead>
             <tr>
               <th>Category</th>
               <th>Routing</th>
-              <th>Threshold</th>
-              <th>Audit rate</th>
+              <th className="text-right">Threshold</th>
+              <th className="text-right">Audit rate</th>
             </tr>
           </thead>
           <tbody>
             {settings.config.categories.map((c) => (
               <tr key={c.category}>
-                <td>{c.category}</td>
-                <td>{c.automation === "auto_when_confident" ? "auto-approve when confident" : "a person reviews"}</td>
-                <td className="tabular-nums">{c.threshold}</td>
-                <td className="tabular-nums">{Math.round(c.auditRate * 100)}%</td>
+                <td className="font-mono text-xs">{c.category}</td>
+                <td>
+                  {c.automation === "auto_when_confident" ? (
+                    <Pill tone="success" dot>
+                      Auto-approves when confident
+                    </Pill>
+                  ) : (
+                    <Pill dot>Human review</Pill>
+                  )}
+                </td>
+                <td className="text-right tabular-nums">{c.threshold}</td>
+                <td className="text-right tabular-nums">{Math.round(c.auditRate * 100)}%</td>
               </tr>
             ))}
           </tbody>
         </DataTable>
-        <p className="mt-3 text-sm">
-          Auto-approval is turned on per category from a calibrated version:{" "}
-          <Link href="/evals" className="font-medium text-primary underline-offset-2 hover:underline">
-            Evals
-          </Link>{" "}
-          → run calib → Freeze → Activate.
-        </p>
       </Section>
 
-      <Section title="Models">
-        <form onSubmit={save} className="space-y-3 text-sm">
-          <StagePicker label="Classify" stage={classify} models={models} onChange={setClassify} />
-          <StagePicker label="Extract" stage={extract} models={models} onChange={setExtract} />
-          <ToggleRow
-            label="Require authenticated senders for forwarded mail"
-            detail="Mail that fails DMARC (or DKIM) goes to review. Mail synced from a connected Gmail mailbox is always checked."
-            control={<Switch checked={senderRequire} onCheckedChange={setSenderRequire} />}
-          />
-          <Button type="submit" variant="primary" disabled={busy}>
-            Save and activate
-          </Button>
-          <p className="text-xs text-muted-foreground">
-            Saving makes a new version in which every category is reviewed by a person, and makes it active at once.
-          </p>
+      <Section
+        flush
+        title="Models"
+        description="Saving makes a new version, active at once, in which every category is reviewed by a person."
+        footer={
+          <>
+            {message && <FormMessage message={message} className="mt-0 mr-auto" />}
+            <Button type="submit" form="pipeline-form" variant="primary" disabled={busy}>
+              Save and activate
+            </Button>
+          </>
+        }
+      >
+        <form id="pipeline-form" onSubmit={save}>
+          <SettingRows>
+            <SettingRow label="Classify" hint="Picks the category of each document.">
+              <StagePicker label="Classify" stage={classify} models={models} onChange={setClassify} />
+            </SettingRow>
+            <SettingRow label="Extract" hint="Fills the category's fields, with quotes.">
+              <StagePicker label="Extract" stage={extract} models={models} onChange={setExtract} />
+            </SettingRow>
+            <SettingRow
+              label="Require authenticated senders"
+              htmlFor="sender-require"
+              hint="Forwarded mail that fails DMARC (or DKIM) goes to review. Mail from a connected Gmail mailbox is always checked."
+            >
+              <Switch id="sender-require" checked={senderRequire} onCheckedChange={setSenderRequire} />
+            </SettingRow>
+          </SettingRows>
         </form>
-        <FormMessage message={message} />
       </Section>
-    </div>
+    </>
   );
 }

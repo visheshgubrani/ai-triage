@@ -1,11 +1,13 @@
 "use client";
 
 import type { SystemHealthResponse } from "@ai-triage/contracts";
+import { CircleCheck } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useState } from "react";
-import { DataTable } from "@/components/data-table";
+import { type ReactNode, useCallback, useState } from "react";
+import { Badge, Pill } from "@/components/badge";
 import { LoadingBlock } from "@/components/loading";
-import { Section } from "@/components/section";
+import { FormMessage, Notice } from "@/components/notice";
+import { Section, SectionHint } from "@/components/section";
 import { StatCard } from "@/components/stat-card";
 import { browserApi } from "@/lib/api";
 import { readError } from "@/lib/api-error";
@@ -14,6 +16,16 @@ import { usePolling } from "@/lib/use-polling";
 
 const IN_FLIGHT = ["received", "parsed", "classified", "extracted"];
 const money = (usd: number) => `$${usd.toFixed(2)}`;
+
+/** A heading and what's under it, without a card around cards. */
+function Group({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-8 first:mt-6">
+      <h2 className="mb-3 text-sm font-semibold tracking-tight">{title}</h2>
+      {children}
+    </section>
+  );
+}
 
 function Stat({ label, value, warn = false }: { label: string; value: string | number; warn?: boolean }) {
   return <StatCard label={label} value={value} warn={warn} />;
@@ -35,7 +47,7 @@ export function HealthView() {
   }, []);
   usePolling(load, 10_000);
 
-  if (error) return <p className="text-sm text-danger">{error}</p>;
+  if (error) return <FormMessage message={{ error: true, text: error }} />;
   if (!health) return <LoadingBlock />;
 
   const inFlight = health.documents.filter((d) => IN_FLIGHT.includes(d.status));
@@ -49,49 +61,60 @@ export function HealthView() {
   const spent = health.budget.spentUsd + health.budget.reservedUsd;
 
   return (
-    <div className="space-y-8">
-      <Section title="Pipeline">
+    <>
+      <Group title="Pipeline">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="In progress" value={waiting} />
           <Stat label="Oldest in progress" value={oldest ? ago(oldest) : "–"} warn={stuck} />
           <Stat label="Failed, open" value={failures} warn={failures > 0} />
           <Stat label="Stalled (24 h)" value={health.last24h.stalledRuns} warn={health.last24h.stalledRuns > 0} />
         </div>
-        <DataTable>
-          <tbody>
-            {health.documents.map((d) => (
-              <tr key={d.status}>
-                <td className="text-muted-foreground">{d.status}</td>
-                <td className="tabular-nums">{d.count}</td>
-              </tr>
-            ))}
-          </tbody>
-        </DataTable>
-      </Section>
-
-      <Section title="Open failures by reason">
-        {health.openFailures.length === 0 ? (
-          <p className="text-sm text-muted-foreground">None.</p>
-        ) : (
-          <>
-            <ul className="text-sm">
-              {health.openFailures.map((f) => (
-                <li key={f.reason}>
-                  <span className="font-mono">{f.reason}</span> · {f.count}
+        <div className="grid items-start gap-x-4 lg:grid-cols-2">
+          <Section flush title="Documents by status" className="mt-4">
+            <ul className="divide-y divide-border">
+              {health.documents.map((d) => (
+                <li key={d.status} className="flex items-center justify-between px-4 py-2.5">
+                  <Badge value={d.status} />
+                  <span className="tabular-nums">{d.count}</span>
                 </li>
               ))}
             </ul>
-            <p className="mt-2 text-sm">
-              <Link href="/review" className="font-medium text-primary underline-offset-2 hover:underline">
-                Review → Processing failed
-              </Link>{" "}
-              has Retry all, per reason.
-            </p>
-          </>
-        )}
-      </Section>
+          </Section>
+          <Section
+            flush
+            title="Open failures by reason"
+            className="mt-4"
+            footer={
+              health.openFailures.length > 0 && (
+                <SectionHint>
+                  <Link href="/review" className="font-medium text-foreground underline-offset-2 hover:underline">
+                    Review → Processing failed
+                  </Link>{" "}
+                  has Retry all, per reason.
+                </SectionHint>
+              )
+            }
+          >
+            {health.openFailures.length === 0 ? (
+              <p className="flex items-center gap-2 px-4 py-3 text-muted-foreground">
+                <CircleCheck aria-hidden="true" className="size-4 text-success" />
+                No open failures.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {health.openFailures.map((f) => (
+                  <li key={f.reason} className="flex items-center justify-between px-4 py-2.5">
+                    <code className="text-xs">{f.reason}</code>
+                    <Pill tone="danger">{f.count}</Pill>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Section>
+        </div>
+      </Group>
 
-      <Section title="Delivery and intake">
+      <Group title="Delivery and intake">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat label="Webhooks pending" value={health.delivery.pending} />
           <Stat
@@ -105,9 +128,9 @@ export function HealthView() {
             warn={health.mailboxes.some((m) => m.status === "reauth_required")}
           />
         </div>
-      </Section>
+      </Group>
 
-      <Section title="Models and workers">
+      <Group title="Models and workers">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat
             label={`Budget today (${health.budget.day})`}
@@ -122,16 +145,18 @@ export function HealthView() {
           <Stat label="Models cooling down" value={health.cooldowns.length} warn={health.cooldowns.length > 0} />
         </div>
         {health.cooldowns.length > 0 && (
-          <ul className="mt-3 text-sm">
-            {health.cooldowns.map((c) => (
-              <li key={`${c.provider}:${c.model}`}>
-                <span className="font-mono">{c.model}</span> answered {c.reason}; calls wait until{" "}
-                {new Date(c.until).toLocaleTimeString()}.
-              </li>
-            ))}
-          </ul>
+          <Notice tone="warning" className="mt-3">
+            <ul className="space-y-0.5">
+              {health.cooldowns.map((c) => (
+                <li key={`${c.provider}:${c.model}`}>
+                  <code className="text-xs">{c.model}</code> answered {c.reason}; calls wait until{" "}
+                  {new Date(c.until).toLocaleTimeString()}.
+                </li>
+              ))}
+            </ul>
+          </Notice>
         )}
-      </Section>
-    </div>
+      </Group>
+    </>
   );
 }

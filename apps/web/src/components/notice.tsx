@@ -39,6 +39,20 @@ export function Notice({
 /** The result of an action, shown where it was taken. */
 export type Message = { error: boolean; text: string };
 
+/** The result of an action that changed what the page shows: a callout above it, not a line under a form. */
+export function ResultNotice({ message, className }: { message: Message | null; className?: string }) {
+  if (!message) return null;
+  return (
+    <Notice
+      tone={message.error ? "danger" : "success"}
+      role={message.error ? "alert" : "status"}
+      className={cn("mt-6", className)}
+    >
+      {message.text}
+    </Notice>
+  );
+}
+
 export function FormMessage({ message, className }: { message: Message | null; className?: string }) {
   if (!message) return null;
   return (
