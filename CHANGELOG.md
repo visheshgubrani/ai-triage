@@ -2,6 +2,16 @@
 
 All notable changes to ai-triage. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/) (pre-1.0: a minor version may break things, and says how below). Each release publishes `ghcr.io/visheshgubrani/ai-triage:<version>`.
 
+## [Unreleased]
+
+### Added
+
+- **Install behind a reverse proxy you already run** (nginx, Caddy, Traefik on 80/443): `install.sh --host <app> --files-host <files> --port <n>`. The app and its files listen on 127.0.0.1, and the installer prints the proxy config to add. The installation's own Caddy believes `X-Forwarded-For` from private addresses, so the API still sees each client's address.
+
+### Fixed
+
+- **An upgrade no longer moves an installation's address.** `./triage upgrade` (and re-running the installer) recomputed `PUBLIC_URL`, `S3_PUBLIC_ENDPOINT` and `COMPOSE_FILE`, discarding values set with `./triage config set` and extra compose overlays. Found on a real VPS behind its own Caddy. They're now recomputed only when an address flag (`--host`, `--port`, `--files-host`) is given, and added overlays are kept.
+
 ## [0.7.0] - 2026-11-04
 
 Phase 7: production-ready (docs/architecture.md §9).

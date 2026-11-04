@@ -117,6 +117,29 @@ describe("cli configure", () => {
     expect(merged.DATABASE_URL).toBe(fresh.DATABASE_URL);
   });
 
+  it("an upgrade keeps addresses and overlays set by hand (found on a real VPS behind its own proxy)", () => {
+    const installed = configure({}, { port: 4600 }, {}, random);
+    const handSet = {
+      ...installed,
+      PUBLIC_URL: "https://triage.acme.com",
+      S3_PUBLIC_ENDPOINT: "https://files.acme.com",
+      COMPOSE_FILE: `${installed.COMPOSE_FILE}:compose.override.yaml`,
+    };
+    const upgraded = configure(handSet, { version: "0.7.1" }, {}, random);
+    expect(upgraded).toMatchObject({
+      TRIAGE_VERSION: "0.7.1",
+      PUBLIC_URL: "https://triage.acme.com",
+      S3_PUBLIC_ENDPOINT: "https://files.acme.com",
+      COMPOSE_FILE: "compose.yaml:compose.local.yaml:compose.override.yaml",
+    });
+    // Turning OCR on keeps the override too, after the managed files.
+    expect(configure(handSet, { ocr: "cpu" }, {}, random).COMPOSE_FILE).toBe(
+      "compose.yaml:compose.local.yaml:compose.ocr-cpu.yaml:compose.override.yaml",
+    );
+    // An address flag recomputes the addresses.
+    expect(configure(handSet, { port: 4700 }, {}, random).PUBLIC_URL).toBe("http://localhost:4700");
+  });
+
   it("round-trips through the file", () => {
     const v = configure({}, { host: "triage.acme.com", email: "ops@acme.com" }, {}, random);
     expect(parseEnvFile(renderEnvFile(v))).toEqual(v);

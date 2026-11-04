@@ -110,6 +110,15 @@ export function configure(
         : `http://localhost:${port + 1}`;
   const composeFiles = ["compose.yaml", server ? "compose.server.yaml" : "compose.local.yaml"];
   if (ocr !== "off") composeFiles.push(`compose.ocr-${ocr}.yaml`);
+  // Overlays an operator added (their own overrides) stay, after the ones configure manages.
+  const managed = (f: string) => /^compose(\.(local|server|ocr-[a-z]+))?\.yaml$/.test(f);
+  for (const f of (existing.COMPOSE_FILE ?? "").split(":")) if (f && !managed(f)) composeFiles.push(f);
+
+  // The addresses follow from the flags. Without an address flag (an upgrade, or a re-run for a
+  // version or OCR change), what's in .env stays, including values set by hand with `./triage config
+  // set`: an upgrade must never move an installation's address.
+  const readdress = options.host !== undefined || options.port !== undefined || options.upstream !== undefined;
+  const address = (name: string, computed: string) => (readdress ? computed : existing[name] || computed);
 
   const values: Record<string, string> = {
     // How `docker compose` (and ./triage) run this installation.
@@ -124,13 +133,13 @@ export function configure(
     INSTALL_MODE: mode,
     APP_HOST: host ?? "localhost",
     ...(filesHost ? { FILES_HOST: filesHost } : {}),
-    APP_PORT: String(port),
-    FILES_PORT: String(port + 1),
-    APP_SITE: server ? (host as string) : `http://:${port}`,
-    FILES_SITE: server ? `${host}:${SERVER_FILES_PORT}` : `http://:${port + 1}`,
+    APP_PORT: address("APP_PORT", String(port)),
+    FILES_PORT: address("FILES_PORT", String(port + 1)),
+    APP_SITE: address("APP_SITE", server ? (host as string) : `http://:${port}`),
+    FILES_SITE: address("FILES_SITE", server ? `${host}:${SERVER_FILES_PORT}` : `http://:${port + 1}`),
     ACME_EMAIL: email || "admin@localhost",
-    PUBLIC_URL: publicUrl,
-    S3_PUBLIC_ENDPOINT: filesUrl,
+    PUBLIC_URL: address("PUBLIC_URL", publicUrl),
+    S3_PUBLIC_ENDPOINT: address("S3_PUBLIC_ENDPOINT", filesUrl),
     // Database: the owner runs migrations only; the app connects as a role that RLS applies to.
     POSTGRES_PASSWORD: postgresPassword,
     DATABASE_APP_PASSWORD: appPassword,
