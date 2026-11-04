@@ -39,6 +39,7 @@ import { evalRoutes } from "./routes/evals";
 import { publicApiRoutes, webhookRoutes } from "./routes/ingest";
 import { integrationRoutes, mailboxRoutes } from "./routes/mailboxes";
 import { invitationRoutes, MEMBER_ERROR_STATUS, memberRoutes } from "./routes/members";
+import { modelRoutes, pipelineRoutes } from "./routes/pipeline";
 import { reviewRoutes } from "./routes/review";
 import { settingsRoutes } from "./routes/settings";
 import { onboardingRoutes, setupRoutes } from "./routes/setup";
@@ -195,6 +196,8 @@ function apiRoutes(deps: AppDeps) {
       .route("/integrations", integrationRoutes(deps))
       .route("/evals", evalRoutes(deps))
       .route("/configs", configRoutes(deps))
+      .route("/models", modelRoutes(deps))
+      .route("/pipeline", pipelineRoutes(deps))
       .route("/webhooks", webhookRoutes(deps))
       .route("/v1", publicApiRoutes(deps))
   );

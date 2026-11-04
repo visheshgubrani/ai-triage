@@ -98,7 +98,7 @@ docker compose up            # the whole demo in containers (pulls the GHCR imag
 6. **Webhooks (§5)** are delivered at least once with a stable `Idempotency-Key` (the action id).
 7. **Evals can't act (§8):** the runner has no actions or delivery ports, and eval items never create `documents` rows.
 8. **No surprise spend (docs/llm.md):** `LLM_MODE` defaults to `replay`, a missing cassette is a hard error, live is opt-in, budget is reserved atomically, replayed figures are labeled as recorded.
-9. **Correct auto-approval (§6)** = right category **and** every required field correct. Thresholds come from `calib`, the config is frozen, then `test` runs; always show n and the Wilson bound.
+9. **Correct auto-approval (§6)** = right category **and** every required field correct. Thresholds come from `calib`, the config is frozen, then `test` runs; always show n and the Wilson bound. A version that auto-approves anything must be frozen to activate; an all-`review_all` version needn't be, and any model or category change resets automation to `review_all`.
 10. **Security (docs/security.md):** document content is untrusted data (gates may send it to review, never approve it); stored files are served with a server-chosen type; webhook egress goes through the SSRF guard; secrets are encrypted at rest; security-relevant changes are audited in the same transaction; deletion goes only through `purge_document()`.
 
 ## When you change X, also do Y

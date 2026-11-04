@@ -41,6 +41,8 @@ Phase 7: production-ready (docs/architecture.md §9).
   - `docs/operations.md` (alerts and runbooks) and `docs/troubleshooting.md`.
 - **The simulator** (`pnpm llm-sim`, `sim:simulated`): schema-valid fake answers from the document text, with latency and fault injection. It works in any LLM mode, costs nothing, and its calls are stored as `simulated`.
 - **A mail variety generator** of hundreds of kinds of real-world email, a parse robustness test over 500 of them, and **`pnpm load`**: a load and chaos test with invariant checks. The results are in `docs/reliability.md`.
+- **Settings → Pipeline:** pick each stage's model and effort (with which ones a running worker can call), and the sender policy. Saving activates a version that reviews every category.
+- **Activation:** an unfrozen version may be activated when it auto-approves nothing. Freeze turns on automation only with at least 3 calib items and one required field for the category.
 - **First-run setup:** a fresh install logs a one-time link to `/setup`, which creates the first workspace and its admin's invitation (`pnpm setup-link` prints a new one).
 - **A getting-started checklist** for admins, derived from the workspace's data.
 - **Send test event** on the webhook settings: a signed `ping`.

@@ -706,6 +706,39 @@ export interface ConfigResponse {
   config: ConfigSummary;
 }
 
+/** A catalog model and whether a running worker can call it now (worker heartbeats). */
+export interface ModelOption {
+  ref: string;
+  provider: string;
+  efforts: string[];
+  /** Replay serves this model only at its recorded effort. */
+  recordedEffort: string | null;
+  available: boolean;
+  /** Why not, when it isn't: no key on the worker, no recording in replay, no worker running. */
+  reason: string | null;
+}
+export interface ModelList {
+  models: ModelOption[];
+}
+
+/** Settings → Pipeline: the active version, with what the sender policy says. */
+export interface PipelineSettings {
+  config: ConfigSummary;
+  /** Forwarded mail (Postmark) must be authenticated to auto-approve. Synced mail always is. */
+  senderRequire: boolean;
+}
+
+/**
+ * Settings → Pipeline → Save: a new version of the active one with these models, every category
+ * reviewed by a person (a model change makes the old thresholds meaningless), activated at once.
+ */
+export const PipelineChangeRequest = z.object({
+  classify: z.object({ model: z.string().min(1).max(200), effort: z.enum(EFFORTS) }),
+  extract: z.object({ model: z.string().min(1).max(200), effort: z.enum(EFFORTS) }),
+  senderRequire: z.boolean(),
+});
+export type PipelineChangeRequest = z.infer<typeof PipelineChangeRequest>;
+
 export const EvalRunsQuery = z.object({ datasetId: z.uuid().optional() });
 export type EvalRunsQuery = z.infer<typeof EvalRunsQuery>;
 

@@ -14,6 +14,9 @@ export type IntakeFilter = (typeof INTAKE_FILTERS)[number];
 export type IntakeFilters = Record<IntakeFilter, boolean>;
 export const DEFAULT_INTAKE_FILTERS: IntakeFilters = { auto_replies: true, bounces: true, bulk: false };
 
+/** Freeze turns on automation for a category only with at least this many calib items of it. */
+export const MIN_CALIB_ITEMS = 3;
+
 /** This release (Keep a Changelog, CHANGELOG.md). A test keeps it equal to the root package.json. */
 export const APP_VERSION = "0.7.0";
 
@@ -452,6 +455,10 @@ export const EVAL_ERROR_CODES = [
   "run_not_done",
   "runs_not_comparable",
   "invalid_config",
+  /** Freeze with automation for a category whose calib split is too thin to set a threshold on. */
+  "too_few_calib_items",
+  /** Automation for a category with no required field: "correct" would mean the category alone. */
+  "no_required_fields",
 ] as const;
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 

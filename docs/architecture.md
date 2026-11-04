@@ -307,7 +307,8 @@ pg-boss keeps finished job ids for 7 days and ignores a re-send, so the reconcil
 - **Freeze and activation:**
   - `createEvalRun` refuses a test run on an unfrozen config (`config_not_frozen`), and the `eval_runs_test_split` trigger backs it up.
   - Freeze creates a child version with `createCandidateConfig` + `freezeConfig`. It never uses `buildPipelineConfig`, which activates.
-  - Activation requires a frozen config.
+  - Activation requires a frozen config **when any category auto-approves** (phase 7). A version that sends every category to a person can't approve anything wrong, so it activates unfrozen. That's how Settings → Pipeline (and `tenant:create`, and custom categories) change models or categories without an eval set. Any change to a model, effort, prompt or category yields a version with every category on `review_all`, because classify sees every category's description; Freeze's routing-only changes don't.
+  - Freeze turns on automation for a category only with at least `MIN_CALIB_ITEMS` (3) calib items of it and at least one required field. Otherwise "correct" would mean the category alone (§6).
 - **Seeds:** `pnpm db:seed` ends with `seed:evals`, which builds the Main dataset from the fixtures and runs dev, calib and test (plus a DeepSeek candidate when its cassettes are recorded). `pnpm eval:import` adds labeled files from JSONL.
 - **Metrics** (grades are stored on each result when it's written, so old runs keep the grades they were given):
   - Classification: accuracy, per-category precision, recall and F1, and a confusion matrix.
