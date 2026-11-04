@@ -1,4 +1,5 @@
 import type pg from "pg";
+import { StartupError } from "./startup";
 
 /** NOLOGIN group role that migrations grant to. The login role from DATABASE_URL is a member. */
 export const APP_GROUP_ROLE = "app_rw";
@@ -52,7 +53,7 @@ export async function assertAppRole(pool: pg.Pool): Promise<void> {
   );
   const row = rows[0];
   if (!row || row.bypass) {
-    throw new Error(
+    throw new StartupError(
       `Database role "${row?.role}" bypasses row-level security. Point DATABASE_URL at the app role ` +
         "(see .env.example) and run `pnpm db:migrate` to create it.",
     );

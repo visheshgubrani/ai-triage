@@ -3,7 +3,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { grantBossSchema, installBossSchema } from "./boss";
 import { type KeyRing, keyRingFromEnv } from "./crypto";
 import { createDb, createPool } from "./index";
-import { ensureAppRole } from "./roles";
+import { APP_GROUP_ROLE, ensureAppRole } from "./roles";
 import { seedPrices } from "./seed/prices";
 import { encryptLegacyWebhookSecrets } from "./settings";
 
@@ -30,6 +30,10 @@ export async function runMigrations(
   try {
     const appRole = await ensureAppRole(pool, appUrl);
     await migrate(createDb(pool), { migrationsFolder });
+    // The api and worker refuse to start while migrations are pending (startup-checks.ts), so the
+    // app role reads the list of applied ones.
+    await pool.query(`grant usage on schema drizzle to ${APP_GROUP_ROLE}`);
+    await pool.query(`grant select on drizzle.__drizzle_migrations to ${APP_GROUP_ROLE}`);
     await installBossSchema(ownerUrl);
     await grantBossSchema(pool);
     // Reference data every instance needs (the demo seed is separate, and refused in production).

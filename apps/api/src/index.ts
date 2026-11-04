@@ -1,12 +1,12 @@
-import { callModeOf, getLlmMode } from "@ai-triage/core";
+import { assertEnv, callModeOf, getLlmMode } from "@ai-triage/core";
 import { egressPolicyFromEnv } from "@ai-triage/core/pipeline";
 import {
-  assertAppRole,
-  assertSafeStartup,
+  checkStartup,
   createAuth,
   createBoss,
   createDb,
   createPool,
+  exitOnStartupError,
   keyRingFromEnv,
 } from "@ai-triage/db";
 import { googleConfigFromEnv, isRealGoogle } from "@ai-triage/mailbox";
@@ -17,16 +17,18 @@ import { parseTrustedProxies } from "./client-ip";
 import { rateLimitsFromEnv } from "./rate-limit";
 import { systemResolve } from "./webhook-url";
 
+try {
+  assertEnv(process.env, "api");
+} catch (err) {
+  exitOnStartupError(err);
+}
 const port = Number(process.env.API_PORT ?? 8787);
 const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
-const secret = process.env.BETTER_AUTH_SECRET;
-if (!secret) throw new Error("BETTER_AUTH_SECRET is not set (see .env.example)");
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl) throw new Error("DATABASE_URL is not set (see .env.example)");
+const secret = process.env.BETTER_AUTH_SECRET as string;
+const databaseUrl = process.env.DATABASE_URL as string;
 
 const pool = createPool(databaseUrl);
-await assertAppRole(pool);
-await assertSafeStartup(pool, process.env, "api");
+await checkStartup(pool, process.env, "api").catch(exitOnStartupError);
 const db = createDb(pool);
 const baseURL = process.env.BETTER_AUTH_URL ?? `http://localhost:${port}`;
 const trustedProxies = (process.env.TRUSTED_PROXIES ?? "")

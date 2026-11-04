@@ -19,7 +19,8 @@
     "seed": "tsx --env-file-if-exists=../../.env src/bin/seed.ts",
     "api-key:create": "tsx --env-file-if-exists=../../.env src/bin/api-key.ts",
     "secrets:rotate-key": "tsx --env-file-if-exists=../../.env src/bin/rotate-key.ts",
-    "tenant:create": "tsx --env-file-if-exists=../../.env src/bin/tenant-create.ts"
+    "tenant:create": "tsx --env-file-if-exists=../../.env src/bin/tenant-create.ts",
+    "config:docs": "tsx src/bin/config-docs.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",

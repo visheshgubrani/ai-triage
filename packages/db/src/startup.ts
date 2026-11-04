@@ -16,6 +16,11 @@ export const DEV_DEFAULTS = {
 export type StartupRole = "api" | "worker";
 type Env = Record<string, string | undefined>;
 
+/** A startup failure whose message is the whole story: printed without a stack trace. */
+export class StartupError extends Error {
+  override name = "StartupError";
+}
+
 export const isDemo = (env: Env) => env.TRIAGE_DEMO === "true";
 export const isProduction = (env: Env) => env.NODE_ENV === "production";
 
@@ -90,7 +95,7 @@ export async function assertSafeStartup(pool: pg.Pool, env: Env, role: StartupRo
     console.warn(`\n*** TRIAGE_DEMO=true: running with demo defaults. Never expose this instance. ***\n${list}\n`);
     return;
   }
-  throw new Error(
+  throw new StartupError(
     `Refusing to start in production with unsafe settings:\n${list}\n` +
       "Fix them (see the production checklist in docs/security.md), or set TRIAGE_DEMO=true for a local demo.",
   );
@@ -99,7 +104,7 @@ export async function assertSafeStartup(pool: pg.Pool, env: Env, role: StartupRo
 /** The demo seed publishes its users' password, so production refuses it unless TRIAGE_DEMO=true. */
 export function assertDemoSeedAllowed(env: Env): void {
   if (isProduction(env) && !isDemo(env)) {
-    throw new Error(
+    throw new StartupError(
       "Refusing to seed the demo tenant in production (its users have a published password). " +
         "Set TRIAGE_DEMO=true for a local demo; `pnpm db:migrate` already seeds model prices.",
     );

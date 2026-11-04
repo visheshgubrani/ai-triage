@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEV_ENCRYPTION_KEY } from "./crypto";
 import { assertDemoSeedAllowed, DEV_DEFAULTS, unsafeConfig } from "./startup";
+import { describeDatabase, explainDatabaseError } from "./startup-checks";
 
 const safe = {
   BETTER_AUTH_SECRET: "x".repeat(44),
@@ -65,5 +66,23 @@ describe("assertDemoSeedAllowed", () => {
     expect(() => assertDemoSeedAllowed({ NODE_ENV: "production" })).toThrow(/demo tenant/);
     expect(() => assertDemoSeedAllowed({ NODE_ENV: "production", TRIAGE_DEMO: "true" })).not.toThrow();
     expect(() => assertDemoSeedAllowed({})).not.toThrow();
+  });
+});
+
+describe("explainDatabaseError", () => {
+  const url = "postgres://triage_app:secret@db.internal:5440/triage";
+
+  it("never prints the password", () => {
+    expect(describeDatabase(url)).toBe("triage_app@db.internal:5440/triage");
+  });
+
+  it("points a failed login at db:migrate, which creates the app role", () => {
+    const message = explainDatabaseError({ code: "28P01", message: "password authentication failed" }, url);
+    expect(message).toContain("`pnpm db:migrate`");
+    expect(message).not.toContain("secret");
+  });
+
+  it("leaves errors it doesn't know alone", () => {
+    expect(explainDatabaseError({ code: "XX000" }, url)).toBeNull();
   });
 });

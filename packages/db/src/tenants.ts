@@ -64,6 +64,11 @@ export async function getTenant(db: NodePgDatabase<typeof schema>, tenantId: str
   return row ?? null;
 }
 
+/** Every tenant, for operator tooling (preflight). Tenants are a global table. */
+export async function listTenants(db: NodePgDatabase<typeof schema>) {
+  return db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug }).from(tenants).orderBy(tenants.slug);
+}
+
 export async function findTenantBySlug(db: NodePgDatabase<typeof schema>, slug: string) {
   const [row] = await db
     .select({ id: tenants.id, name: tenants.name })

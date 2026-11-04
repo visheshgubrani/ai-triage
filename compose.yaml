@@ -5,9 +5,9 @@ name: ai-triage
 # key is needed. Contributors run only the infrastructure (`pnpm infra:up`) and `pnpm dev`.
 # Secrets below are dev-only defaults; override them in the environment for anything else.
 # TRIAGE_DEMO=true lets the production image start on them (with a warning); never expose it.
+# The api and worker get the app role only; the owner URL goes to `init` alone, and web gets no secrets.
 x-app-env: &app-env
   TRIAGE_DEMO: "true"
-  DATABASE_OWNER_URL: postgres://triage:triage@postgres:5432/triage
   DATABASE_URL: postgres://triage_app:triage_app@postgres:5432/triage
   S3_ENDPOINT: http://storage:9000
   S3_PUBLIC_ENDPOINT: http://localhost:${S3_PORT:-9020}
@@ -27,13 +27,13 @@ x-app-env: &app-env
   DEMO_WEBHOOK_URL: http://webhook-catcher:9030/hooks/demo
   DEMO_WEBHOOK_SECRET: ${DEMO_WEBHOOK_SECRET:-whsec_dev_only_demo_webhook_secret}
   # Google is faked in the demo (the fake-google service): connect a mailbox with no Google project.
-  # For a real client, set GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET and empty GOOGLE_OAUTH_URL,
-  # GOOGLE_TOKEN_URL and GOOGLE_API_URL (docs/google.md).
+  # An empty or missing variable in .env keeps the fake (`:-`), so a copied .env.example can't break it.
+  # A real Google client belongs in a real deployment (docs/google.md).
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-demo-fake-google}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-demo-fake-google-secret}
-  GOOGLE_OAUTH_URL: ${GOOGLE_OAUTH_URL-http://localhost:9040}
-  GOOGLE_TOKEN_URL: ${GOOGLE_TOKEN_URL-http://fake-google:9040}
-  GOOGLE_API_URL: ${GOOGLE_API_URL-http://fake-google:9040}
+  GOOGLE_OAUTH_URL: ${GOOGLE_OAUTH_URL:-http://localhost:9040}
+  GOOGLE_TOKEN_URL: ${GOOGLE_TOKEN_URL:-http://fake-google:9040}
+  GOOGLE_API_URL: ${GOOGLE_API_URL:-http://fake-google:9040}
 
 services:
   postgres:
@@ -129,7 +129,9 @@ services:
         NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-8787}
     image: ai-triage-app
     command: ["sh", "-c", "pnpm db:migrate && pnpm db:seed"]
-    environment: *app-env
+    environment:
+      <<: *app-env
+      DATABASE_OWNER_URL: postgres://triage:triage@postgres:5432/triage
     depends_on:
       postgres:
         condition: service_healthy
@@ -164,9 +166,10 @@ services:
     pull_policy: never
     command: ["pnpm", "--filter", "@ai-triage/web", "start"]
     environment:
-      <<: *app-env
       # Server components call the API inside the compose network; the browser uses localhost.
       API_INTERNAL_URL: http://api:8787
+      # The CSP allows the storage origin (presigned downloads and uploads).
+      S3_PUBLIC_ENDPOINT: http://localhost:${S3_PORT:-9020}
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
     depends_on:

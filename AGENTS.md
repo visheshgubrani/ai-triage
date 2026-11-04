@@ -39,10 +39,12 @@ fixtures/           Synthetic labeled docs (generated, committed) + LLM cassette
 
 ```bash
 pnpm install                 # Node >= 24, pnpm 12
-cp .env.example .env
+pnpm dev:setup               # .env, infra:up, db:migrate, db:seed (idempotent); dev:reset wipes local data first
 pnpm infra:up                # Postgres :5440, RustFS :9020 (console :9021), webhook catcher :9030
 pnpm db:migrate              # app role, migrations, pg-boss + queues
 pnpm db:seed                 # prices, demo tenant (admin@demo.test / reviewer@demo.test, demo-password), 60 docs, eval runs
+pnpm preflight               # is this installation ready? each failed check prints its fix
+pnpm config:docs             # after editing packages/core/src/env.ts: regenerates .env.example and docs/configuration.md
 pnpm dev                     # api :8787, web :3000, worker
 pnpm typecheck && pnpm lint && pnpm test && pnpm build   # must all pass before you're done (pnpm test needs infra:up)
 pnpm test:unit               # no Postgres needed
@@ -66,7 +68,7 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 - **Only `packages/db` imports `drizzle-orm` or `pg`.** A second import site once installed a duplicate drizzle-orm and broke types. Expose helpers from `@ai-triage/db` instead.
 - **Core subpaths.** `@ai-triage/core` is constants-only, so web can import it. Parsers and pipeline logic live in `@ai-triage/core/pipeline`.
 - **API.** Contracts are Zod schemas in `packages/contracts`. Web calls the API only through the Hono RPC client.
-- **Env.** One root `.env`, loaded with `--env-file-if-exists=../../.env` or `process.loadEnvFile`.
+- **Env.** One root `.env`, loaded with `--env-file-if-exists=../../.env` or `process.loadEnvFile`. Every variable is declared in `packages/core/src/env.ts`; the api and worker check theirs at startup (`assertEnv`, then `checkStartup` for the database).
 - **Style.** Biome (2 spaces, double quotes, 120 columns). Tests sit next to source as `*.test.ts`; `*.db.test.ts` need Postgres.
 - **Database roles.**
   - `DATABASE_OWNER_URL` is only for migrations, seeds and drizzle-kit.
@@ -104,6 +106,7 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 | The eval runner (`apps/worker/src/evals/`) | No `createAction`, `enqueue` or delivery imports; a source scan and a type test enforce this |
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |
 | Add a document-derived table | Add it to `purge_document()` (a new migration replacing the function), or purges fail on the FK |
+| Read a new environment variable | Register it in `packages/core/src/env.ts`, then `pnpm config:docs`. `env.test.ts` fails on an unregistered `process.env.X` or a stale `.env.example` |
 | A Better Auth table | Keep BA's model and field names, and use `uuid().defaultRandom()` ids |
 | An encrypted column (`encryptSecret`) | Re-encrypt it in `pnpm secrets:rotate-key` (`packages/db/src/bin/rotate-key.ts`) |
 | Add a mail provider | `MAILBOX_PROVIDERS` and `MAILBOX_AUTHSERV_IDS` in core, a client in `packages/mailbox/src/<provider>/`, and a fake beside `testing/fake-google.ts` |

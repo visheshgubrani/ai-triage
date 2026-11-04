@@ -39,12 +39,11 @@ Requires Node ≥ 24, pnpm 12 and Docker.
 
 ```bash
 pnpm install
-cp .env.example .env
-pnpm infra:up      # Postgres on :5440, RustFS on :9020, a webhook catcher on :9030
-pnpm db:migrate    # creates the app's database role, applies migrations, installs the job queue
-pnpm db:seed       # model prices, a demo tenant, 60 synthetic documents, the eval dataset and first runs
+pnpm dev:setup     # .env, then Postgres :5440, RustFS :9020 and a webhook catcher :9030, migrations, demo seed
 pnpm dev           # web http://localhost:3000 · api http://localhost:8787
 ```
+
+`pnpm dev:setup` is safe to re-run; `pnpm dev:reset` wipes the local data first. If something doesn't work, `pnpm preflight` checks the installation (versions, environment, database, migrations, storage, whether each tenant's model config can run) and prints the fix for each problem. Every environment variable is described in [docs/configuration.md](docs/configuration.md).
 
 Sign in at http://localhost:3000/sign-in as `admin@demo.test` or `reviewer@demo.test`, with the password `demo-password`. These are **dev-only** demo credentials created by the seed.
 

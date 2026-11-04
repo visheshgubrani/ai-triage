@@ -1,5 +1,6 @@
+import { assertEnv } from "@ai-triage/core";
 import { auditDraw, egressPolicyFromEnv } from "@ai-triage/core/pipeline";
-import { assertAppRole, assertSafeStartup, createBoss, createPool, keyRingFromEnv } from "@ai-triage/db";
+import { checkStartup, createBoss, createPool, exitOnStartupError, keyRingFromEnv } from "@ai-triage/db";
 import { callModeOf, createTransport, getLlmMode } from "@ai-triage/llm";
 import { googleConfigFromEnv } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
@@ -12,18 +13,21 @@ import { registerMailbox } from "./mailbox/register";
 import { registerMaintenance } from "./maintenance/register";
 import { registerPipeline } from "./pipeline/register";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL is not set");
+try {
+  assertEnv(process.env, "worker");
+} catch (err) {
+  exitOnStartupError(err);
+}
+const connectionString = process.env.DATABASE_URL as string;
 const config = workerConfig();
 const mode = getLlmMode();
 
 // Runs as the app role: RLS applies, and pg-boss's schema and queues were installed by
 // `pnpm db:migrate`, so this instance never migrates (see packages/db/src/boss.ts).
 const pool = createPool(connectionString);
-await assertAppRole(pool);
-await assertSafeStartup(pool, process.env, "worker");
+await checkStartup(pool, process.env, "worker").catch(exitOnStartupError);
 
-// Workers need a direct (non-pooled) connection: see docs/architecture.md §3.
+// Workers need a direct (non-pooled) connection: pg-boss uses LISTEN (docs/configuration.md, DATABASE_URL).
 const boss = createBoss(connectionString);
 boss.on("error", (err) => console.error("pg-boss error", err));
 await boss.start();
