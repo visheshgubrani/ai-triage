@@ -1,0 +1,173 @@
+<!doctype html>
+<!-- The demo video's compositor: render.ts loads this page and calls window.draw(state) once per
+     output frame, then screenshots it. Everything here is pure layout: all timing lives in render.ts. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>compositor</title>
+<style>
+  @font-face { font-family: Geist; font-weight: 400; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Regular.woff2); }
+  @font-face { font-family: Geist; font-weight: 500; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Medium.woff2); }
+  @font-face { font-family: Geist; font-weight: 600; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-SemiBold.woff2); }
+  @font-face { font-family: Geist; font-weight: 700; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-sans/Geist-Bold.woff2); }
+  @font-face { font-family: GeistMono; font-weight: 400; src: url(../../apps/web/node_modules/geist/dist/fonts/geist-mono/GeistMono-Regular.woff2); }
+
+  * { box-sizing: border-box; margin: 0; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #0d0a24; }
+  body { font-family: Geist, sans-serif; color: #fff; -webkit-font-smoothing: antialiased; }
+
+  /* Background: deep indigo with slowly drifting light, plus grain so H.264 doesn't band it. */
+  #bg { position: absolute; inset: 0; background: #0d0a24; overflow: hidden; }
+  .blob { position: absolute; border-radius: 50%; filter: blur(110px); will-change: transform; }
+  #b1 { width: 1100px; height: 900px; background: #4f39f6; opacity: .55; }
+  #b2 { width: 900px; height: 800px; background: #8b2cf5; opacity: .42; }
+  #b3 { width: 800px; height: 700px; background: #1f6feb; opacity: .30; }
+  #grain { position: absolute; inset: 0; opacity: .06; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+
+  /* The camera moves the stage; the window and the cursor live on it. */
+  #stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+  #win { position: absolute; border-radius: 18px; overflow: hidden; background: #fafafa;
+    box-shadow: 0 0 0 1px rgba(255,255,255,.14), 0 30px 80px rgba(6,3,30,.55), 0 8px 24px rgba(6,3,30,.35); }
+  #bar { position: absolute; left: 0; right: 0; top: 0; height: 44px; background: #f1f1f4; border-bottom: 1px solid #e3e3e8;
+    display: flex; align-items: center; }
+  .dot { width: 13px; height: 13px; border-radius: 50%; margin-left: 9px; }
+  .dot:first-child { margin-left: 18px; }
+  #url { position: absolute; left: 50%; transform: translateX(-50%); height: 28px; min-width: 420px; padding: 0 16px;
+    border-radius: 8px; background: #fff; border: 1px solid #e3e3e8; color: #55556a; font-size: 14.5px;
+    display: flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap; }
+  .lock { width: 13px; height: 13px; flex: none; }
+  #content { position: absolute; left: 0; top: 44px; overflow: hidden; background: #fafafa; }
+  #content img { position: absolute; inset: 0; width: 100%; height: 100%; }
+  #cursor { position: absolute; left: 0; top: 0; width: 30px; height: 30px; transform-origin: 3px 3px; pointer-events: none;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+  #ripple { position: absolute; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%;
+    border: 3px solid rgba(79,57,246,.85); background: rgba(79,57,246,.18); }
+
+  /* Cards: the title and the outro. */
+  .card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .mark { width: 132px; height: 132px; border-radius: 34px; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(145deg, #6d5cff, #4f39f6 55%, #3b25d9);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 24px 60px rgba(79,57,246,.55); }
+  .mark svg { width: 55%; height: 55%; }
+  .mark.small { width: 96px; height: 96px; border-radius: 26px; }
+  .name { font-size: 112px; font-weight: 700; letter-spacing: -.045em; margin-top: 34px; line-height: 1; }
+  .tag { font-size: 40px; font-weight: 500; color: rgba(255,255,255,.72); margin-top: 26px; letter-spacing: -.01em; }
+  .tag b { color: #fff; font-weight: 600; }
+  .row { display: flex; align-items: center; gap: 26px; }
+  .row .name { font-size: 88px; margin: 0; }
+  .facts { display: flex; gap: 14px; margin-top: 44px; }
+  .fact { font-size: 24px; font-weight: 500; padding: 10px 20px; border-radius: 999px; color: rgba(255,255,255,.88);
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.16); }
+  .cmd { margin-top: 44px; font-family: GeistMono, monospace; font-size: 23px; padding: 22px 30px; border-radius: 16px;
+    background: rgba(8,6,24,.72); border: 1px solid rgba(255,255,255,.16); color: #e9e7ff; white-space: nowrap; }
+  .cmd span { color: #8f84ff; }
+  .repo { margin-top: 30px; font-size: 30px; font-weight: 500; color: rgba(255,255,255,.8); }
+  .anim { will-change: transform, opacity; }
+
+  /* The social preview (1280×640) reuses the title card, smaller. */
+  body.social .name { font-size: 96px; }
+  body.social .tag { font-size: 34px; }
+  body.social .mark { width: 112px; height: 112px; border-radius: 30px; }
+</style>
+</head>
+<body>
+<div id="bg"><div class="blob" id="b1"></div><div class="blob" id="b2"></div><div class="blob" id="b3"></div><div id="grain"></div></div>
+
+<div id="stage">
+  <div id="win">
+    <div id="bar">
+      <span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span>
+      <div id="url"><svg class="lock" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="#8a8aa0" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg><span id="urltext"></span></div>
+    </div>
+    <div id="content"><img id="a" alt=""><img id="b" alt=""></div>
+  </div>
+  <div id="ripple"></div>
+  <svg id="cursor" aria-hidden="true" viewBox="0 0 30 30"><path d="M4 2.5v21.2l5.6-5.3 3.6 8.4 3.7-1.6-3.6-8.2h7.7z" fill="#111" stroke="#fff" stroke-width="1.8" stroke-linejoin="round"/></svg>
+</div>
+
+<div class="card" id="title">
+  <div class="mark anim" id="t1"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+  <div class="name anim" id="t2">ai-triage</div>
+  <div class="tag anim" id="t3">The AI inbox that knows <b>when to ask a human.</b></div>
+</div>
+
+<div class="card" id="outro">
+  <div class="row anim" id="o1">
+    <div class="mark small"><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg></div>
+    <div class="name">ai-triage</div>
+  </div>
+  <div class="facts anim" id="o2"><span class="fact">Open source · MIT</span><span class="fact">Self-hosted</span><span class="fact">Claude, OpenAI, DeepSeek or local</span></div>
+  <div class="cmd anim" id="o3"><span>$</span> curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/install.sh | sh -s -- --demo</div>
+  <div class="repo anim" id="o4">github.com/visheshgubrani/ai-triage</div>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const imgs = { a: $("a"), b: $("b") };
+  const loaded = { a: "", b: "" };
+
+  // One-time layout: where the window sits at zoom 1 (render.ts passes it, so the math lives in one place).
+  window.layout = (L) => {
+    Object.assign($("win").style, { left: `${L.x}px`, top: `${L.y}px`, width: `${L.w}px`, height: `${L.h + L.bar}px` });
+    Object.assign($("content").style, { width: `${L.w}px`, height: `${L.h}px` });
+  };
+
+  async function setImg(key, src) {
+    const img = imgs[key];
+    if (!src) { img.style.visibility = "hidden"; return; }
+    img.style.visibility = "visible";
+    if (loaded[key] === src) return;
+    loaded[key] = src;
+    img.src = src;
+    await img.decode();
+  }
+
+  const show = (el, o, dy = 0, s = 1) => {
+    el.style.opacity = String(o);
+    el.style.transform = `translateY(${dy}px) scale(${s})`;
+  };
+
+  window.draw = async (S) => {
+    // Background drift, only on the cards: behind the app a still background costs H.264 nothing.
+    const t = S.bgTime;
+    $("b1").style.transform = `translate(${-200 + Math.sin(t * 0.21) * 140}px, ${-260 + Math.cos(t * 0.17) * 90}px)`;
+    $("b2").style.transform = `translate(${1150 + Math.cos(t * 0.19) * 160}px, ${420 + Math.sin(t * 0.23) * 110}px)`;
+    $("b3").style.transform = `translate(${600 + Math.sin(t * 0.13 + 1) * 220}px, ${650 + Math.cos(t * 0.11) * 80}px)`;
+
+    // Stage: window entrance/exit and the camera.
+    const st = $("stage");
+    st.style.display = S.win.opacity > 0 ? "block" : "none";
+    if (S.win.opacity > 0) {
+      await Promise.all([setImg("a", S.imgA), setImg("b", S.imgB)]);
+      imgs.b.style.opacity = String(S.mixB);
+      $("urltext").textContent = S.url;
+      const { cx, cy, z } = S.cam;
+      st.style.opacity = String(S.win.opacity);
+      st.style.transform =
+        `translate(960px, ${540 + S.win.dy}px) scale(${z * S.win.scale}) translate(${-cx}px, ${-cy}px)`;
+      const c = $("cursor");
+      c.style.display = S.cursor ? "block" : "none";
+      if (S.cursor) c.style.transform = `translate(${S.cursor.x - 3}px, ${S.cursor.y - 3}px) scale(${S.cursor.scale})`;
+      const r = $("ripple");
+      r.style.display = S.ripple ? "block" : "none";
+      if (S.ripple) {
+        r.style.left = `${S.ripple.x}px`;
+        r.style.top = `${S.ripple.y}px`;
+        r.style.opacity = String(1 - S.ripple.p);
+        r.style.transform = `scale(${0.3 + S.ripple.p * 0.9})`;
+      }
+      // A deeper shadow while zoomed in.
+      const k = Math.min(1, (z - 1) / 0.8);
+      $("win").style.boxShadow = `0 0 0 1px rgba(255,255,255,.14), 0 ${30 + 30 * k}px ${80 + 60 * k}px rgba(6,3,30,${0.55 + 0.2 * k}), 0 8px 24px rgba(6,3,30,.35)`;
+    }
+
+    // Cards: each element is [opacity, dy, scale].
+    $("title").style.display = S.title ? "flex" : "none";
+    if (S.title) S.title.forEach(([o, dy, s], i) => { show($(`t${i + 1}`), o, dy, s); });
+    $("outro").style.display = S.outro ? "flex" : "none";
+    if (S.outro) S.outro.forEach(([o, dy, s], i) => { show($(`o${i + 1}`), o, dy, s); });
+  };
+</script>
+</body>
+</html>

@@ -173,9 +173,9 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 
 | Variable | Read by | Default | Description |
 |---|---|---|---|
-| `WEB_URL` | cli | `http://localhost:3000` | `pnpm e2e`: the running web app. |
+| `WEB_URL` | cli | `http://localhost:3000` | `pnpm e2e` and `pnpm demo:record`: the running web app. |
 | `API_URL` | cli | `WEB_URL/api` | `pnpm e2e`: the API, by default WEB_URL/api. |
-| `CATCHER_URL` | cli | `http://localhost:9030` | `pnpm e2e`: the webhook catcher. |
+| `CATCHER_URL` | cli | `http://localhost:9030` | `pnpm e2e` and `pnpm demo:record`: the webhook catcher. |
 | `FAKE_GOOGLE_URL` | cli | `http://localhost:9040` | `pnpm e2e`: the fake Google (`pnpm fake-google`). |
-| `WALKTHROUGH_VIDEO` | cli | – | `pnpm e2e`: record videos of the walkthroughs (the README GIFs). |
+| `WALKTHROUGH_VIDEO` | cli | – | `pnpm e2e`: record videos of the walkthroughs (in test-results/). |
 | `E2E_INVITE_URL` | cli | – | `pnpm e2e`: invite link of a fresh workspace on the simulator, for e2e/categories.spec.ts (skipped without it). Make one with `DEFAULT_MODEL=sim:simulated pnpm tenant:create`. |

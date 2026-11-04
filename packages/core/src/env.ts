@@ -810,7 +810,7 @@ export const ENV_VARS: readonly EnvVar[] = [
     processes: ["cli"],
     kind: "url",
     default: "http://localhost:3000",
-    description: "`pnpm e2e`: the running web app.",
+    description: "`pnpm e2e` and `pnpm demo:record`: the running web app.",
   },
   {
     name: "API_URL",
@@ -826,7 +826,7 @@ export const ENV_VARS: readonly EnvVar[] = [
     processes: ["cli"],
     kind: "url",
     default: "http://localhost:9030",
-    description: "`pnpm e2e`: the webhook catcher.",
+    description: "`pnpm e2e` and `pnpm demo:record`: the webhook catcher.",
   },
   {
     name: "FAKE_GOOGLE_URL",
@@ -841,7 +841,7 @@ export const ENV_VARS: readonly EnvVar[] = [
     group: "End-to-end tests",
     processes: ["cli"],
     kind: "bool",
-    description: "`pnpm e2e`: record videos of the walkthroughs (the README GIFs).",
+    description: "`pnpm e2e`: record videos of the walkthroughs (in test-results/).",
   },
   {
     name: "E2E_INVITE_URL",

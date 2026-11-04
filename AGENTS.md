@@ -2,6 +2,7 @@
 
 Context for coding agents (and humans). Keep it lean: only what every session needs. The details live in:
 - [docs/architecture.md](docs/architecture.md): the agreed design and the source of truth.
+- [docs/guide.md](docs/guide.md): using the app (review, evals, categories, Gmail, API) and the known limits.
 - [docs/llm.md](docs/llm.md): model providers, Claude API notes, LLM modes and cassettes.
 - [docs/security.md](docs/security.md): the threat model, controls and the production checklist.
 - [docs/google.md](docs/google.md): the Google OAuth client, Gmail sync and what Google requires.
@@ -64,6 +65,7 @@ pnpm fake-google             # a fake Google on :9040 for mailbox sync without a
 pnpm llm-sim                 # the simulator on :9050 for `sim:simulated` (LLM_SIMULATOR_URL=http://localhost:9050/v1), any LLM_MODE, $0
 pnpm load --docs 1000 --tenants 5 --skew 0.8   # load and chaos test against a running stack (docs/reliability.md)
 pnpm eval:import <items.jsonl> [--dataset Main]
+pnpm demo:video              # the README's demo video, teaser GIF and screenshots, from a FRESH demo (CONTRIBUTING.md)
 LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY (see docs/llm.md)
 docker compose up            # the whole demo in containers (pulls the GHCR image; --build builds it), replay mode, no key
 TRIAGE_SOURCE=$PWD TRIAGE_IMAGE=ai-triage ./install.sh --version dev --port 4200 --dir /tmp/t   # install from this checkout (docker build -t ai-triage:dev . first)

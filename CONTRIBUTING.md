@@ -35,6 +35,26 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 
   CI runs `scripts/install-smoke.sh` on every push.
 
+## The demo video
+
+The README's teaser GIF, screenshots and the full demo video come from a script, so they can be remade after a UI change. It needs ffmpeg with libx264.
+
+1. Start a fresh demo of your checkout. The recording approves an invoice and freezes a config, so it needs untouched demo data:
+
+   ```bash
+   docker build -t ai-triage:dev .
+   TRIAGE_SOURCE=$PWD TRIAGE_IMAGE=ai-triage ./install.sh --version dev --demo --port 4700 --dir /tmp/triage-video
+   ```
+
+   Wait a minute for the seeded eval runs to finish (Evals shows them done).
+2. Record (about 1.5 minutes), then render (about 5: frames are drawn by several browsers in parallel):
+
+   ```bash
+   WEB_URL=http://localhost:4700 CATCHER_URL=http://localhost:<catcher port it printed> pnpm demo:video
+   ```
+
+`scripts/demo/record.ts` drives the app and saves 2× frames plus a timeline of moves, clicks and camera cues; `render.ts` draws each frame through `compositor.html` (window, zoom, cursor, title and outro) and encodes it. The video lands in `test-results/demo/ai-triage-demo.mp4`; the GIF, the screenshots and `social-preview.png` in `docs/media/`. `pnpm demo:render --at=12,40` renders single frames to check a change; `--encode-only` re-encodes the last drawn frames in seconds (`--crf=N` for size, default 30 to stay under GitHub's 10 MB video limit; `--gpu` for a fast VAAPI draft on AMD or Intel). Remove the demo afterwards with `docker compose down -v` in its directory.
+
 ## Things that will bite
 
 - **Requests are recorded.** Changing a prompt, a request builder, a model or a fixture changes the bytes sent to the model, and replay then misses. Re-recording spends money, so say so in the PR. AGENTS.md ("When you change X") says what else to update.

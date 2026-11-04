@@ -10,6 +10,7 @@ All notable changes to ai-triage. The format follows [Keep a Changelog](https://
 
 ### Added
 
+- **A demo video and a README that pitches.** The README now leads with what ai-triage is for, a teaser of the review flow and a two-minute try-it; the how-to detail moved to [docs/guide.md](docs/guide.md). `pnpm demo:video` records the app with Playwright and renders a 1080p video (zooms, cursor, title and outro), the teaser GIF, the screenshots and a social preview, so they can be remade after UI changes.
 - **Install behind a reverse proxy you already run** (nginx, Caddy, Traefik on 80/443): `install.sh --host <app> --files-host <files> --port <n>`. The app and its files listen on 127.0.0.1, and the installer prints the proxy config to add. The installation's own Caddy believes `X-Forwarded-For` from private addresses, so the API still sees each client's address.
 
 ### Fixed
