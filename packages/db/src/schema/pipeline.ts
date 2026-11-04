@@ -176,6 +176,10 @@ export const documents = pgTable(
     tenantKey("documents", t),
     unique("documents_source_external_id_key").on(t.tenantId, t.source, t.externalId),
     index("documents_tenant_id_created_at_idx").on(t.tenantId, t.createdAt),
+    // The reconciler's scan (stale_work(), 0028): only documents still on their way through the pipeline.
+    index("documents_in_flight_idx")
+      .on(t.updatedAt)
+      .where(sql`processing_status in ('received', 'parsed', 'classified', 'extracted')`),
     oneOf("documents_source_check", t.source, DOCUMENT_SOURCES),
     oneOf("documents_processing_status_check", t.processingStatus, PROCESSING_STATUSES),
     oneOf("documents_review_status_check", t.reviewStatus, REVIEW_STATUSES),

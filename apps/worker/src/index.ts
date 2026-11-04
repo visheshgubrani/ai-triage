@@ -73,7 +73,13 @@ await registerDelivery(
   { tenantConcurrency: config.tenantConcurrency },
 );
 
-await registerMaintenance(boss, { pool, boss, storage, now: () => new Date() });
+await registerMaintenance(boss, {
+  pool,
+  boss,
+  storage,
+  now: () => new Date(),
+  stallMinutes: config.reconcileStallMinutes,
+});
 
 // Gmail mailbox sync: Google's endpoints are fixed (not tenant-chosen), so the plain fetch is used.
 const google = googleConfigFromEnv(process.env);

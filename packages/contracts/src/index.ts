@@ -14,6 +14,7 @@ import {
   EVAL_SPLITS,
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
+  FAILURE_REASONS,
   INVITATION_ACCEPT_METHODS,
   JOIN_ROLES,
   MAILBOX_BACKFILL_MAX_DAYS,
@@ -307,6 +308,21 @@ export const InboxQuery = z.object({
   mine: z.literal("1").optional(),
 });
 export type InboxQuery = z.infer<typeof InboxQuery>;
+
+/** Retry all (admins): every open, unclaimed processing_failed task, optionally of one reason. */
+export const RetryFailedRequest = z.object({
+  reason: z.enum(FAILURE_REASONS).optional(),
+  /** Only failures from before this time (the start of an outage, say). */
+  before: z.iso.datetime().optional(),
+});
+export type RetryFailedRequest = z.infer<typeof RetryFailedRequest>;
+
+export const RetryFailedResponse = z.object({
+  retried: z.number().int(),
+  /** Tasks that moved on before their turn (claimed, already retried). */
+  skipped: z.number().int(),
+});
+export type RetryFailedResponse = z.infer<typeof RetryFailedResponse>;
 
 export const ClaimNextRequest = z.object({
   kind: z.enum(REVIEW_TASK_KINDS).optional(),

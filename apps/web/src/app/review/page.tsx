@@ -13,7 +13,7 @@ export default async function ReviewPage() {
         while the page is open. Refreshes every 5 seconds.
       </p>
       {me ? (
-        <InboxView canReview={me.role !== "viewer"} />
+        <InboxView canReview={me.role !== "viewer"} isAdmin={me.role === "admin"} />
       ) : (
         <p className="mt-6 text-sm text-red-600">Sign in to see the review queue.</p>
       )}

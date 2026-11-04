@@ -563,6 +563,15 @@ export const ENV_VARS: readonly EnvVar[] = [
       "On SIGTERM, how long running jobs may finish before their model calls are aborted (they retry on another worker). Keep it under the container's stop grace period.",
   },
   {
+    name: "RECONCILE_STALL_MINUTES",
+    group: "Worker",
+    processes: ["worker"],
+    kind: "int",
+    default: "30",
+    description:
+      "Work unchanged this long is checked against the queue: a run, delivery or eval run with no job left is marked failed (Processing failed, Delivery failures), never silently re-run. At least 15.",
+  },
+  {
     name: "PARSE_TIMEOUT_MS",
     group: "Worker",
     processes: ["worker"],

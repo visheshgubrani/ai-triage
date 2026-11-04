@@ -408,3 +408,46 @@ export async function listDecisions(tx: TenantTx, documentId: string) {
     .where(eq(reviewDecisions.documentId, documentId))
     .orderBy(desc(reviewDecisions.createdAt));
 }
+
+/**
+ * Open `processing_failed` tasks that Retry all may take: pending, or claimed with a lease that has
+ * run out (a live claim is a reviewer working on it). Optionally only one failure reason, or only
+ * failures before a time (the start of an outage). Oldest first.
+ */
+export async function listRetryableFailures(
+  tx: TenantTx,
+  input: { reason?: string; before?: Date; limit: number; now: Date },
+): Promise<string[]> {
+  const unclaimed = sql`(${reviewTasks.status} = 'pending' or (${reviewTasks.status} = 'claimed' and ${reviewTasks.leaseExpiresAt} <= ${input.now.toISOString()}::timestamptz))`;
+  const rows = await tx.db
+    .select({ id: reviewTasks.id })
+    .from(reviewTasks)
+    .where(
+      and(
+        eq(reviewTasks.kind, "processing_failed"),
+        unclaimed,
+        input.reason ? sql`${input.reason} = any(${reviewTasks.reasons})` : undefined,
+        input.before ? lt(reviewTasks.createdAt, input.before) : undefined,
+      ),
+    )
+    .orderBy(asc(reviewTasks.createdAt))
+    .limit(input.limit);
+  return rows.map((r) => r.id);
+}
+
+/**
+ * For a bulk decision (Retry all): locks the document then the task, like lockTaskForDecision, and
+ * returns them only if the task is still open and nobody holds a live claim on it.
+ */
+export async function lockUnclaimedTask(tx: TenantTx, taskId: string, now: Date) {
+  const [ref] = await tx.db
+    .select({ documentId: reviewTasks.documentId })
+    .from(reviewTasks)
+    .where(eq(reviewTasks.id, taskId));
+  if (!ref) return null;
+  const [document] = await tx.db.select().from(documents).where(eq(documents.id, ref.documentId)).for("update");
+  const task = await lockTask(tx, taskId);
+  if (!document || !task || task.status === "resolved" || task.status === "awaiting_extraction") return null;
+  if (task.status === "claimed" && task.leaseExpiresAt !== null && task.leaseExpiresAt > now) return null;
+  return { document, task };
+}

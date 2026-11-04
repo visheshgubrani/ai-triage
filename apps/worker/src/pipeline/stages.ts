@@ -23,6 +23,7 @@ import {
   advanceDocument,
   applyRouteDecision,
   createAction,
+  currentRunStatus,
   enqueue,
   enqueueStage,
   failRun,
@@ -336,17 +337,19 @@ export async function failedStage(
   job: StageJob,
   source: { queue: string | null; output: unknown },
 ): Promise<void> {
-  const stage = PIPELINE_STAGES.find((s) => STAGE_QUEUES[s] === source.queue);
-  if (!stage) {
-    console.error(`doc.failed: unknown source queue ${source.queue} for run ${job.runId}`);
-    return;
-  }
+  const known = PIPELINE_STAGES.find((s) => STAGE_QUEUES[s] === source.queue);
+  // Never leave a run waiting: without the source queue, fail it at the status it's in.
+  const status = known
+    ? STAGE_INPUT_STATUS[known]
+    : await withTenantTx(deps.pool, job.tenantId, (tx) => currentRunStatus(tx, job.runId));
+  if (!known) console.error(`doc.failed: unknown source queue ${source.queue} for run ${job.runId}`);
+  if (!status) return;
   const output = source.output as { message?: unknown; name?: unknown } | null;
   const message = typeof output?.message === "string" ? output.message : JSON.stringify(source.output ?? null);
   // Retries that ran out because the provider stayed busy say so: Retry all, once it recovers.
   const busy = output?.name === "ProviderBusyError" || output?.name === "ProviderCoolingDownError";
   const reason = busy ? "provider_unavailable" : "retries_exhausted";
   await withTenantTx(deps.pool, job.tenantId, (tx) =>
-    failRun(tx, { runId: job.runId, expectedStatus: STAGE_INPUT_STATUS[stage], reason, message }),
+    failRun(tx, { runId: job.runId, expectedStatus: status, reason, message }),
   );
 }

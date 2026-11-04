@@ -389,3 +389,38 @@ describe("email view", () => {
     expect(view.html).not.toContain("tracker.example");
   });
 });
+
+describe("POST /review/retry-failed (Retry all)", () => {
+  it("retries every open, unclaimed failure of one reason, once, and is admins only", async () => {
+    const { tenantId, reviewer, seed, detail } = await setup();
+    const admin = await t.memberCookie(tenantId, "admin");
+    const busy1 = await seed({ kind: "processing_failed", reasons: ["provider_unavailable"] });
+    const busy2 = await seed({ kind: "processing_failed", reasons: ["provider_unavailable"] });
+    const refused = await seed({ kind: "processing_failed", reasons: ["llm_refusal"] });
+    // A reviewer working on one: Retry all leaves it to them.
+    const held = await seed({ kind: "processing_failed", reasons: ["provider_unavailable"] });
+    expect((await post(`/review/tasks/${held.taskId}/claim`, reviewer)).status).toBe(200);
+
+    expect((await post("/review/retry-failed", reviewer, { reason: "provider_unavailable" })).status).toBe(403);
+    const res = await post("/review/retry-failed", admin, { reason: "provider_unavailable" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ retried: 2, skipped: 0 });
+
+    for (const { documentId } of [busy1, busy2]) {
+      const doc = await detail(documentId);
+      expect(doc?.document).toMatchObject({ processingStatus: "received", reviewStatus: "not_required" });
+    }
+    expect((await detail(refused.documentId))?.document.processingStatus).toBe("failed");
+    expect((await detail(held.documentId))?.document.processingStatus).toBe("failed");
+
+    // Pressing it again finds nothing left to do.
+    expect(await (await post("/review/retry-failed", admin, { reason: "provider_unavailable" })).json()).toEqual({
+      retried: 0,
+      skipped: 0,
+    });
+    const audit = await withTenantTx(pool, tenantId, (tx) =>
+      tx.db.execute("select details from audit_events where action = 'runs.bulk_retried'"),
+    );
+    expect(audit.rows).toEqual([{ details: { retried: 2, reason: "provider_unavailable", before: null } }]);
+  });
+});

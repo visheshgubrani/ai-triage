@@ -30,6 +30,8 @@ Phase 7: production-ready (docs/architecture.md §9).
   - S3 and slow HTTP clients;
   - shutdown (the worker drains, then aborts its in-flight calls).
 - Fairness across tenants: `WORKER_TENANT_CONCURRENCY` caps how many of one tenant's jobs run at once per queue, across every worker. Eval items have their own cap (`WORKER_TENANT_EVAL_CONCURRENCY`).
+- Self-healing: every five minutes a reconciler finds runs, deliveries and eval runs left waiting on a job that no longer exists, and fails them visibly. Runs go to Processing failed as `stalled`, deliveries to Delivery failures. Nothing is silently re-run.
+- **Retry all** on the Processing failed view (admins), optionally for one reason, such as after a provider outage.
 - Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
 ### Fixed

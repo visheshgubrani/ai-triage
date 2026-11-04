@@ -1,8 +1,16 @@
 import type { DecisionRequest, DecisionResponse } from "@ai-triage/contracts";
-import { ACTIONS_BY_TASK_KIND, type EvalSplit, OTHER_CATEGORY, QUEUES, type ReviewErrorCode } from "@ai-triage/core";
+import {
+  ACTIONS_BY_TASK_KIND,
+  type EvalSplit,
+  type FailureReason,
+  OTHER_CATEGORY,
+  QUEUES,
+  type ReviewErrorCode,
+} from "@ai-triage/core";
 import { approvedPayload, checkUserRevision, proposeAction } from "@ai-triage/core/pipeline";
 import { fieldDiff } from "@ai-triage/core/review";
 import {
+  type AuditActor,
   createAction,
   type ExtractionRow,
   enqueue,
@@ -11,13 +19,16 @@ import {
   insertDecision,
   insertEvalItem,
   insertUserExtraction,
+  listRetryableFailures,
   loadClassification,
   loadExtraction,
   loadRun,
   loadSchemaVersion,
   loadTaskDocument,
   lockTaskForDecision,
+  lockUnclaimedTask,
   ReviewError,
+  recordAudit,
   resolveTask,
   setAwaitingExtraction,
   setCurrentExtraction,
@@ -180,30 +191,87 @@ export async function decide(
       }
 
       case "retry": {
-        const config = await getActiveConfig(tx);
-        if (!config) throw new Error("the tenant has no active pipeline config");
-        // A failed reclassify run is retried as one: the reviewer's category still stands.
-        const failed = document.currentRunId ? (await loadRun(tx, document.currentRunId))?.run : null;
-        const runId = await startRun(
-          tx,
-          deps.boss,
-          failed?.trigger === "reclassify" && failed.forcedCategory
-            ? {
-                documentId: document.id,
-                configId: config.id,
-                trigger: "reclassify",
-                forcedCategory: failed.forcedCategory,
-              }
-            : { documentId: document.id, configId: config.id, trigger: "retry" },
-        );
-        // The new run opens its own task if it needs a human; it may also auto-approve.
-        await resolveTask(tx, task.id, now);
-        await setReviewOutcome(tx, document.id, { reviewStatus: "not_required" });
+        const runId = await retryRun(tx, deps, document, task, now);
         const decisionId = await insertDecision(tx, { task, reviewerId: actor.user.id, outcome: "retry", note });
         return { ...result, decisionId, outcome: "retry", runId };
       }
     }
   });
+}
+
+/**
+ * Retry (one transaction, the document and task locked): a new run from parse with the active
+ * config. A failed reclassify run is retried as one, so the reviewer's category still stands, unless
+ * that category is no longer in the config (then a plain retry; reclassifying into it would fail).
+ * The new run opens its own task if it needs a human; it may also auto-approve.
+ */
+async function retryRun(
+  tx: TenantTx,
+  deps: AppDeps,
+  document: { id: string; currentRunId: string | null },
+  task: { id: string },
+  now: Date,
+): Promise<string> {
+  const config = await getActiveConfig(tx);
+  if (!config) throw new Error("the tenant has no active pipeline config");
+  const failed = document.currentRunId ? (await loadRun(tx, document.currentRunId))?.run : null;
+  const forced =
+    failed?.trigger === "reclassify" && failed.forcedCategory
+      ? config.categories.some((c) => c.category === failed.forcedCategory)
+        ? failed.forcedCategory
+        : null
+      : null;
+  const runId = await startRun(
+    tx,
+    deps.boss,
+    forced
+      ? { documentId: document.id, configId: config.id, trigger: "reclassify", forcedCategory: forced }
+      : { documentId: document.id, configId: config.id, trigger: "retry" },
+  );
+  await resolveTask(tx, task.id, now);
+  await setReviewOutcome(tx, document.id, { reviewStatus: "not_required" });
+  return runId;
+}
+
+/** How many failed documents one Retry all takes; the button can be pressed again for the rest. */
+export const RETRY_ALL_LIMIT = 500;
+
+/**
+ * Retry all (admins): Retry on every open, unclaimed `processing_failed` task, optionally of one
+ * reason (after a provider outage, `provider_unavailable`; after a budget top-up, `budget_exhausted`).
+ * Each document gets its own transaction, exactly as a reviewer's Retry, so one that moved on (a
+ * reviewer claimed it, it was already retried) is skipped. One audit event records the batch.
+ */
+export async function retryFailed(
+  deps: AppDeps,
+  actor: TenantContext,
+  audit: AuditActor,
+  input: { reason?: FailureReason; before?: Date },
+): Promise<{ retried: number; skipped: number }> {
+  const now = deps.now();
+  const taskIds = await withTenantTx(deps.pool, actor.tenantId, (tx) =>
+    listRetryableFailures(tx, { ...input, limit: RETRY_ALL_LIMIT, now }),
+  );
+  let retried = 0;
+  for (const taskId of taskIds) {
+    const done = await withTenantTx(deps.pool, actor.tenantId, async (tx) => {
+      const locked = await lockUnclaimedTask(tx, taskId, now);
+      if (locked?.task.kind !== "processing_failed") return false;
+      await retryRun(tx, deps, locked.document, locked.task, now);
+      await insertDecision(tx, { task: locked.task, reviewerId: actor.user.id, outcome: "retry", note: "Retry all" });
+      return true;
+    });
+    if (done) retried++;
+  }
+  if (retried > 0) {
+    await withTenantTx(deps.pool, actor.tenantId, (tx) =>
+      recordAudit(tx, audit, {
+        action: "runs.bulk_retried",
+        details: { retried, reason: input.reason ?? null, before: input.before?.toISOString() ?? null },
+      }),
+    );
+  }
+  return { retried, skipped: taskIds.length - retried };
 }
 
 /**

@@ -1,0 +1,1 @@
+CREATE INDEX "documents_in_flight_idx" ON "documents" USING btree ("updated_at") WHERE processing_status in ('received', 'parsed', 'classified', 'extracted');

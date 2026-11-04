@@ -114,6 +114,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `WORKER_TENANT_CONCURRENCY` | worker | – | Fairness across tenants: at most this many of one tenant's jobs run at once per queue (pipeline stages, delivery, Gmail fetch), counted across every worker. Unset: no cap (one company). With several tenants, about half the cluster's slots per LLM queue (replicas × WORKER_LLM_CONCURRENCY). |
 | `WORKER_TENANT_EVAL_CONCURRENCY` | worker | – | The same cap for eval items, so one tenant's eval run can't take every eval slot. |
 | `WORKER_SHUTDOWN_GRACE_MS` | worker | `25000` | On SIGTERM, how long running jobs may finish before their model calls are aborted (they retry on another worker). Keep it under the container's stop grace period. |
+| `RECONCILE_STALL_MINUTES` | worker | `30` | Work unchanged this long is checked against the queue: a run, delivery or eval run with no job left is marked failed (Processing failed, Delivery failures), never silently re-run. At least 15. |
 | `PARSE_TIMEOUT_MS` | worker | `60000` | Files are parsed in a sandboxed thread; one that takes longer fails as parse_timeout. |
 | `PARSE_MAX_MEMORY_MB` | worker | `512` | Heap limit of the parse thread. A file that needs more fails as parse_timeout. |
 

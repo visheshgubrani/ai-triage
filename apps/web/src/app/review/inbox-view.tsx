@@ -1,6 +1,6 @@
 "use client";
 
-import type { DeliveryFailure, InboxAge, InboxQuery, InboxResponse } from "@ai-triage/contracts";
+import type { DeliveryFailure, InboxAge, InboxQuery, InboxResponse, RetryFailedRequest } from "@ai-triage/contracts";
 import { INBOX_AGES } from "@ai-triage/contracts";
 import type { ReviewTaskKind } from "@ai-triage/core";
 import Link from "next/link";
@@ -86,7 +86,7 @@ function FacetRow({
   );
 }
 
-export function InboxView({ canReview }: { canReview: boolean }) {
+export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; isAdmin?: boolean }) {
   const router = useRouter();
   const [view, setView] = useState<View>("open");
   const [filters, setFilters] = useState<Filters>({});
@@ -147,6 +147,25 @@ export function InboxView({ canReview }: { canReview: boolean }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [claimNext, canReview, view]);
 
+  /** Retry all: every open, unclaimed failure shown (of the selected reason, if one is picked). */
+  async function retryAll() {
+    const scope = filters.reason ? `failed with ${filters.reason}` : "that failed";
+    if (!window.confirm(`Retry every unclaimed document ${scope}? Each one runs the pipeline again.`)) return;
+    setBusy(true);
+    try {
+      const reason = filters.reason as RetryFailedRequest["reason"];
+      const res = await browserApi.review["retry-failed"].$post({ json: { reason } });
+      if (!res.ok) return setMessage((await readError(res)).error);
+      const { retried, skipped } = await res.json();
+      setMessage(
+        `Retrying ${retried} document${retried === 1 ? "" : "s"}${skipped ? ` (${skipped} moved on before their turn)` : ""}.`,
+      );
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function redeliver(actionId: string) {
     const res = await browserApi.actions[":id"].redeliver.$post({ param: { id: actionId } });
     setMessage(res.ok ? "Queued for redelivery, with the same Idempotency-Key." : (await readError(res)).error);
@@ -181,8 +200,19 @@ export function InboxView({ canReview }: { canReview: boolean }) {
             {v.id === "open" && counts ? <span className="ml-1 text-neutral-500">{counts.total}</span> : null}
           </button>
         ))}
+        {isAdmin && view === "failed" && tasks.length > 0 && (
+          <Button onClick={retryAll} disabled={busy} className="mb-2 ml-auto">
+            Retry all{filters.reason ? ` ${filters.reason}` : ""} ({tasks.length})
+          </Button>
+        )}
         {canReview && view !== "delivery" && (
-          <Button variant="primary" shortcut="n" onClick={claimNext} disabled={busy} className="mb-2 ml-auto">
+          <Button
+            variant="primary"
+            shortcut="n"
+            onClick={claimNext}
+            disabled={busy}
+            className={`mb-2 ${isAdmin && view === "failed" && tasks.length > 0 ? "" : "ml-auto"}`}
+          >
             Claim next
           </Button>
         )}
