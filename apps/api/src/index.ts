@@ -68,7 +68,7 @@ const app = createApp({
   auth,
   boss,
   storage,
-  limits: { maxFileBytes: Number(process.env.MAX_FILE_MB ?? 20) * 2 ** 20 },
+  limits: { maxFileBytes: (Number(process.env.MAX_FILE_MB) || 20) * 2 ** 20 },
   postmark: postmarkUser && postmarkPassword ? { user: postmarkUser, password: postmarkPassword } : null,
   webOrigin,
   hsts: baseURL.startsWith("https://"),

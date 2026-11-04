@@ -1,10 +1,53 @@
 # ai-triage
 
-An open-source AI triage inbox. Emails and documents come in, an LLM (Claude, or any OpenAI-compatible model) classifies them and extracts structured, schema-validated fields, and anything uncertain goes to a human approval queue instead of being acted on. An evals page measures accuracy per category plus cost and latency per request.
+An open-source AI triage inbox for the documents a company receives by email: invoices, support requests, contracts, and any document type you define.
+1. Mail and files come in.
+2. A model classifies each one and extracts schema-validated fields.
+3. Deterministic checks decide whether it's safe to act on, or whether a person should look first.
+4. Approved results go to your systems as signed webhooks.
+5. An evals page measures all of it on labeled data, with honest error bars.
 
-> **Status: the MVP is complete.** Documents are ingested, classified and extracted; uncertain ones go to a review queue; approvals are delivered as signed webhooks; and an evals page measures the same pipeline on labeled data, with every rate shown with its n and a 95% Wilson lower bound. See [docs/architecture.md](docs/architecture.md) for the design.
+It runs anywhere Docker does, with one command, and works with Claude, OpenAI, DeepSeek, OpenRouter or a local model. It's MIT licensed.
 
 ![Evals: runs with accuracy and auto-approval precision, each with n and a lower bound](docs/media/evals-runs.png)
+
+## Three ways in
+
+**Try it** (about 2 minutes, no API key: recorded model answers and sample documents):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/install.sh | sh -s -- --demo
+```
+
+Open http://localhost:3000 and sign in as `admin@demo.test` / `demo-password`. From a clone, `docker compose up` runs the same demo.
+
+**Run it for your team**, on your computer or a server with HTTPS:
+
+```bash
+export ANTHROPIC_API_KEY=…    # or OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY
+curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/install.sh | sh
+# a server: … | sh -s -- --host triage.example.com --email you@example.com
+# scans too: add --ocr vulkan (AMD or Intel GPU), --ocr nvidia, or --ocr cpu
+```
+
+The installer:
+- generates every secret and starts everything;
+- prints a one-time setup link for your workspace;
+- leaves `./triage` behind for status, logs, backups and upgrades.
+
+Then connect email: forward a mailbox to Postmark (any provider, no DNS) or connect Gmail, and point a webhook at your system. [docs/install.md](docs/install.md) walks through it, including how an AI agent should do the install.
+
+**Develop it** (Node ≥ 24, pnpm 12, Docker):
+
+```bash
+pnpm install
+pnpm dev:setup     # .env, Postgres, storage, a webhook catcher, migrations, demo data
+pnpm dev           # http://localhost:3000
+```
+
+`pnpm preflight` checks the setup and prints the fix for each problem. [CONTRIBUTING.md](CONTRIBUTING.md) has the checks and conventions, and [docs/architecture.md](docs/architecture.md) the design.
+
+## What it does
 
 ```
  Postmark inbound ─┐                                     ┌─> Next.js: inbox · review · evals · settings
@@ -19,37 +62,23 @@ An open-source AI triage inbox. Emails and documents come in, an LLM (Claude, or
                    model API      (eval runner: same code, results → eval_results only)
 ```
 
-## Stack
+- **Your own document types.**
+  - Define a type and its fields in Settings → Categories: text, numbers, amounts, dates, one-of lists, yes/no, lists, and tables of rows.
+  - Start from scratch or from a starter (purchase order, receipt, credit note, shipping notice, refund request, job application, insurance claim, order confirmation).
+  - The built-in invoice, support request and contract types add arithmetic and date rules.
+- **Nothing acts on a guess.**
+  - Each value the model extracts must quote the source, and the quote must be found there.
+  - Schema, required fields, confidence and sender authentication are all checked.
+  - A category auto-approves only once you've calibrated it, and only above its measured threshold. Everything else goes to a review queue.
+- **Scans and photos** can be read with optional OCR (PaddleOCR-VL 1.6, on CPU or GPU), so their quotes can be verified too.
+- **Out to your systems:** each approval is delivered as a signed webhook, at least once, with an idempotency key. Other systems can send documents and look up their outcome through a small REST API ([docs/api.md](docs/api.md)).
+- **Built to keep running:**
+  - per-tenant fairness and provider backpressure;
+  - stalled work surfaced, never silently redone;
+  - JSON logs and metrics, and a System health page.
+  - Load and chaos numbers are in [docs/reliability.md](docs/reliability.md).
 
-TypeScript · Hono (API) · Next.js (UI) · Postgres + Drizzle + pg-boss · S3-compatible storage (RustFS locally) · Claude API · pnpm + Turborepo · Biome · Vitest
-
-## Quickstart
-
-Requires Docker only. No API key: models run in **replay mode** from recorded responses.
-
-```bash
-docker compose up
-```
-
-It pulls the prebuilt image (`ghcr.io/visheshgubrani/ai-triage`, about 320 MB; `--build` builds it from your checkout instead). A one-shot `init` service applies the migrations and seeds a demo tenant with 60 synthetic documents and the labeled eval dataset; the worker then processes them and runs the first evals (dev, calib, and test on a frozen config). Open http://localhost:3000 and sign in as `admin@demo.test` / `demo-password`. Re-running is idempotent.
-
-## Getting started (development)
-
-Requires Node ≥ 24, pnpm 12 and Docker.
-
-```bash
-pnpm install
-pnpm dev:setup     # .env, then Postgres :5440, RustFS :9020 and a webhook catcher :9030, migrations, demo seed
-pnpm dev           # web http://localhost:3000 · api http://localhost:8787
-```
-
-`pnpm dev:setup` is safe to re-run; `pnpm dev:reset` wipes the local data first. If something doesn't work, `pnpm preflight` checks the installation (versions, environment, database, migrations, storage, whether each tenant's model config can run) and prints the fix for each problem. Every environment variable is described in [docs/configuration.md](docs/configuration.md).
-
-Sign in at http://localhost:3000/sign-in as `admin@demo.test` or `reviewer@demo.test`, with the password `demo-password`. These are **dev-only** demo credentials created by the seed.
-
-The app connects to Postgres as a restricted role (`DATABASE_URL`), so row-level security always applies. Only migrations and seeds use the owner (`DATABASE_OWNER_URL`).
-
-LLM calls default to **replay mode** (recorded responses, no API key, no spend). The demo tenant uses GPT-6.1 Terra (`DEMO_MODEL`), the model its responses were recorded with; configs can use Claude, OpenAI, DeepSeek, OpenRouter or a local server. Set `LLM_MODE=live` and the provider's key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) to call a model for real.
+![Settings → Categories: a purchase order from a starter, with its fields](docs/media/categories.png)
 
 ## Google Workspace and Gmail
 
@@ -129,14 +158,17 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 
 Production refuses to start on the demo's defaults. Webhooks can't reach private networks, and their secrets (and mailbox tokens) are encrypted at rest. Sign-up is by invitation or Workspace domain only. Admins need TOTP 2FA. Every security-relevant change is in an audit log, and documents can be deleted or expire on a retention schedule. [docs/security.md](docs/security.md) has the threat model, the controls and the production checklist. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-## License
+## Stack and license
 
-MIT
+TypeScript · Hono (API) · Next.js (UI) · Postgres + Drizzle + pg-boss · S3-compatible storage (RustFS locally) · llama.cpp + PaddleOCR-VL (optional OCR) · pnpm + Turborepo · Biome · Vitest. MIT licensed.
 
 ## Known limits
 
 - **Repeated model calls are possible.** Each response is saved as soon as it arrives and reused on retry, but a worker that crashes between Claude answering and that save pays for the call again on retry. Every attempt is kept for cost accounting, and only one is canonical.
-- **Evidence matching proves a quote exists, not that it supports the value.** A verbatim quote must appear in the source (or on the cited PDF page); scans and images can't be checked, so they always go to review.
+- **Evidence matching proves a quote exists, not that it supports the value.**
+  - A verbatim quote must appear in the source, or on the cited PDF page.
+  - Without OCR, scans and images can't be checked, so they always go to review.
+  - With OCR, they're checked against the OCR'd text, which is only as good as the OCR.
 - **The prompt-injection fixtures are regression tests, not proof of resistance.** A deterministic gate sends text that addresses the triage system to review, but phrasing it doesn't know gets through to the model. Triage calls have no tools, the only action is a webhook to a tenant-configured target, and automation is opt-in per category, which keeps the damage of a confidently wrong answer small.
 - **Inline email images (`cid:`) and remote images aren't shown** in the review view: the HTML is sanitized and rendered with a CSP that blocks remote loads.
 - **Free-text fields are graded by presence only.** A summary written in the model's own words can't be graded by string matching, so `issue_summary` counts as right when it is present exactly when the label has one.

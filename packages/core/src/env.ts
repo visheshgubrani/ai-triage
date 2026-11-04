@@ -833,6 +833,14 @@ export const ENV_VARS: readonly EnvVar[] = [
     kind: "bool",
     description: "`pnpm e2e`: record videos of the walkthroughs (the README GIFs).",
   },
+  {
+    name: "E2E_INVITE_URL",
+    group: "End-to-end tests",
+    processes: ["cli"],
+    kind: "url",
+    description:
+      "`pnpm e2e`: invite link of a fresh workspace on the simulator, for e2e/categories.spec.ts (skipped without it). Make one with `DEFAULT_MODEL=sim:simulated pnpm tenant:create`.",
+  },
 ];
 
 /** Variables some code reads that belong to the platform, not to this app. The source scan ignores them. */

@@ -24,30 +24,33 @@ export const repoPath = (value: string | undefined, fallback: string) => {
  */
 export const tenantCap = (cap: number | null) => (cap ? { groupConcurrency: cap } : {});
 
+/** A numeric setting; unset or empty (compose passes `${X:-}` as "") means the default. */
+const num = (value: string | undefined, fallback: number) => (value?.trim() ? Number(value) : fallback);
+
 export const workerConfig = (env: NodeJS.ProcessEnv = process.env) => ({
   cassetteDir: repoPath(env.CASSETTE_DIR, "fixtures/cassettes"),
   fixturesDir: repoPath(env.FIXTURES_DIR, "fixtures"),
-  maxPdfPages: Number(env.MAX_PDF_PAGES ?? 100),
-  maxFileBytes: Number(env.MAX_FILE_MB ?? 20) * 2 ** 20,
-  llmConcurrency: Number(env.WORKER_LLM_CONCURRENCY ?? 4),
-  evalConcurrency: Number(env.WORKER_EVAL_CONCURRENCY ?? 2),
-  webhookTimeoutMs: Number(env.WEBHOOK_TIMEOUT_MS ?? 10_000),
-  mailboxConcurrency: Number(env.WORKER_MAILBOX_CONCURRENCY ?? 4),
-  mailboxSyncBatch: Number(env.MAILBOX_SYNC_BATCH ?? 200),
-  shutdownGraceMs: Number(env.WORKER_SHUTDOWN_GRACE_MS ?? 25_000),
+  maxPdfPages: num(env.MAX_PDF_PAGES, 100),
+  maxFileBytes: num(env.MAX_FILE_MB, 20) * 2 ** 20,
+  llmConcurrency: num(env.WORKER_LLM_CONCURRENCY, 4),
+  evalConcurrency: num(env.WORKER_EVAL_CONCURRENCY, 2),
+  webhookTimeoutMs: num(env.WEBHOOK_TIMEOUT_MS, 10_000),
+  mailboxConcurrency: num(env.WORKER_MAILBOX_CONCURRENCY, 4),
+  mailboxSyncBatch: num(env.MAILBOX_SYNC_BATCH, 200),
+  shutdownGraceMs: num(env.WORKER_SHUTDOWN_GRACE_MS, 25_000),
   // Off unless set: a single-company install has no one to be fair to.
   tenantConcurrency: Number(env.WORKER_TENANT_CONCURRENCY) || null,
   tenantEvalConcurrency: Number(env.WORKER_TENANT_EVAL_CONCURRENCY) || null,
-  parseTimeoutMs: Number(env.PARSE_TIMEOUT_MS ?? 60_000),
-  reconcileStallMinutes: Number(env.RECONCILE_STALL_MINUTES ?? 30),
-  httpPort: Number(env.WORKER_HTTP_PORT ?? 9100),
-  parseMaxMemoryMb: Number(env.PARSE_MAX_MEMORY_MB ?? 512),
+  parseTimeoutMs: num(env.PARSE_TIMEOUT_MS, 60_000),
+  reconcileStallMinutes: num(env.RECONCILE_STALL_MINUTES, 30),
+  httpPort: num(env.WORKER_HTTP_PORT, 9100),
+  parseMaxMemoryMb: num(env.PARSE_MAX_MEMORY_MB, 512),
   // Optional OCR for scans and photos (core/pipeline/ocr.ts); null when OCR_URL is unset.
   ocr: env.OCR_URL
     ? {
         url: env.OCR_URL,
-        timeoutMs: Number(env.OCR_TIMEOUT_MS ?? 120_000),
-        maxPages: Number(env.OCR_MAX_PAGES ?? 20),
+        timeoutMs: num(env.OCR_TIMEOUT_MS, 120_000),
+        maxPages: num(env.OCR_MAX_PAGES, 20),
       }
     : null,
   // The api's inbound email limit (postmarkPerTenant, 500 an hour), shared by Gmail sync.

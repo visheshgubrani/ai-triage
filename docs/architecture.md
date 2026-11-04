@@ -366,9 +366,10 @@ pg-boss keeps finished job ids for 7 days and ignores a re-send, so the reconcil
    - M10: a first-run setup page, a getting-started checklist and UI polish.
    - M11: pipeline settings (activating `review_all` configs without freezing).
    - M12: custom categories.
-   - M13: the public API's reads, key scopes and OpenAPI.
-   - M14: production deploy on one VM (Compose and Caddy).
-   - M15: docs, e2e in CI and release 0.7.0.
+   - M13: the public API's reads (a document's state by id or `external_ref`, category schemas) and key scopes.
+   - M14: install anywhere with one command (`install.sh`, `deploy/`, `./triage`), and email in through Postmark with no DNS.
+   - M15: optional OCR with PaddleOCR-VL 1.6 on llama.cpp (CPU, Vulkan, CUDA).
+   - M16: README, CONTRIBUTING, e2e in CI and release 0.7.0.
 
 **Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Microsoft 365 / Outlook sync, Gmail push (Pub/Sub) and Workspace domain-wide delegation, outbound invitation email, erasing eval items, SSE, OpenTelemetry, and dual-run agreement.
 

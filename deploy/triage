@@ -138,6 +138,13 @@ case "$cmd" in
       index($0, k "=") == 1 { print k "=" v; done = 1; next } { print }
       END { if (!done) print k "=" v }' .env >.env.tmp
     chmod 600 .env.tmp && mv .env.tmp .env
+    case "$key" in
+      COMPOSE_*) ;;
+      *)
+        grep -q "\${$key[:}]" compose*.yaml ||
+          echo "warning: no service here reads $key (docs/configuration.md lists what each one reads)." >&2
+        ;;
+    esac
     echo "Set $key. Restarting what reads it…"
     up
     ;;

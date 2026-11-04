@@ -62,8 +62,14 @@ Phase 7: production-ready (docs/architecture.md §9).
 - **API key scopes:** `ingest` and `read`, chosen when a key is created (Settings, or `pnpm api-key:create --scopes`). Existing keys keep `ingest` only, so none gains read access by upgrading.
 - Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
+### Changed
+
+- The README starts with the three ways in: try it, run it for your team, develop it. `CONTRIBUTING.md` is new.
+- CI runs the Playwright walkthroughs against the demo built from each commit, including a custom-category spec on the simulator. It also runs the installer end to end, locally and as an HTTPS server.
+
 ### Fixed
 
+- Empty settings, such as `X=` in `.env` or compose's `${X:-}`, now mean "unset" for the worker's numbers. They used to become 0, and the worker refused to start.
 - Production refused `http://localhost` as `PUBLIC_URL`, which a local install needs. Loopback origins are now accepted, since browsers treat them as secure.
 
 - A slow model call could outlast its job's expiry, so pg-boss retried it while the first call was still running and paid twice. Expiries now outlast the longest call.
