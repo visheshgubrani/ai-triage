@@ -20,6 +20,7 @@ export default defineConfig({
     "bin/eval-import": "src/bin/eval-import.ts",
     "bin/tenant-delete": "src/bin/tenant-delete.ts",
     "bin/preflight": "src/bin/preflight.ts",
+    "bin/configure": "src/bin/configure.ts",
     "bin/fake-google": "../../packages/mailbox/src/testing/serve.ts",
     "bin/llm-sim": "../../packages/llm/src/testing/serve.ts",
   },

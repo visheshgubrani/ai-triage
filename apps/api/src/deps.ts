@@ -1,4 +1,4 @@
-import type { LlmCallMode } from "@ai-triage/core";
+import type { LlmCallMode, ModelRef } from "@ai-triage/core";
 import type { Auth, Db, KeyRing, PgBoss, Pool } from "@ai-triage/db";
 import type { IngestLimits } from "@ai-triage/ingest";
 import type { GoogleConfig } from "@ai-triage/mailbox";
@@ -34,6 +34,8 @@ export interface AppDeps {
   keys: KeyRing;
   /** Admin-only routes need the admin's TOTP 2FA (REQUIRE_ADMIN_2FA; off under TRIAGE_DEMO). */
   requireAdmin2fa: boolean;
+  /** A new workspace's first model (DEFAULT_MODEL); undefined keeps the built-in default. */
+  defaultModel?: ModelRef;
   /** Domain of generated inbound addresses (INBOUND_DOMAIN); null keeps the current address's domain. */
   inboundDomain: string | null;
   /** Request limits (RATE_LIMITS, scaled by RATE_LIMIT_SCALE); tests lower them. */

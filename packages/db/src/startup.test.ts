@@ -22,7 +22,7 @@ describe("unsafeConfig", () => {
     const problems = unsafeConfig(
       {
         BETTER_AUTH_SECRET: DEV_DEFAULTS.betterAuthSecret,
-        PUBLIC_URL: "http://localhost:3000",
+        PUBLIC_URL: "http://triage.example.com",
         POSTMARK_INBOUND_PASSWORD: DEV_DEFAULTS.postmarkPassword,
         ENCRYPTION_KEY: DEV_ENCRYPTION_KEY,
         S3_SECRET_ACCESS_KEY: DEV_DEFAULTS.s3SecretKey,
@@ -37,6 +37,13 @@ describe("unsafeConfig", () => {
     const problems = unsafeConfig({ ...safe, BETTER_AUTH_SECRET: "short", PUBLIC_URL: undefined }, "api");
     expect(problems.join("\n")).toMatch(/BETTER_AUTH_SECRET/);
     expect(problems.join("\n")).toMatch(/PUBLIC_URL/);
+  });
+
+  it("accepts plain http only on this machine (a local install)", () => {
+    for (const url of ["http://localhost:3000", "http://127.0.0.1:4200", "http://[::1]:3000"]) {
+      expect(unsafeConfig({ ...safe, PUBLIC_URL: url }, "api"), url).toEqual([]);
+    }
+    expect(unsafeConfig({ ...safe, PUBLIC_URL: "http://localhost.example.com" }, "api").join()).toMatch(/PUBLIC_URL/);
   });
 
   it("still accepts the older WEB_ORIGIN as the public URL", () => {

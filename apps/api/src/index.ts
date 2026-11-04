@@ -7,6 +7,7 @@ import {
   createBoss,
   createDb,
   createPool,
+  defaultModelFromEnv,
   exitOnStartupError,
   keyRingFromEnv,
   rotateSetupToken,
@@ -78,6 +79,7 @@ const app = createApp({
   keys: keyRingFromEnv(process.env),
   rateLimits: rateLimitsFromEnv(process.env),
   inboundDomain: process.env.INBOUND_DOMAIN || null,
+  defaultModel: defaultModelFromEnv(process.env),
   // On unless turned off explicitly, or for the local demo (whose admin has a published password anyway).
   requireAdmin2fa: process.env.REQUIRE_ADMIN_2FA
     ? process.env.REQUIRE_ADMIN_2FA === "true"

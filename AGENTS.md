@@ -5,6 +5,7 @@ Context for coding agents (and humans). Keep it lean: only what every session ne
 - [docs/llm.md](docs/llm.md): model providers, Claude API notes, LLM modes and cassettes.
 - [docs/security.md](docs/security.md): the threat model, controls and the production checklist.
 - [docs/google.md](docs/google.md): the Google OAuth client, Gmail sync and what Google requires.
+- [docs/install.md](docs/install.md): installing and running it (install.sh, deploy/, ./triage), including how an AI agent should install it.
 - [docs/api.md](docs/api.md): the public REST API (scopes, states) and the webhook receiver contract.
 - [docs/operations.md](docs/operations.md): health checks, logs, metrics, alerts and runbooks. [docs/configuration.md](docs/configuration.md) (generated) lists every variable; [docs/troubleshooting.md](docs/troubleshooting.md) is by symptom.
 
@@ -65,6 +66,7 @@ pnpm load --docs 1000 --tenants 5 --skew 0.8   # load and chaos test against a r
 pnpm eval:import <items.jsonl> [--dataset Main]
 LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY (see docs/llm.md)
 docker compose up            # the whole demo in containers (pulls the GHCR image; --build builds it), replay mode, no key
+TRIAGE_SOURCE=$PWD TRIAGE_IMAGE=ai-triage ./install.sh --version dev --port 4200 --dir /tmp/t   # install from this checkout (docker build -t ai-triage:dev . first)
 ```
 
 ## Conventions
@@ -116,6 +118,7 @@ docker compose up            # the whole demo in containers (pulls the GHCR imag
 | A built-in category (template) | Built-ins are code with rules; keep `BUILTIN_CATEGORY_NAMES` (schemas), `BUILTIN_CATEGORIES` (core) and `TEMPLATES` equal (`categories.db.test.ts`). Tenants' own types are data: definitions in `packages/schemas/src/definition.ts`, created in Settings → Categories |
 | How a definition compiles (`compileDefinition`) | Stored versions are insert-only, so old versions keep their schema. Keep the output inside `toApiSchema`'s subset (`definition.test.ts` runs every starter) |
 | A public API route (`/api/v1`) | snake_case like the webhook payload, a scope check (`requireScope`), and docs/api.md |
+| What an installation runs (`deploy/`, `install.sh`, `cli configure`) | `scripts/install-smoke.sh` (CI's install-smoke) and docs/install.md. An installation's compose project is never `ai-triage`: that's the repository's demo and dev stack |
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |
 | Add a document-derived table | Add it to `purge_document()` (a new migration replacing the function), or purges fail on the FK |
 | Log or measure something | `log` from `apps/{api,worker}/src/{log,observe}.ts` (never `console.*`; lines get the trace id), metrics on their `registry`. Add a new metric to docs/operations.md |
@@ -134,6 +137,7 @@ docker compose up            # the whole demo in containers (pulls the GHCR imag
 - Better Auth's TOTP step only follows `/sign-in/email`. `packages/db/src/auth-oauth-2fa.ts` repeats it after a Google callback by writing the twoFactor plugin's own cookie and verification rows, so keep `better-auth` pinned; `google-auth.db.test.ts` fails if those internals move.
 - Google sign-up goes through one gate, `admissionRefusal()` (`packages/db/src/admission.ts`), called from Better Auth's `user.create.before` hook. Don't add `trustedProviders: ["google"]`: it would let Google link an account whose email Google didn't verify.
 - Better Auth with `generateId: "uuid"` leaves `id` out of inserts, so every auth table needs `uuid().defaultRandom()`.
+- An installation must not share a compose project name with another stack: compose identifies a stack by name alone, so a second `up` takes over its containers and volumes (`./triage` refuses to). Installs default to `ai-triage-install`.
 - `docker compose up --wait` treats an exited one-shot service as a failure. So `infra:up` waits only on the long-running services, then runs `storage-init` with `run --rm`.
 - Local S3 is RustFS, because MinIO stopped publishing images. The bucket is created with `curl --aws-sigv4`.
 - TypeScript 7 (the native compiler) is in use.

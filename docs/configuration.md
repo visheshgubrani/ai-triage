@@ -49,7 +49,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 |---|---|---|---|
 | `POSTMARK_INBOUND_USER` | api | – | Basic-auth user in the Postmark inbound webhook URL (https://user:pass@host/api/webhooks/postmark). Unset with the password: the webhook is off. |
 | `POSTMARK_INBOUND_PASSWORD` 🔒 | api | – | Basic-auth password for the Postmark webhook. Production needs 16 or more characters. |
-| `INBOUND_DOMAIN` | api, cli | – | Domain of generated (unguessable) inbound addresses. Empty: new tenants get no address, and existing ones keep their domain. |
+| `INBOUND_DOMAIN` | api, cli | – | Where generated (unguessable) inbound addresses live: a domain whose MX points at Postmark (`inbound.acme.com`), or a Postmark server's own inbound address (`abc123@inbound.postmarkapp.com`), which needs no DNS: tenants then get `abc123+t-…@inbound.postmarkapp.com`. Empty: new tenants get no address, and existing ones keep theirs. |
 
 ## API and web
 
@@ -92,6 +92,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | Variable | Read by | Default | Description |
 |---|---|---|---|
 | `LLM_MODE` | api, worker, cli | `replay` | one of `replay`, `record`, `live`. replay (default: recorded responses, no key, no spend) \| record (live calls, saved as cassettes) \| live. |
+| `DEFAULT_MODEL` | api, cli | `claude-opus-5-5` | The model (a MODEL_CATALOG ref) a new workspace's first pipeline config uses for both stages, at low effort where it has one. The installer sets it to match the provider key you gave. Admins change it later in Settings → Pipeline. |
 | `ANTHROPIC_API_KEY` 🔒 | worker, cli | – | Needed only in record/live mode, and only when a config uses Claude. |
 | `OPENAI_API_KEY` 🔒 | worker, cli | – | For `openai:` models. |
 | `OPENAI_BASE_URL` | worker, cli | `https://api.openai.com/v1` | Overrides the OpenAI endpoint (a proxy or gateway). |
@@ -134,6 +135,22 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `CATCHER_PORT` | compose | `9030` | Host port of the local webhook catcher (docker compose). |
 | `DEMO_WEBHOOK_URL` | cli | – | The demo tenant's webhook, which the seed points at the catcher. |
 | `DEMO_WEBHOOK_SECRET` 🔒 | cli | – | The demo tenant's signing secret (the catcher verifies with it). |
+
+## Install (deploy/compose.yaml)
+
+| Variable | Read by | Default | Description |
+|---|---|---|---|
+| `TRIAGE_VERSION` | compose | `latest` | Image tag to run (`ghcr.io/visheshgubrani/ai-triage:<version>`). `./triage upgrade --version` changes it. |
+| `TRIAGE_IMAGE` | compose | `ghcr.io/visheshgubrani/ai-triage` | Image repository, for running your own build. |
+| `APP_HOST` | compose | – | The installation's hostname: `localhost`, or the server's DNS name. |
+| `APP_PORT` | compose | `3000` | A local install's port (`install.sh --port`); stored files are on the next one (FILES_PORT). |
+| `FILES_PORT` | compose | `3001` | A local install's port for stored files: APP_PORT + 1. |
+| `APP_SITE` | compose | – | Caddy's address for the app: the hostname (HTTPS, automatic certificates), or `http://:3000` locally. |
+| `FILES_SITE` | compose | – | Caddy's address for stored files, a separate origin: the hostname on :8443, or `http://:3001` locally. |
+| `ACME_EMAIL` | compose | – | Let's Encrypt account email (certificate expiry notices). |
+| `POSTGRES_PASSWORD` 🔒 | compose | – | Bundled Postgres: the owner's password (DATABASE_OWNER_URL uses it). |
+| `DATABASE_APP_PASSWORD` 🔒 | compose | – | Bundled Postgres: the app role's password (DATABASE_URL uses it; migrate sets it). |
+| `OCR_BACKEND` | compose | `off` | Optional OCR service for scans and photos: nvidia \| vulkan \| rocm \| cpu \| off. |
 
 ## CLI
 

@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { INVITATION_ACCEPT_METHODS, type InvitationAcceptMethod, isOneOf, resolvePublicUrls } from "@ai-triage/core";
-import { createPool, createWorkspace, SYSTEM_ACTOR } from "../index";
+import { createPool, createWorkspace, defaultModelFromEnv, SYSTEM_ACTOR } from "../index";
 
 // `pnpm tenant:create --name "Acme" --slug acme --admin you@acme.com [--accept-with google|google_or_password]`
 //
@@ -43,6 +43,7 @@ try {
     acceptWith: acceptWith as InvitationAcceptMethod,
     actor: SYSTEM_ACTOR("cli: tenant:create"),
     inboundDomain: process.env.INBOUND_DOMAIN || undefined,
+    model: defaultModelFromEnv(process.env),
     now: new Date(),
   });
   console.log(`Created tenant "${name}" (${slug}). Send this invite link to ${admin}; it is shown only once:\n`);

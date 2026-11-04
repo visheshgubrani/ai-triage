@@ -9,27 +9,33 @@ import {
   checkEnvironment,
   checkStorage,
   checkVersions,
+  DEV_HINTS,
   formatResults,
+  INSTALLED_HINTS,
 } from "../preflight";
 
-// `pnpm preflight`: checks that this installation can process documents, and says how to fix what
-// can't. Read-only. Exits 1 when anything fails (warnings don't count).
+// `pnpm preflight [--json]`: checks that this installation can process documents, and says how to
+// fix what can't. Read-only. Exits 1 when anything fails (warnings don't count). `--json` prints
+// `{ ready, checks }` for scripts and agents (`./triage status --json` embeds it).
 
 const env = process.env;
+// `--installed`: run by ./triage inside an installation's worker container.
+const hints = process.argv.includes("--installed") ? INSTALLED_HINTS : DEV_HINTS;
 const results: CheckResult[] = [...checkVersions(env)];
-if (!existsSync(join(repoRoot(), ".env")) && !env.DATABASE_URL) {
+if (!hints.installed && !existsSync(join(repoRoot(), ".env")) && !env.DATABASE_URL) {
   results.push({ status: "fail", title: ".env", detail: "no .env and no environment", fix: "cp .env.example .env" });
 }
-results.push(...checkEnvironment(env));
+results.push(...checkEnvironment(env, hints));
 let mode: ReturnType<typeof getLlmMode> = "replay";
 try {
   mode = getLlmMode(env.LLM_MODE);
 } catch {
   // checkEnvironment already reported it.
 }
-results.push(...(await checkDatabase(env, mode, workerConfig(env).cassetteDir)));
-results.push(...(await checkStorage(env)));
-results.push(...(await checkApi(env)));
+results.push(...(await checkDatabase(env, mode, workerConfig(env).cassetteDir, hints)));
+results.push(...(await checkStorage(env, hints)));
+results.push(...(await checkApi(env, hints)));
 
-console.log(formatResults(results));
-process.exit(results.some((r) => r.status === "fail") ? 1 : 0);
+const ready = !results.some((r) => r.status === "fail");
+console.log(process.argv.includes("--json") ? JSON.stringify({ ready, checks: results }) : formatResults(results));
+process.exit(ready ? 0 : 1);

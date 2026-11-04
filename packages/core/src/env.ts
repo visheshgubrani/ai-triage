@@ -218,7 +218,7 @@ export const ENV_VARS: readonly EnvVar[] = [
     kind: "string",
     example: "",
     description:
-      "Domain of generated (unguessable) inbound addresses. Empty: new tenants get no address, and existing ones keep their domain.",
+      "Where generated (unguessable) inbound addresses live: a domain whose MX points at Postmark (`inbound.acme.com`), or a Postmark server's own inbound address (`abc123@inbound.postmarkapp.com`), which needs no DNS: tenants then get `abc123+t-…@inbound.postmarkapp.com`. Empty: new tenants get no address, and existing ones keep theirs.",
   },
   // ── API and web ──
   {
@@ -414,6 +414,16 @@ export const ENV_VARS: readonly EnvVar[] = [
     example: "replay",
     description:
       "replay (default: recorded responses, no key, no spend) | record (live calls, saved as cassettes) | live.",
+  },
+  {
+    name: "DEFAULT_MODEL",
+    group: "Models",
+    processes: ["api", "cli"],
+    kind: "string",
+    default: "claude-opus-5-5",
+    example: "",
+    description:
+      "The model (a MODEL_CATALOG ref) a new workspace's first pipeline config uses for both stages, at low effort where it has one. The installer sets it to match the provider key you gave. Admins change it later in Settings → Pipeline.",
   },
   {
     name: "ANTHROPIC_API_KEY",
@@ -691,6 +701,53 @@ export const ENV_VARS: readonly EnvVar[] = [
     example: "whsec_dev_only_demo_webhook_secret",
     description: "The demo tenant's signing secret (the catcher verifies with it).",
   },
+  // ── Install (deploy/compose.yaml) ──
+  // Written by `cli configure` into an installation's .env (docs/install.md); compose interpolation only.
+  ...(
+    [
+      [
+        "TRIAGE_VERSION",
+        "Image tag to run (`ghcr.io/visheshgubrani/ai-triage:<version>`). `./triage upgrade --version` changes it.",
+        "latest",
+      ],
+      ["TRIAGE_IMAGE", "Image repository, for running your own build.", "ghcr.io/visheshgubrani/ai-triage"],
+      ["APP_HOST", "The installation's hostname: `localhost`, or the server's DNS name.", undefined],
+      [
+        "APP_PORT",
+        "A local install's port (`install.sh --port`); stored files are on the next one (FILES_PORT).",
+        "3000",
+      ],
+      ["FILES_PORT", "A local install's port for stored files: APP_PORT + 1.", "3001"],
+      [
+        "APP_SITE",
+        "Caddy's address for the app: the hostname (HTTPS, automatic certificates), or `http://:3000` locally.",
+        undefined,
+      ],
+      [
+        "FILES_SITE",
+        "Caddy's address for stored files, a separate origin: the hostname on :8443, or `http://:3001` locally.",
+        undefined,
+      ],
+      ["ACME_EMAIL", "Let's Encrypt account email (certificate expiry notices).", undefined],
+      ["POSTGRES_PASSWORD", "Bundled Postgres: the owner's password (DATABASE_OWNER_URL uses it).", undefined],
+      [
+        "DATABASE_APP_PASSWORD",
+        "Bundled Postgres: the app role's password (DATABASE_URL uses it; migrate sets it).",
+        undefined,
+      ],
+      ["OCR_BACKEND", "Optional OCR service for scans and photos: nvidia | vulkan | rocm | cpu | off.", "off"],
+    ] as const
+  ).map(
+    ([name, description, def]): EnvVar => ({
+      name,
+      group: "Install (deploy/compose.yaml)",
+      processes: ["compose"],
+      kind: "string",
+      description,
+      ...(def ? { default: def } : {}),
+      ...(name.includes("PASSWORD") ? { secret: true } : {}),
+    }),
+  ),
   // ── CLI ──
   {
     name: "TRIAGE_API_URL",

@@ -1,0 +1,33 @@
+# The installation's front door (deploy/compose.yaml). Two origins, as docs/security.md requires:
+# the app at APP_SITE, and stored files at FILES_SITE, so a stored file can never run as the app.
+# A server install gives hostnames, and Caddy gets and renews their certificates (Let's Encrypt);
+# a local one gives http://:3000 and http://:3001.
+{
+	admin off
+	email {$ACME_EMAIL}
+}
+
+{$APP_SITE} {
+	encode zstd gzip
+	# The API: straight to the api, never through Next (bodies, timeouts, X-Forwarded-For).
+	handle /api/* {
+		reverse_proxy api:8787
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+	header {
+		# Ignored by browsers on plain http (a local install).
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
+
+# Presigned URLs are signed for this host, which Caddy passes through unchanged.
+{$FILES_SITE} {
+	request_body {
+		max_size 100MB
+	}
+	reverse_proxy {$FILES_UPSTREAM}
+	header -Server
+}

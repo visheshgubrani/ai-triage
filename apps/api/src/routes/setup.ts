@@ -57,6 +57,7 @@ export const setupRoutes = (deps: AppDeps) =>
           acceptWith: input.acceptWith,
           actor: SYSTEM_ACTOR("setup page"),
           inboundDomain: deps.inboundDomain ?? undefined,
+          model: deps.defaultModel,
           now,
         });
         await completeSetup(deps.db, tenantId);

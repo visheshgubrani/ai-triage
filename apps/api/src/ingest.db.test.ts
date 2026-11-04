@@ -1,8 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { QUEUES } from "@ai-triage/core";
-import { createApiKey, getDocumentDetail, insertUpload, revokeApiKey, stageJobId, withTenantTx } from "@ai-triage/db";
+import {
+  buildPipelineConfig,
+  createApiKey,
+  generateInboundAddress,
+  getDocumentDetail,
+  insertUpload,
+  revokeApiKey,
+  stageJobId,
+  withTenantTx,
+} from "@ai-triage/db";
 import { DEMO_TENANT } from "@ai-triage/db/seed";
-import { newTenant } from "@ai-triage/db/testing";
+import { newTenant, tenantQuery } from "@ai-triage/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, POSTMARK, WEB_ORIGIN } from "./test-app";
 
@@ -175,6 +184,28 @@ describe("Postmark webhook", () => {
     // The root path keeps the edge stack: request ids and secure headers.
     expect(atRoot.headers.get("x-request-id")).toBeTruthy();
     expect(atRoot.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("routes mail forwarded to a Postmark server's own address by its plus part (no DNS needed)", async () => {
+    const address = generateInboundAddress("abc123@inbound.postmarkapp.com");
+    expect(address).toMatch(/^abc123\+t-[0-9a-f]{20}@inbound\.postmarkapp\.com$/);
+    const tenantId = await newTenant(pool);
+    await withTenantTx(pool, tenantId, (tx) => buildPipelineConfig(tx));
+    await tenantQuery(pool, tenantId, "insert into inbound_addresses (tenant_id, address) values ($1, $2)", [
+      tenantId,
+      address,
+    ]);
+    // A forwarding rule keeps the original To (the company's own mailbox); the envelope recipient,
+    // which Postmark reports as OriginalRecipient, is the plus-address.
+    const forwarded = {
+      ...payload(randomUUID()),
+      OriginalRecipient: address,
+      ToFull: [{ Email: "invoices@acme.test" }],
+    };
+    const res = await post(forwarded);
+    expect(res.status).toBe(200);
+    const { documentId } = (await res.json()) as { documentId: string };
+    expect((await parseJobFor(tenantId, documentId)).doc).toMatchObject({ source: "email" });
   });
 
   it("ignores mail for an unknown address", async () => {

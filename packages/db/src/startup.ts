@@ -24,9 +24,15 @@ export class StartupError extends Error {
 export const isDemo = (env: Env) => env.TRIAGE_DEMO === "true";
 export const isProduction = (env: Env) => env.NODE_ENV === "production";
 
-const isHttps = (url: string | undefined) => {
+/**
+ * https, or http on this machine only (a local install): browsers treat loopback as a secure
+ * context, so Secure cookies work, and nothing crosses a network.
+ */
+const isSecureOrigin = (url: string | undefined) => {
   try {
-    return url !== undefined && new URL(url).protocol === "https:";
+    if (url === undefined) return false;
+    const { protocol, hostname } = new URL(url);
+    return protocol === "https:" || (protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(hostname));
   } catch {
     return false;
   }
@@ -49,7 +55,7 @@ export function unsafeConfig(env: Env, role: StartupRole): string[] {
       problems.push("BETTER_AUTH_SECRET is the dev default or shorter than 32 characters");
     }
     const publicUrl = env.PUBLIC_URL || env.WEB_ORIGIN;
-    if (!isHttps(publicUrl)) problems.push("PUBLIC_URL is not an https:// origin");
+    if (!isSecureOrigin(publicUrl)) problems.push("PUBLIC_URL is not an https:// origin (or http://localhost)");
     const postmark = env.POSTMARK_INBOUND_PASSWORD;
     if (
       postmark !== undefined &&

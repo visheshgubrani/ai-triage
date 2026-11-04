@@ -50,11 +50,20 @@ Phase 7: production-ready (docs/architecture.md §9).
 - **Intake filters:** auto-replies and bounces (and bulk mail, when turned on in Settings) end as `skipped` before any model call, with no review task. Documents → Skipped has Process anyway.
 - **Documents list:** filters by status, source and category, a title search, and paging.
 - **Custom categories (Settings → Categories):** define your own document types with typed fields (text, numbers, amounts, dates, emails, one-of lists, yes/no, lists, and tables of rows), quote requirements and eval comparators, from scratch or from eight starters (purchase order, receipt, credit note, shipping notice, refund request, job application, insurance claim, order confirmation). Saving activates a version that reviews every category. Built-ins keep their rules; custom categories get every gate but no code rules. They need a live model or the simulator: replay can't serve them.
+- **Install anywhere with one command:** `curl -fsSL …/install.sh | sh` installs it on this computer (`http://localhost:3000`), and `--host <name> --email <address>` installs it on a server, with HTTPS from Let's Encrypt. `--demo` runs the demo instead.
+  - Every secret is generated into `.env` (mode 0600). Model keys are read from the environment, and the first workspace uses a model matching the key you gave (`DEFAULT_MODEL`).
+  - Re-running the installer upgrades. No git clone, Node or build is needed.
+  - `./triage` runs the installation: `status --json`, `logs`, `config set`, `backup`, `restore`, `upgrade`, `cli`, and `uninstall`. Backups hold the database, the stored files and `.env`, and `restore` moves an installation to a new machine.
+  - `docs/install.md` covers it end to end, including how an AI agent should install it.
+- **Email in without DNS:** `INBOUND_DOMAIN` can be a Postmark server's own inbound address. Workspaces then get `<hash>+t-…@inbound.postmarkapp.com`, so forwarding a mailbox from any provider works with no MX record.
+- `pnpm preflight --json`, for scripts and agents.
 - **Public API reads:** `GET /api/v1/documents/:id`, a lookup by your own `external_ref` (sent with `POST /api/v1/documents`), and `GET /api/v1/categories` with each category's JSON Schema. A document reports one `state`: `processing`, `needs_review`, `approved`, `rejected`, `failed` or `skipped`. See `docs/api.md`, which now holds the webhook receiver contract, with a Python signature check beside the Node one.
 - **API key scopes:** `ingest` and `read`, chosen when a key is created (Settings, or `pnpm api-key:create --scopes`). Existing keys keep `ingest` only, so none gains read access by upgrading.
 - Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
 ### Fixed
+
+- Production refused `http://localhost` as `PUBLIC_URL`, which a local install needs. Loopback origins are now accepted, since browsers treat them as secure.
 
 - A slow model call could outlast its job's expiry, so pg-boss retried it while the first call was still running and paid twice. Expiries now outlast the longest call.
 - A Gmail message deferred by the inbound limit could lose its next job if the worker crashed at the wrong moment. Deferred messages also all woke at once, and each refused attempt counted against the limit again.

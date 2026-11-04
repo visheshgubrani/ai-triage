@@ -1,7 +1,7 @@
 // The checks behind `pnpm preflight`: is this installation ready to process documents? Each check
 // returns a line with what's wrong and the command that fixes it. The pure parts (config
 // runnability) are unit-tested; the rest talk to Postgres, storage and the api.
-import { checkEnv, type LlmMode, parseModelRef } from "@ai-triage/core";
+import { checkEnv, type LlmMode, parseModelRef, resolvePublicUrls } from "@ai-triage/core";
 import {
   checkStartup,
   createDb,
@@ -105,9 +105,40 @@ export function checkVersions(env: Env, nodeVersion = process.versions.node): Ch
   return out;
 }
 
-export function checkEnvironment(env: Env): CheckResult[] {
+/**
+ * Fixes worded for where preflight runs: a checkout (`pnpm …`) or an installation made by
+ * install.sh (`./triage …`, run in the worker container).
+ */
+export interface Hints {
+  installed: boolean;
+  startInfra: string;
+  startWorker: string;
+  startApi: string;
+  firstTenant: string;
+  bucket: string;
+}
+export const DEV_HINTS: Hints = {
+  installed: false,
+  startInfra: "pnpm infra:up",
+  startWorker: "pnpm dev",
+  startApi: "pnpm dev",
+  firstTenant: "pnpm db:seed (demo) or pnpm tenant:create",
+  bucket: "pnpm infra:up creates it locally",
+};
+export const INSTALLED_HINTS: Hints = {
+  installed: true,
+  startInfra: "./triage start, then ./triage logs postgres storage",
+  startWorker: "./triage start, then ./triage logs worker",
+  startApi: "./triage start, then ./triage logs api",
+  firstTenant: "open the setup link (./triage setup-link)",
+  bucket: "create it (bundled storage: ./triage restart runs storage-init)",
+};
+
+export function checkEnvironment(env: Env, hints: Hints = DEV_HINTS): CheckResult[] {
   const out: CheckResult[] = [];
-  for (const process of ["api", "worker"] as const) {
+  // Installed, preflight runs in the worker container, which holds only the worker's settings; the
+  // api checks its own at startup, so a healthy api (checkApi) is the proof of those.
+  for (const process of hints.installed ? (["worker"] as const) : (["api", "worker"] as const)) {
     const problems = checkEnv(env, process);
     out.push(
       problems.length === 0
@@ -124,7 +155,12 @@ export function checkEnvironment(env: Env): CheckResult[] {
   return out;
 }
 
-export async function checkDatabase(env: Env, mode: LlmMode, cassetteDir: string): Promise<CheckResult[]> {
+export async function checkDatabase(
+  env: Env,
+  mode: LlmMode,
+  cassetteDir: string,
+  hints: Hints = DEV_HINTS,
+): Promise<CheckResult[]> {
   if (!env.DATABASE_URL) return [];
   const out: CheckResult[] = [];
   const pool = createPool(env.DATABASE_URL);
@@ -134,18 +170,18 @@ export async function checkDatabase(env: Env, mode: LlmMode, cassetteDir: string
       await checkStartup(pool, env, "worker");
       out.push(ok("Postgres", "reachable, app role, migrations current"));
     } catch (err) {
-      out.push(fail("Postgres", (err as Error).message, err instanceof StartupError ? undefined : "pnpm infra:up"));
+      out.push(fail("Postgres", (err as Error).message, err instanceof StartupError ? undefined : hints.startInfra));
       return out;
     }
     const workers = await liveWorkers(createDb(pool), new Date());
     out.push(
       workers.length > 0
         ? ok("Workers", `${workers.length} running (${[...new Set(workers.map((w) => w.version))].join(", ")})`)
-        : warn("Workers", "none has checked in for 2 minutes, so documents won't be processed", "pnpm dev"),
+        : warn("Workers", "none has checked in for 2 minutes, so documents won't be processed", hints.startWorker),
     );
     const tenants = await listTenants(createDb(pool));
     if (tenants.length === 0) {
-      out.push(warn("Tenants", "none yet", "pnpm db:seed (demo) or pnpm tenant:create"));
+      out.push(warn("Tenants", "none yet", hints.firstTenant));
       return out;
     }
     if (tenants.length > 1 && !env.WORKER_TENANT_CONCURRENCY) {
@@ -184,30 +220,29 @@ export async function checkDatabase(env: Env, mode: LlmMode, cassetteDir: string
   return out;
 }
 
-export async function checkStorage(env: Env): Promise<CheckResult[]> {
+export async function checkStorage(env: Env, hints: Hints = DEV_HINTS): Promise<CheckResult[]> {
   if (!env.S3_ENDPOINT || !env.S3_BUCKET) return [];
   try {
     const storage = createStorage(storageConfigFromEnv(env as NodeJS.ProcessEnv));
     const { exists, corsOrigins } = await storage.inspectBucket();
-    if (!exists)
-      return [fail("Storage", `bucket "${storage.bucket}" doesn't exist`, "pnpm infra:up creates it locally")];
-    const web = env.WEB_ORIGIN ?? "http://localhost:3000";
+    if (!exists) return [fail("Storage", `bucket "${storage.bucket}" doesn't exist`, hints.bucket)];
+    const web = resolvePublicUrls(env).origin;
     if (!corsOrigins.includes(web)) {
       return [warn("Storage", `bucket CORS doesn't allow ${web} yet`, "start the api once: it sets the bucket's CORS")];
     }
     return [ok("Storage", `bucket "${storage.bucket}" with CORS for ${web}`)];
   } catch (err) {
-    return [fail("Storage", `unreachable at ${env.S3_ENDPOINT}: ${(err as Error).message}`, "pnpm infra:up")];
+    return [fail("Storage", `unreachable at ${env.S3_ENDPOINT}: ${(err as Error).message}`, hints.startInfra)];
   }
 }
 
-export async function checkApi(env: Env): Promise<CheckResult[]> {
+export async function checkApi(env: Env, hints: Hints = DEV_HINTS): Promise<CheckResult[]> {
   const base = env.TRIAGE_API_URL ?? `http://localhost:${env.API_PORT ?? 8787}`;
   try {
     const res = await fetch(`${base}/health`, { signal: AbortSignal.timeout(3000) });
     return [res.ok ? ok("API", `healthy at ${base}`) : warn("API", `${base}/health answered ${res.status}`)];
   } catch {
-    return [warn("API", `not running at ${base}`, "pnpm dev")];
+    return [(hints.installed ? fail : warn)("API", `not running at ${base}`, hints.startApi)];
   }
 }
 
