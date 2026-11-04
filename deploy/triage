@@ -115,7 +115,10 @@ case "$cmd" in
   restart | start) up && echo "Running at $(value PUBLIC_URL)" ;;
   stop) dc stop ;;
   config)
-    [ "${1:-}" = set ] && [ -n "${2:-}" ] || { echo "usage: ./triage config set KEY[=VALUE]" >&2; exit 2; }
+    if [ "${1:-}" != set ] || [ -z "${2:-}" ]; then
+      echo "usage: ./triage config set KEY[=VALUE]" >&2
+      exit 2
+    fi
     key=${2%%=*}
     case "$key" in *[!A-Z0-9_]* | "") echo "KEY must be A-Z, 0-9 and _" >&2; exit 2 ;; esac
     if [ "$key" = "$2" ] && eval "[ -n \"\${$key:-}\" ]"; then
@@ -141,7 +144,7 @@ case "$cmd" in
     case "$key" in
       COMPOSE_*) ;;
       *)
-        grep -q "\${$key[:}]" compose*.yaml ||
+        grep -q "\${${key}[:}]" compose*.yaml ||
           echo "warning: no service here reads $key (docs/configuration.md lists what each one reads)." >&2
         ;;
     esac

@@ -134,7 +134,7 @@ jobs:
           TRIAGE_VERSION: ci
         run: |
           link=$(docker compose exec -T -e DEFAULT_MODEL=sim:simulated api entrypoint cli tenant-create \
-            --name E2E --slug e2e --admin e2e-admin@e2e.test | grep -Eo 'http[^ ]+/invite#[^ ]+')
+            --name E2E --slug e2e --admin e2e-admin@e2e.test --accept-with google_or_password | grep -Eo 'http[^ ]+/invite#[^ ]+')
           echo "E2E_INVITE_URL=$link" >> "$GITHUB_ENV"
       - run: pnpm exec playwright install --with-deps chromium
       - run: pnpm e2e

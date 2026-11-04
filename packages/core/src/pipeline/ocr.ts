@@ -26,6 +26,13 @@ export interface OcrImage {
   bytes: Uint8Array;
 }
 
+/** `url` without trailing slashes (a loop: a `/\/+$/` regex backtracks on long runs of them). */
+export function withoutTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === "/") end--;
+  return url.slice(0, end);
+}
+
 export class OcrError extends Error {
   override name = "OcrError";
 }
@@ -40,7 +47,7 @@ export async function recognizeText(
   const signals = [AbortSignal.timeout(config.timeoutMs), ...(options.signal ? [options.signal] : [])];
   let res: Response;
   try {
-    res = await doFetch(`${config.url.replace(/\/+$/, "")}/chat/completions`, {
+    res = await doFetch(`${withoutTrailingSlashes(config.url)}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

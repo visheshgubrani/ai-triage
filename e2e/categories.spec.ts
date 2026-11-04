@@ -5,7 +5,8 @@ import { expect, test } from "@playwright/test";
 // the definition's order) and approve it, and the frozen payload carries the custom fields.
 //
 // It needs a fresh workspace on the simulator, so the demo's recorded answers stay as they are:
-//   DEFAULT_MODEL=sim:simulated pnpm tenant:create --name E2E --slug e2e --admin e2e-admin@e2e.test
+//   DEFAULT_MODEL=sim:simulated pnpm tenant:create --name E2E --slug e2e --admin e2e-admin@e2e.test \
+//     --accept-with google_or_password    (a password: with Google configured the default is Google only)
 // (in Docker: docker compose exec -e DEFAULT_MODEL=sim:simulated api entrypoint cli tenant-create …),
 // then E2E_INVITE_URL=<the printed link> pnpm e2e. CI's e2e job does both.
 

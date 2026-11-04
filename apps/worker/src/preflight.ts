@@ -2,6 +2,7 @@
 // returns a line with what's wrong and the command that fixes it. The pure parts (config
 // runnability) are unit-tested; the rest talk to Postgres, storage and the api.
 import { checkEnv, type LlmMode, parseModelRef, resolvePublicUrls } from "@ai-triage/core";
+import { withoutTrailingSlashes } from "@ai-triage/core/pipeline";
 import {
   checkStartup,
   createDb,
@@ -240,7 +241,7 @@ export async function checkStorage(env: Env, hints: Hints = DEV_HINTS): Promise<
 export async function checkOcr(env: Env, hints: Hints = DEV_HINTS): Promise<CheckResult[]> {
   if (!env.OCR_URL) return [ok("OCR", "off (no OCR_URL): scans and photos go to the model as images")];
   try {
-    const res = await fetch(`${env.OCR_URL.replace(/\/+$/, "")}/models`, { signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${withoutTrailingSlashes(env.OCR_URL)}/models`, { signal: AbortSignal.timeout(3000) });
     return [
       res.ok
         ? ok("OCR", `ready at ${env.OCR_URL}`)

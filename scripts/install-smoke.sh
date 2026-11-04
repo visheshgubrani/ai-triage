@@ -10,7 +10,11 @@ repo=$1 version=$2
 shift 2
 root=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
-trap 'for d in "$work"/*/; do (cd "$d" && docker compose down -v --remove-orphans >/dev/null 2>&1) || true; done; rm -rf "$work"' EXIT
+cleanup() {
+  for d in "$work"/*/; do (cd "$d" && docker compose down -v --remove-orphans >/dev/null 2>&1) || true; done
+  rm -rf "$work"
+}
+trap cleanup EXIT
 
 install() { # install <dir> [install.sh options]
   dir=$1
@@ -61,7 +65,8 @@ echo "state: $state"
 
 echo "== backup, and restore into a second installation"
 ./triage backup
-backup=$(ls -d "$a"/backups/* | tail -n 1)
+backup=
+for d in "$a"/backups/*; do backup=$d; done
 b="$work/b"
 prepare "$b"
 # A second local stack beside the first: another port and project name.

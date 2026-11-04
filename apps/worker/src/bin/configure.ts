@@ -1,4 +1,4 @@
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { isOneOf } from "@ai-triage/core";
@@ -37,7 +37,17 @@ if (ocr !== undefined && ocr !== "off" && !isOneOf(OCR_BACKENDS, ocr)) {
 }
 
 const file = join(flags.dir, ".env");
-const existing = existsSync(file) ? parseEnvFile(readFileSync(file, "utf8")) : {};
+/** The file's text, or null if there isn't one: read once, not checked first (no race between the two). */
+function readIfPresent(path: string): string | null {
+  try {
+    return readFileSync(path, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw err;
+  }
+}
+const current = readIfPresent(file);
+const existing = current === null ? {} : parseEnvFile(current);
 try {
   const values = configure(
     existing,
@@ -52,8 +62,11 @@ try {
   );
   const restoreFrom = flags["restore-from"];
   const final = restoreFrom ? mergeRestored(values, parseEnvFile(readFileSync(restoreFrom, "utf8"))) : values;
-  writeFileSync(file, renderEnvFile(final), { mode: 0o600 });
-  chmodSync(file, 0o600);
+  // Written beside it, then renamed over it: never a half-written .env, and the file a reader
+  // sees is always a whole one (rename is atomic on one filesystem).
+  const temp = `${file}.${process.pid}.tmp`;
+  writeFileSync(temp, renderEnvFile(final), { mode: 0o600, flag: "wx" });
+  renameSync(temp, file);
   const keys = PROVIDER_KEYS.filter((k) => values[k]);
   console.log(`${Object.keys(existing).length > 0 ? "Updated" : "Wrote"} ${file}`);
   console.log(`  address:  ${values.PUBLIC_URL}`);

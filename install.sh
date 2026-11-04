@@ -19,7 +19,6 @@ EMAIL=
 PORT=
 OCR=
 DEMO=
-YES=
 # TRIAGE_SOURCE=<checkout>: copy the files from a local checkout instead of downloading (CI, testing).
 SOURCE=${TRIAGE_SOURCE:-}
 
@@ -61,7 +60,8 @@ while [ $# -gt 0 ]; do
     --version) VERSION="${2:?--version needs a value}"; shift 2 ;;
     --dir) DIR="${2:?--dir needs a value}"; shift 2 ;;
     --demo) DEMO=1; shift ;;
-    --yes | -y) YES=1; shift ;;
+    # Accepted for scripts that pass it: the installer never prompts.
+    --yes | -y) shift ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "unknown option $1" ;;
   esac

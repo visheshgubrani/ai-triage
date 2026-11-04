@@ -939,7 +939,8 @@ export function renderEnvExample(): string {
   return `${out.join("\n")}\n`;
 }
 
-const cell = (s: string) => s.replace(/\|/g, "\\|");
+/** A Markdown table cell: backslashes first, then pipes, so neither ends the cell early. */
+const cell = (s: string) => s.replace(/\\/g, "\\\\").replace(/\|/g, "\\|");
 
 /** docs/configuration.md, rendered from the registry. */
 export function renderConfigDoc(): string {

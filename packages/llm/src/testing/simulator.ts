@@ -201,8 +201,11 @@ function labelled(field: string, text: string): string | null {
 /** The first heading line ("# Northwind Supplies"), the usual place of a document's issuer. */
 function heading(text: string): string | null {
   for (const line of text.split("\n")) {
-    const m = /^#\s+(.+)$/.exec(line.trim());
-    if (m?.[1] && !/^(invoice|rechnung|facture|factura|receipt)$/i.test(m[1].trim())) return m[1].trim();
+    const trimmed = line.trim();
+    // "#" then whitespace, without a backtracking regex over the rest of the line.
+    if (!trimmed.startsWith("#") || !/\s/.test(trimmed[1] ?? "")) continue;
+    const title = trimmed.slice(1).trim();
+    if (title && !/^(invoice|rechnung|facture|factura|receipt)$/i.test(title)) return title;
   }
   return null;
 }
@@ -219,7 +222,7 @@ function generate(schema: Json, field: string, text: string, seed: string): Foun
   }
   switch (s.type) {
     case "string": {
-      if (s.format === "date" || /date|_on$/.test(field))
+      if (s.format === "date" || field.includes("date") || field.endsWith("_on"))
         return findDate(raw ?? (raw === null && field.endsWith("date") ? "" : text));
       if (s.format === "email" || /email/.test(field)) {
         const m = EMAIL.exec(raw ?? text);
