@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { DEFAULT_INTAKE_FILTERS, type IntakeFilters } from "@ai-triage/core";
 import { eq, isNotNull } from "drizzle-orm";
 import type pg from "pg";
 import { decryptSecret, encryptSecret, type KeyRing } from "./crypto";
@@ -130,4 +131,14 @@ export async function reencryptWebhookSecrets(pool: pg.Pool, keys: KeyRing): Pro
     });
   }
   return rewritten;
+}
+
+/** The tenant's intake filters: what it set, over DEFAULT_INTAKE_FILTERS. */
+export async function getIntakeFilters(tx: TenantTx): Promise<IntakeFilters> {
+  const [row] = await tx.db.select({ filters: tenantSettings.intakeFilters }).from(tenantSettings);
+  return { ...DEFAULT_INTAKE_FILTERS, ...(row?.filters ?? {}) };
+}
+
+export async function setIntakeFilters(tx: TenantTx, filters: IntakeFilters): Promise<void> {
+  await tx.db.update(tenantSettings).set({ intakeFilters: filters, updatedAt: new Date() });
 }

@@ -1,3 +1,4 @@
+import type { IntakeFilters } from "@ai-triage/core";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -5,6 +6,7 @@ import {
   date,
   foreignKey,
   integer,
+  jsonb,
   numeric,
   pgTable,
   primaryKey,
@@ -35,6 +37,8 @@ export const tenantSettings = pgTable(
     dailyLlmCapUsd: numeric("daily_llm_cap_usd", { precision: 12, scale: 4 }).notNull().default("5"),
     /** Finished documents older than this many days are purged daily; null keeps them forever. */
     retentionDays: integer("retention_days"),
+    /** Intake filters that are on, by name (core INTAKE_FILTERS); unset keys take DEFAULT_INTAKE_FILTERS. */
+    intakeFilters: jsonb("intake_filters").$type<Partial<IntakeFilters>>().notNull().default({}),
     updatedAt: updatedAt(),
   },
   (t) => [

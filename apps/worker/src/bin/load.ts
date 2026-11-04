@@ -233,8 +233,16 @@ for (const t of tenants) {
   perTenant.push({ tenant: t.slug, docs: rows.length, p50: percentile(ms, 50), p95: percentile(ms, 95) });
   for (const r of rows) {
     if (r.error) failures[r.error.split(":")[0] ?? r.error] = (failures[r.error.split(":")[0] ?? r.error] ?? 0) + 1;
-    decisions[r.status === "failed" ? "failed" : r.review === "not_required" ? "auto" : "review"] =
-      (decisions[r.status === "failed" ? "failed" : r.review === "not_required" ? "auto" : "review"] ?? 0) + 1;
+    // Skipped: an intake filter ended it before any model call (auto-replies and bounces, by default).
+    const decision =
+      r.status === "failed"
+        ? "failed"
+        : r.status === "skipped"
+          ? "skipped"
+          : r.review === "not_required"
+            ? "auto"
+            : "review";
+    decisions[decision] = (decisions[decision] ?? 0) + 1;
   }
   const [inv] = await tenantRows<{ stalled: number; canonical: number; actions: number; undelivered: number }>(
     t,

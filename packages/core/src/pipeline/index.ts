@@ -6,6 +6,7 @@ export * from "./errors";
 export * from "./evaluate";
 export * from "./evidence";
 export * from "./gates";
+export * from "./intake";
 export * from "./outputs";
 export * from "./parse";
 export * from "./requests";

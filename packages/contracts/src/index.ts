@@ -15,7 +15,9 @@ import {
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
   FAILURE_REASONS,
+  INTAKE_FILTERS,
   INVITATION_ACCEPT_METHODS,
+  type IntakeFilter,
   JOIN_ROLES,
   type LlmCallMode,
   MAILBOX_BACKFILL_MAX_DAYS,
@@ -163,12 +165,35 @@ export const DocumentSummary = z.object({
 });
 export type DocumentSummary = z.infer<typeof DocumentSummary>;
 
-export const DocumentList = z.object({ documents: z.array(DocumentSummary) });
+export const DocumentListQuery = z.object({
+  status: z.enum(PROCESSING_STATUSES).optional(),
+  source: z.enum(DOCUMENT_SOURCES).optional(),
+  category: z.string().min(1).max(100).optional(),
+  /** Matches the title (subject or file name). */
+  q: z.string().min(1).max(200).optional(),
+  /** The previous page's `nextBefore`. */
+  before: z.iso.datetime().optional(),
+});
+export type DocumentListQuery = z.infer<typeof DocumentListQuery>;
+
+export const DocumentList = z.object({
+  documents: z.array(DocumentSummary),
+  /** Pass as `before` for the next page; null on the last one. */
+  nextBefore: z.string().nullable(),
+});
 export type DocumentList = z.infer<typeof DocumentList>;
 
 /** A live claim on a review task. A claim whose lease ran out is reported as none. */
 export const ClaimInfo = z.object({ userId: z.string(), email: z.string().nullable(), leaseExpiresAt: isoDate });
 export type ClaimInfo = z.infer<typeof ClaimInfo>;
+
+export const IntakeSettings = z.object(
+  Object.fromEntries(INTAKE_FILTERS.map((f) => [f, z.boolean()])) as Record<IntakeFilter, z.ZodBoolean>,
+);
+export type IntakeSettings = z.infer<typeof IntakeSettings>;
+
+export const ProcessResponse = z.object({ runId: z.string() });
+export type ProcessResponse = z.infer<typeof ProcessResponse>;
 
 export const DocumentDetail = z.object({
   document: DocumentSummary.extend({ sizeBytes: z.number().nullable() }),
@@ -179,6 +204,8 @@ export const DocumentDetail = z.object({
       forcedCategory: z.string().nullable(),
       status: z.enum(RUN_STATUSES),
       error: z.string().nullable(),
+      /** The intake filter that skipped it (the document is `skipped`). */
+      skipReason: z.enum(INTAKE_FILTERS).nullable(),
       createdAt: isoDate,
       finishedAt: isoDate.nullable(),
     })

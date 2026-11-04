@@ -1,6 +1,6 @@
-import type { DocumentSource } from "@ai-triage/core";
+import type { DocumentSource, ProcessingStatus } from "@ai-triage/core";
 import { getTemplate, toJsonSchema } from "@ai-triage/schemas";
-import { and, asc, desc, eq, lt, ne } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, lt, ne } from "drizzle-orm";
 import { enqueueStage, type PgBoss } from "./boss";
 import { getActiveConfig } from "./configs";
 import { loadClassification, loadParts, loadSchemaVersion } from "./pipeline";
@@ -88,7 +88,19 @@ export async function findDocument(tx: TenantTx, source: DocumentSource, externa
 }
 
 /** Newest first, for the documents page. `before` pages by creation time. */
-export async function listDocuments(tx: TenantTx, options: { limit?: number; before?: Date } = {}) {
+export interface DocumentFilters {
+  limit?: number;
+  /** Cursor: documents created before this (the previous page's last `createdAt`). */
+  before?: Date;
+  status?: ProcessingStatus;
+  source?: DocumentSource;
+  category?: string;
+  /** Case-insensitive match on the title (subject or file name). */
+  q?: string;
+}
+
+export async function listDocuments(tx: TenantTx, options: DocumentFilters = {}) {
+  const like = options.q ? `%${options.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   return tx.db
     .select({
       id: documents.id,
@@ -105,11 +117,21 @@ export async function listDocuments(tx: TenantTx, options: { limit?: number; bef
       decisionReasons: extractions.decisionReasons,
       taskKind: reviewTasks.kind,
       taskReasons: reviewTasks.reasons,
+      skipReason: processingRuns.skipReason,
     })
     .from(documents)
     .leftJoin(extractions, eq(extractions.id, documents.currentExtractionId))
     .leftJoin(reviewTasks, and(eq(reviewTasks.documentId, documents.id), ne(reviewTasks.status, "resolved")))
-    .where(options.before ? lt(documents.createdAt, options.before) : undefined)
+    .leftJoin(processingRuns, eq(processingRuns.id, documents.currentRunId))
+    .where(
+      and(
+        options.before ? lt(documents.createdAt, options.before) : undefined,
+        options.status ? eq(documents.processingStatus, options.status) : undefined,
+        options.source ? eq(documents.source, options.source) : undefined,
+        options.category ? eq(extractions.category, options.category) : undefined,
+        like ? ilike(documents.title, like) : undefined,
+      ),
+    )
     .orderBy(desc(documents.createdAt))
     .limit(options.limit ?? 50);
 }

@@ -4,6 +4,16 @@
 // The `as const` arrays are the single source of truth: packages/db builds its
 // CHECK constraints from them.
 
+/**
+ * Intake filters (docs/architecture.md §5): mail that is noise by its headers alone ends `skipped`,
+ * with no model call and no review task. Per tenant; auto-replies and bounces are on by default,
+ * bulk mail off, because some vendors send invoices through bulk mailers.
+ */
+export const INTAKE_FILTERS = ["auto_replies", "bounces", "bulk"] as const;
+export type IntakeFilter = (typeof INTAKE_FILTERS)[number];
+export type IntakeFilters = Record<IntakeFilter, boolean>;
+export const DEFAULT_INTAKE_FILTERS: IntakeFilters = { auto_replies: true, bounces: true, bulk: false };
+
 /** This release (Keep a Changelog, CHANGELOG.md). A test keeps it equal to the root package.json. */
 export const APP_VERSION = "0.7.0";
 
@@ -14,7 +24,16 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 export const LLM_STAGES = ["classify", "extract"] as const;
 export type LlmStage = (typeof LLM_STAGES)[number];
 
-export const PROCESSING_STATUSES = ["received", "parsed", "classified", "extracted", "done", "failed"] as const;
+/** `skipped`: an intake filter (auto-reply, bounce, bulk mail) ended it before any model call. */
+export const PROCESSING_STATUSES = [
+  "received",
+  "parsed",
+  "classified",
+  "extracted",
+  "done",
+  "failed",
+  "skipped",
+] as const;
 export type ProcessingStatus = (typeof PROCESSING_STATUSES)[number];
 
 export const REVIEW_STATUSES = ["not_required", "pending", "approved", "rejected"] as const;

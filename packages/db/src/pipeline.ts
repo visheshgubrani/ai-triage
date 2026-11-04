@@ -3,6 +3,7 @@ import type {
   DeliveryStatus,
   EvidenceMode,
   FailureReason,
+  IntakeFilter,
   PartKind,
   ProcessingStatus,
   ReviewStatus,
@@ -270,5 +271,29 @@ export async function failRun(
     .set({ status: "failed", error: error.slice(0, 2000), finishedAt: new Date() })
     .where(eq(processingRuns.id, input.runId));
   await upsertOpenTask(tx, { documentId: doc.id, kind: "processing_failed", reasons: [input.reason] });
+  return true;
+}
+
+/**
+ * Ends a document's first run at parse, before any model call: an intake filter matched (an
+ * auto-reply, a bounce, bulk mail). Guarded like a stage: only while the run is current and the
+ * document is still `received`. No review task; Process anyway retries it.
+ */
+export async function skipRun(
+  tx: TenantTx,
+  input: { documentId: string; runId: string; reason: IntakeFilter },
+): Promise<boolean> {
+  const moved = await advanceDocument(tx, {
+    documentId: input.documentId,
+    runId: input.runId,
+    from: "received",
+    to: "skipped",
+    set: { reviewStatus: "not_required" },
+  });
+  if (!moved) return false;
+  await tx.db
+    .update(processingRuns)
+    .set({ status: "done", skipReason: input.reason, finishedAt: new Date() })
+    .where(eq(processingRuns.id, input.runId));
   return true;
 }

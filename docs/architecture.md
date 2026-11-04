@@ -156,6 +156,12 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
   - **Fetch:** downloads the raw message. Drafts, sent mail, spam, trash, deleted and oversized mail are skipped with a reason. Over the tenant's inbound limit (shared with Postmark) a message is deferred. Otherwise it's ingested like an `.eml` (`source = gmail`, raw kept as `source.eml`), with the ledger row committing with the document (`ingestEmail`'s `within`).
 - In every case, inserting the document, creating `processing_run` #1 and enqueueing `doc.parse` happen in one transaction. A duplicate `external_id` returns 200 and does nothing.
 
+**Intake filters (phase 7):** some mail is noise by its headers alone: auto-replies (RFC 3834 `Auto-Submitted`, `X-Autoreply`, `Precedence: auto_reply`), bounces and read receipts (`multipart/report`), and bulk mail (`List-Id`, `List-Unsubscribe`, `Precedence: bulk`).
+- Normalization records these signals with the stored email, only when present; the model never sees them.
+- On a document's first run, the parse stage checks them against the tenant's filters (`tenant_settings.intake_filters`): auto-replies and bounces on by default, bulk off. A match ends the run before any model call: `processing_status = skipped`, `processing_runs.skip_reason`, no review task.
+- **Process anyway** (`POST /api/documents/:id/process`) is a retry, which the filters never apply to.
+- Headers, never content, so a sender can't talk a message past them; and eval items, which don't run the parse stage's filter, are unaffected.
+
 **Each stage handler (parse → classify → extract → route) follows the same three steps:**
 1. **Read.** In a short transaction, load the run and its inputs. Stop if the run is superseded or the stage is already done.
 2. **Call.** If a successful attempt already exists for `(context, stage)`, reuse it. Otherwise reserve budget (live mode only; see below), call Claude, and **insert the attempt row, response included, in its own small transaction right away**. This narrows repeat calls but can't remove them: if the worker crashes between Claude returning and that insert, the retry calls Claude again. The README says so plainly: *repeated model calls are possible, and saved responses are reused whenever available.* Every attempt is kept for cost accounting.

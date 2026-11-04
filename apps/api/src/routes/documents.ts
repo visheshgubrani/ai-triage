@@ -1,10 +1,12 @@
-import type {
-  DocumentDetail,
-  DocumentList,
-  DocumentSummary,
-  EmailView,
-  FileUrlResponse,
-  SourceUrlResponse,
+import {
+  type DocumentDetail,
+  type DocumentList,
+  DocumentListQuery,
+  type DocumentSummary,
+  type EmailView,
+  type FileUrlResponse,
+  type ProcessResponse,
+  type SourceUrlResponse,
 } from "@ai-triage/contracts";
 import { EMAIL_SOURCE_MIME } from "@ai-triage/core";
 import {
@@ -13,6 +15,7 @@ import {
   loadDocument,
   loadPart,
   mailboxOfDocument,
+  processSkipped,
   purgeDocument,
   recordAudit,
   withTenantTx,
@@ -25,6 +28,7 @@ import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
 import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
+import { validate } from "../validate";
 
 /** A malformed id is just a document that doesn't exist. */
 export const idParam = zValidator("param", z.object({ id: z.uuid() }), (result, c) => {
@@ -46,10 +50,12 @@ function summary(row: ListRow): DocumentSummary {
     category: row.category,
     score: row.score,
     decision: row.decision,
-    reasons: row.taskReasons ?? row.decisionReasons ?? [],
+    reasons: row.skipReason ? [`skipped:${row.skipReason}`] : (row.taskReasons ?? row.decisionReasons ?? []),
     taskKind: row.taskKind,
   };
 }
+
+const PAGE_SIZE = 50;
 
 /**
  * Gmail's search for a Message-ID, in the synced mailbox's account. Documents without a Message-ID
@@ -97,6 +103,7 @@ function detail(
       forcedCategory: run.forcedCategory,
       status: run.status,
       error: run.error,
+      skipReason: run.skipReason ?? null,
       createdAt: run.createdAt.toISOString(),
       finishedAt: run.finishedAt?.toISOString() ?? null,
     },
@@ -175,9 +182,25 @@ const partParam = zValidator("param", z.object({ id: z.uuid(), index: z.coerce.n
 export const documentRoutes = (deps: AppDeps) =>
   new Hono<TenantEnv>()
     .use(requireTenant(deps), limitUserWrites(deps, deps.rateLimits.writesPerUser))
-    .get("/", async (c) => {
-      const rows = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => listDocuments(tx, { limit: 100 }));
-      const body: DocumentList = { documents: rows.map(summary) };
+    .get("/", validate("query", DocumentListQuery), async (c) => {
+      const { before, ...filters } = c.req.valid("query");
+      const rows = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        listDocuments(tx, { ...filters, before: before ? new Date(before) : undefined, limit: PAGE_SIZE + 1 }),
+      );
+      const page = rows.slice(0, PAGE_SIZE);
+      const body: DocumentList = {
+        documents: page.map(summary),
+        nextBefore: rows.length > PAGE_SIZE ? (page.at(-1)?.createdAt.toISOString() ?? null) : null,
+      };
+      return c.json(body, 200);
+    })
+    // Process anyway: run the pipeline on a document an intake filter skipped (reviewers and admins).
+    .post("/:id/process", requireRole("admin", "reviewer"), idParam, async (c) => {
+      const runId = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+        processSkipped(tx, deps.boss, c.req.valid("param").id),
+      );
+      if (!runId) return c.json({ error: "Only a skipped document can be processed anyway", code: "not_skipped" }, 409);
+      const body: ProcessResponse = { runId };
       return c.json(body, 200);
     })
     .get("/:id", idParam, async (c) => {

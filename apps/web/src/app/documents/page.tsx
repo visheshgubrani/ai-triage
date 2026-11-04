@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { getMe } from "@/components/header";
 import { DocumentsView } from "./documents-view";
 
-export default function DocumentsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function DocumentsPage() {
+  const me = await getMe();
   return (
     <main className="mx-auto max-w-5xl px-4 py-12">
       <p className="text-sm">
@@ -13,7 +17,7 @@ export default function DocumentsPage() {
       <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
         Everything ingested by email, upload or API, and where the pipeline sent it. Refreshes every 5 seconds.
       </p>
-      <DocumentsView />
+      <DocumentsView canUpload={me !== null && me.role !== "viewer"} />
     </main>
   );
 }

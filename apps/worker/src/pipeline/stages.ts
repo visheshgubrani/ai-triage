@@ -13,6 +13,7 @@ import {
   buildExtractRequest,
   classifyCategories,
   evaluateExtraction,
+  intakeSkip,
   type ParsedPart,
   PipelineError,
   parseClassifyOutput,
@@ -29,6 +30,7 @@ import {
   failRun,
   finishRun,
   getConfig,
+  getIntakeFilters,
   insertClassification,
   insertModelExtraction,
   insertParts,
@@ -42,6 +44,7 @@ import {
   loadSchemaVersion,
   markCanonical,
   setCurrentExtraction,
+  skipRun,
   stagePolicy,
   type TenantTx,
   upsertOpenTask,
@@ -51,7 +54,7 @@ import { readAttemptOutput } from "@ai-triage/llm";
 import { type JsonSchema, validateFields } from "@ai-triage/schemas";
 import { log } from "../observe";
 import type { PipelineDeps } from "./deps";
-import { loadBlobs, loadCategoryOptions, loadSender, parseSource, stageModel } from "./source";
+import { loadBlobs, loadCategoryOptions, loadSender, loadSignals, parseSource, stageModel } from "./source";
 
 // Each stage follows docs/architecture.md §5: read in a short transaction (stop if the run isn't
 // current or the stage is done), do the slow work with no transaction open, then commit in one
@@ -80,8 +83,26 @@ const toNewParts = (parts: ParsedPart[]) =>
   }));
 
 export async function parseStage(deps: PipelineDeps, job: StageJob): Promise<void> {
-  const doc = await withTenantTx(deps.pool, job.tenantId, async (tx) => (await currentRun(tx, job, "parse"))?.document);
-  if (!doc) return;
+  const input = await withTenantTx(deps.pool, job.tenantId, async (tx) => {
+    const found = await currentRun(tx, job, "parse");
+    // Intake filters apply to a document's first run only: Process anyway is a retry.
+    return found
+      ? { doc: found.document, filters: found.run.trigger === "ingest" ? await getIntakeFilters(tx) : null }
+      : null;
+  });
+  if (!input) return;
+  const { doc, filters } = input;
+
+  if (filters) {
+    const skip = intakeSkip(await loadSignals(deps.storage, doc), filters);
+    if (skip) {
+      log.info("intake filter skipped a document", { document: job.documentId, filter: skip });
+      await withTenantTx(deps.pool, job.tenantId, (tx) =>
+        skipRun(tx, { documentId: job.documentId, runId: job.runId, reason: skip }),
+      );
+      return;
+    }
+  }
 
   const parts = await parseSource(deps.storage, doc, deps.limits);
 

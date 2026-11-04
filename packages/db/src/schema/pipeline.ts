@@ -5,6 +5,7 @@ import {
   DOCUMENT_SOURCES,
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
+  INTAKE_FILTERS,
   LLM_STAGES,
   PART_KINDS,
   PROCESSING_STATUSES,
@@ -243,11 +244,14 @@ export const processingRuns = pgTable(
     status: text("status", { enum: RUN_STATUSES }).notNull().default("running"),
     supersededBy: uuid("superseded_by"),
     error: text("error"),
+    /** The intake filter that ended the run before any model call (the document is `skipped`). */
+    skipReason: text("skip_reason", { enum: INTAKE_FILTERS }),
     createdAt: createdAt(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t): PgTableExtraConfigValue[] => [
     tenantKey("processing_runs", t),
+    oneOf("processing_runs_skip_reason_check", t.skipReason, INTAKE_FILTERS),
     unique("processing_runs_tenant_id_document_id_id_key").on(t.tenantId, t.documentId, t.id),
     oneOf("processing_runs_trigger_check", t.trigger, RUN_TRIGGERS),
     oneOf("processing_runs_status_check", t.status, RUN_STATUSES),

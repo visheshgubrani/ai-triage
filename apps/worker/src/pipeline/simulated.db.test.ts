@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { normalizeEml } from "@ai-triage/core/pipeline";
 import {
   buildPipelineConfig,
   clearCooldown,
@@ -9,10 +10,11 @@ import {
   createPool,
   getDocumentDetail,
   type PgBoss,
+  processSkipped,
   withTenantTx,
 } from "@ai-triage/db";
 import { newTenant, testDbUrls } from "@ai-triage/db/testing";
-import { ingestFile } from "@ai-triage/ingest";
+import { ingestEmail, ingestFile } from "@ai-triage/ingest";
 import { createTransport } from "@ai-triage/llm";
 import { DEFAULT_SIMULATOR_OPTIONS, type SimulatorOptions, simulate } from "@ai-triage/llm/testing";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
@@ -92,7 +94,14 @@ async function setup() {
     ).documentId;
   const rows = <T>(sql: string) =>
     withTenantTx(pool, tenantId, async (tx) => (await tx.queueDb.executeSql(sql, [])).rows as T[]);
-  return { tenantId, deps, ingest, rows, drain: () => drainTenantJobs(deps, tenantId) };
+  const ingestEml = async (raw: string) =>
+    (
+      await ingestEmail({ pool, boss, storage }, tenantId, await normalizeEml(new TextEncoder().encode(raw)), {
+        source: "email",
+        eml: new TextEncoder().encode(raw),
+      })
+    ).documentId;
+  return { tenantId, deps, ingest, ingestEml, rows, drain: () => drainTenantJobs(deps, tenantId) };
 }
 
 describe("simulated models", () => {
@@ -126,5 +135,48 @@ describe("simulated models", () => {
       options = { ...options, rate429: 0 };
       await clearCooldown(createDb(pool), "sim", "sim:simulated");
     }
+  });
+});
+
+describe("intake filters", () => {
+  const autoReply = () =>
+    [
+      `Message-ID: <${randomUUID()}@example.com>`,
+      "Auto-Submitted: auto-replied",
+      "From: Accounts <accounts@vendor.test>",
+      "To: ap@demo.test",
+      "Subject: Out of office: Invoice INV-1",
+      "",
+      "I am out of the office until Monday.",
+      "",
+    ].join("\r\n");
+
+  it("skip an auto-reply before any model call, and Process anyway runs it through", async () => {
+    const t = await setup();
+    const documentId = await t.ingestEml(autoReply());
+    await t.drain();
+    const skipped = await withTenantTx(pool, t.tenantId, (tx) => getDocumentDetail(tx, documentId));
+    expect(skipped?.document).toMatchObject({ processingStatus: "skipped", reviewStatus: "not_required" });
+    expect(skipped?.run).toMatchObject({ status: "done", skipReason: "auto_replies" });
+    expect(await t.rows("select 1 from llm_calls")).toEqual([]);
+    expect(await t.rows("select 1 from review_tasks")).toEqual([]);
+
+    const runId = await withTenantTx(pool, t.tenantId, (tx) => processSkipped(tx, boss, documentId));
+    expect(runId).toBeTruthy();
+    // A second click finds it no longer skipped.
+    expect(await withTenantTx(pool, t.tenantId, (tx) => processSkipped(tx, boss, documentId))).toBeNull();
+    await t.drain();
+    const processed = await withTenantTx(pool, t.tenantId, (tx) => getDocumentDetail(tx, documentId));
+    expect(processed?.document.processingStatus).toBe("done");
+    expect((await t.rows("select 1 from llm_calls")).length).toBeGreaterThan(0);
+  });
+
+  it("let bulk mail through unless the tenant turns that filter on", async () => {
+    const t = await setup();
+    const newsletter = autoReply().replace("Auto-Submitted: auto-replied", "List-Unsubscribe: <mailto:u@vendor.test>");
+    const documentId = await t.ingestEml(newsletter);
+    await t.drain();
+    const doc = await withTenantTx(pool, t.tenantId, (tx) => getDocumentDetail(tx, documentId));
+    expect(doc?.document.processingStatus).toBe("done");
   });
 });

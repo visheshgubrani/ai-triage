@@ -9,6 +9,7 @@ import {
   type BudgetSettings,
   type ErrorResponse,
   type InboundSettings,
+  IntakeSettings,
   RetentionSettings,
   type SystemHealthResponse,
   WebhookSettingsRequest,
@@ -18,6 +19,7 @@ import {
   createApiKey,
   deploymentHealth,
   getBudget,
+  getIntakeFilters,
   getRetentionDays,
   getWebhookSettings,
   listApiKeys,
@@ -28,6 +30,7 @@ import {
   rotateInboundAddress,
   rotateWebhookSecret,
   setBudgetCap,
+  setIntakeFilters,
   setRetentionDays,
   setWebhook,
   tenantHealth,
@@ -170,6 +173,23 @@ export const settingsRoutes = (deps: AppDeps) =>
       const now = deps.now();
       const tenant = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => tenantHealth(tx, now));
       const body: SystemHealthResponse = { ...tenant, ...(await deploymentHealth(deps.db, now)) };
+      return c.json(body, 200);
+    })
+    .get("/intake", async (c) => {
+      const body: IntakeSettings = await withTenantTx(deps.pool, c.var.tenant.tenantId, getIntakeFilters);
+      return c.json(body, 200);
+    })
+    .put("/intake", validate("json", IntakeSettings), async (c) => {
+      const filters = c.req.valid("json");
+      await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const before = await getIntakeFilters(tx);
+        await setIntakeFilters(tx, filters);
+        await recordAudit(tx, userActor(c, deps), {
+          action: "intake_filters.updated",
+          details: { before, after: filters },
+        });
+      });
+      const body: IntakeSettings = filters;
       return c.json(body, 200);
     })
     .get("/budget", async (c) => {

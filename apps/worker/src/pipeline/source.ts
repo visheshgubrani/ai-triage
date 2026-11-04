@@ -3,6 +3,7 @@ import {
   type CategoryOption,
   type EmailSender,
   isContentAttachment,
+  type MailSignals,
   type ParsedPart,
   type ParseLimits,
   parseEmail,
@@ -58,6 +59,13 @@ export async function loadSender(storage: Storage, source: SourceRef): Promise<E
   if (source.mime !== EMAIL_SOURCE_MIME) return null;
   const email = JSON.parse(new TextDecoder().decode(await storage.get(source.sourceKey))) as StoredEmail;
   return { authResults: email.authResults ?? [], ...(email.receivedBy ? { receivedBy: email.receivedBy } : {}) };
+}
+
+/** What the intake filters read: an email source's header signals (none for files). */
+export async function loadSignals(storage: Storage, source: SourceRef): Promise<MailSignals | undefined> {
+  if (source.mime !== EMAIL_SOURCE_MIME) return undefined;
+  const email = JSON.parse(new TextDecoder().decode(await storage.get(source.sourceKey))) as StoredEmail;
+  return email.signals;
 }
 
 const BINARY = new Set<string>([DOCUMENT_MIMES.pdf, DOCUMENT_MIMES.png, DOCUMENT_MIMES.jpeg]);

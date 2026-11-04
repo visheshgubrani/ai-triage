@@ -247,3 +247,44 @@ describe("documents", () => {
     expect((await app.request("/documents/nope", { headers: { cookie: admin } })).status).toBe(404);
   });
 });
+
+describe("intake filters and the documents list", () => {
+  it("lets admins change intake filters, audited", async () => {
+    const tenant = await newTenant(pool);
+    const admin = await t.memberCookie(tenant, "admin");
+    const reviewer = await t.memberCookie(tenant, "reviewer");
+    const get = await app.request("/settings/intake", { headers: { cookie: admin } });
+    expect(await get.json()).toEqual({ auto_replies: true, bounces: true, bulk: false });
+    const put = (cookie: string) =>
+      app.request("/settings/intake", {
+        method: "PUT",
+        headers: { cookie, origin: WEB_ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({ auto_replies: true, bounces: true, bulk: true }),
+      });
+    expect((await put(reviewer)).status).toBe(403);
+    expect((await put(admin)).status).toBe(200);
+    const audit = await withTenantTx(pool, tenant, (tx) =>
+      tx.db.execute("select details from audit_events where action = 'intake_filters.updated'"),
+    );
+    expect(audit.rows[0]?.details).toMatchObject({ after: { bulk: true }, before: { bulk: false } });
+  });
+
+  it("filters the list by status, and refuses Process anyway for a document that wasn't skipped", async () => {
+    const admin = await t.memberCookie(demoId, "admin");
+    const { uploadId } = await upload(admin, new TextEncoder().encode(`List ${randomUUID()}`));
+    const done = await app.request(`/uploads/${uploadId}/complete`, json(admin, {}));
+    const { documentId } = (await done.json()) as { documentId: string };
+    const received = await app.request("/documents?status=received", { headers: { cookie: admin } });
+    const list = (await received.json()) as {
+      documents: { id: string; processingStatus: string }[];
+      nextBefore: string | null;
+    };
+    expect(list.documents.every((d) => d.processingStatus === "received")).toBe(true);
+    expect(list.documents.map((d) => d.id)).toContain(documentId);
+    const process = await app.request(`/documents/${documentId}/process`, {
+      method: "POST",
+      headers: { cookie: admin, origin: WEB_ORIGIN },
+    });
+    expect(process.status).toBe(409);
+  });
+});

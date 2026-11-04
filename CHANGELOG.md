@@ -41,6 +41,8 @@ Phase 7: production-ready (docs/architecture.md §9).
   - `docs/operations.md` (alerts and runbooks) and `docs/troubleshooting.md`.
 - **The simulator** (`pnpm llm-sim`, `sim:simulated`): schema-valid fake answers from the document text, with latency and fault injection. It works in any LLM mode, costs nothing, and its calls are stored as `simulated`.
 - **A mail variety generator** of hundreds of kinds of real-world email, a parse robustness test over 500 of them, and **`pnpm load`**: a load and chaos test with invariant checks. The results are in `docs/reliability.md`.
+- **Intake filters:** auto-replies and bounces (and bulk mail, when turned on in Settings) end as `skipped` before any model call, with no review task. Documents → Skipped has Process anyway.
+- **Documents list:** filters by status, source and category, a title search, and paging.
 - Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
 ### Fixed
