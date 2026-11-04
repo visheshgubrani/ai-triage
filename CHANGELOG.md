@@ -14,6 +14,12 @@ All notable changes to ai-triage. The format follows [Keep a Changelog](https://
 
 ### Fixed
 
+- **An approval can no longer deliver an incomplete extraction.** A plain Approve sent the model's values as they were, even with a required field empty. Now every approval checks required fields and the schema, and refuses with the fields marked until a reviewer fills them in (or rejects). Found in the round-2 pre-launch test.
+- **The REST API accepts files sent without a content type.** A PDF, PNG, JPEG, DOCX or text file sent as `application/octet-stream` (or with no type) was refused with 415; its type is now read from its first bytes, or for DOCX and text from its name and content. A file declared as another type is still refused.
+- **Reasons are in words where people decide.** The queue, its filters, the task page, documents and System health show "Sender not verified" or "Missing: Total" instead of `sender_unauthenticated` or `required_missing:total`; hovering shows what it means and the code.
+- **The next task comes from the same filters.** The queue keeps its view and filters in the URL. Claim next, and the task page after approve, reject or skip, take the oldest task matching them (`POST /api/review/claim-next` now also takes `reason` and `olderThan`), and the queue says when you've cleared them.
+- **Documents search applies as you type.**
+- **The installed demo runs its whole walkthrough, beside other stacks.** `install.sh --demo` now starts the webhook catcher, the fake Google and the simulator (before, approvals failed to deliver and Connect Gmail went nowhere), runs as its own compose project instead of the repository's `ai-triage` (whose `docker compose down -v` would have deleted a dev stack's data), takes `--port`, moves its other host ports past ones in use, keeps them in its `.env`, and prints the real addresses and a ready `curl` that delivers a sample message to the fake Gmail.
 - **An upgrade no longer moves an installation's address.** `./triage upgrade` (and re-running the installer) recomputed `PUBLIC_URL`, `S3_PUBLIC_ENDPOINT` and `COMPOSE_FILE`, discarding values set with `./triage config set` and extra compose overlays. Found on a real VPS behind its own Caddy. They're now recomputed only when an address flag (`--host`, `--port`, `--files-host`) is given, and added overlays are kept.
 
 ## [0.7.0] - 2026-11-04

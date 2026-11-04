@@ -4,12 +4,13 @@ import type { DocumentList, DocumentListQuery, DocumentSummary } from "@ai-triag
 import { DOCUMENT_SOURCES } from "@ai-triage/core";
 import { FileText, Search, UploadCloud } from "lucide-react";
 import Link from "next/link";
-import { type DragEvent, type FormEvent, useCallback, useRef, useState } from "react";
-import { Badge, Pill, stateOf } from "@/components/badge";
+import { type DragEvent, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { Badge, stateOf } from "@/components/badge";
 import { Button } from "@/components/button";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { LoadingBlock } from "@/components/loading";
+import { ReasonPill } from "@/components/reason-pill";
 import { Section } from "@/components/section";
 import { Segmented } from "@/components/segmented";
 import { Input } from "@/components/ui/input";
@@ -91,6 +92,17 @@ export function DocumentsView({ canUpload }: { canUpload: boolean }) {
     setMore({ docs: [], next: null });
     setFilters((f) => ({ ...f, ...patch }));
   };
+
+  // Typing searches after a short pause (Enter searches at once), so the list never looks stale.
+  useEffect(() => {
+    const q = search.trim() || undefined;
+    if (q === filters.q) return;
+    const timer = setTimeout(() => {
+      setMore({ docs: [], next: null });
+      setFilters((f) => ({ ...f, q }));
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search, filters.q]);
 
   async function loadMore() {
     const page = await fetchPage(more.next ?? nextBefore ?? undefined);
@@ -211,6 +223,7 @@ export function DocumentsView({ canUpload }: { canUpload: boolean }) {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search titles"
+            aria-label="Search titles"
             className="w-56 pl-8"
           />
         </form>
@@ -275,9 +288,7 @@ export function DocumentsView({ canUpload }: { canUpload: boolean }) {
                       <td>
                         <span className="flex flex-wrap items-center gap-1">
                           {d.reasons.map((r) => (
-                            <Pill key={r} className="font-mono">
-                              {r}
-                            </Pill>
+                            <ReasonPill key={r} reason={r} />
                           ))}
                           {d.processingStatus === "skipped" && canUpload && (
                             <Button size="xs" onClick={() => processAnyway(d.id)}>

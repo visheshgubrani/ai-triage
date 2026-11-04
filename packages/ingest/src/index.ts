@@ -21,6 +21,7 @@ import {
   withTenantTx,
 } from "@ai-triage/db";
 import { type Storage, storageKeys } from "@ai-triage/storage";
+import { effectiveMime } from "./sniff";
 
 // Every way a document enters the system ends here: store the source under a server-issued key,
 // then create the document, its first run and the parse job in one transaction (ingestDocument).
@@ -241,8 +242,8 @@ export async function ingestFile(
     checkEmailLimits(email, limits);
     return ingestEmail(deps, tenantId, email, { source: file.source, eml: file.bytes, externalRef: file.externalRef });
   }
-  const mime = file.mime?.split(";")[0]?.trim().toLowerCase() ?? null;
-  if (!isOneOf(ACCEPTED_MIMES, mime)) throw new IngestRejected(415, `unsupported type ${file.mime ?? "(none)"}`);
+  const mime = effectiveMime(file.mime, file.bytes, file.filename);
+  if (!isOneOf(ACCEPTED_MIMES, mime)) throw new IngestRejected(415, `unsupported type ${file.mime || "(none)"}`);
 
   const externalId = fileExternalId(file.bytes);
   const dup = await existing(deps, tenantId, file.source, externalId);

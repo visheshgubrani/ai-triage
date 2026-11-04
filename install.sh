@@ -41,7 +41,8 @@ usage: install.sh [options]
   --files-host NAME   behind a reverse proxy you already run (nginx, Caddy, Traefik) that owns 80/443:
                       with --host, the app and its files listen on 127.0.0.1 (--port, --port + 1)
                       and the proxy serves https://HOST and https://NAME. Prints its config
-  --port N            a local install's port (default 3000; files use N+1)
+  --port N            the app's port on this computer (default 3000); a local install's
+                      stored files use N+1
   --ocr BACKEND       read scans and photos with PaddleOCR-VL: nvidia, vulkan (AMD and Intel
                       GPUs) or cpu; off turns it off again. Downloads about 3 GB the first time
   --demo              the demo instead: sample data and recorded model answers, no key needed
@@ -89,17 +90,46 @@ port_busy() {
   if command -v ss >/dev/null 2>&1; then ss -ltn 2>/dev/null | awk '{print $4}' | grep -q "[:.]$1\$"
   elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
   else
-    say "warning: neither ss nor lsof is here, so ports weren't checked"
+    [ -n "${PORTS_UNCHECKED:-}" ] || say "warning: neither ss nor lsof is here, so ports weren't checked"
+    PORTS_UNCHECKED=1
     return 1
   fi
 }
 already_ours() { [ -f "$DIR/.env" ] && (cd "$DIR" && docker compose ps -q caddy 2>/dev/null | grep -q .); }
+env_get() { sed -n "s/^$1=//p" "${2:-.env}" 2>/dev/null | tail -n 1; }
 
 if [ -n "$DEMO" ]; then
   [ -z "$HOST" ] || die "--demo runs on this computer only" "drop --host, or drop --demo for a real install"
-  for p in 3000 9020; do
-    port_busy "$p" && ! already_ours && die "port $p is in use" "stop what uses it, then run this again"
-  done
+  # The demo's host ports. The app's comes from --port (or the last run); each of the others is its
+  # default or the first free one 100, 200, … above it, so another stack on this machine keeps its own.
+  # A re-run keeps what the first run chose (.env).
+  web=${PORT:-$(env_get WEB_PORT "$DIR/.env")}
+  web=${web:-3000}
+  case "$web" in
+    *[!0-9]* | "") die "--port must be a number" ;;
+  esac
+  if [ "$web" -lt 1024 ] || [ "$web" -gt 65535 ]; then die "--port must be between 1024 and 65535"; fi
+  demo_ports=
+  moved=
+  if already_ours; then
+    for name in S3_PORT S3_CONSOLE_PORT CATCHER_PORT FAKE_GOOGLE_PORT SIM_PORT POSTGRES_PORT; do
+      demo_ports="$demo_ports $name=$(env_get "$name" "$DIR/.env")"
+    done
+  else
+    port_busy "$web" && die "port $web is in use" "run again with --port <another port>, such as --port 4000"
+    for pair in S3_PORT:9020 S3_CONSOLE_PORT:9021 CATCHER_PORT:9030 FAKE_GOOGLE_PORT:9040 SIM_PORT:9050 POSTGRES_PORT:5440; do
+      name=${pair%%:*}
+      default=${pair#*:}
+      p=$(env_get "$name" "$DIR/.env")
+      p=${p:-$default}
+      while port_busy "$p" || [ "$p" = "$web" ]; do
+        p=$((p + 100))
+        [ "$p" -le 65535 ] || die "no free port for $name" "free a port near $default, then run this again"
+      done
+      [ "$p" = "$default" ] || moved="$moved $default→$p"
+      demo_ports="$demo_ports $name=$p"
+    done
+  fi
 elif [ -n "$FILES_HOST" ]; then
   [ -n "$HOST" ] || die "--files-host goes with --host (the app's public hostname)" "add --host triage.example.com"
   p=${PORT:-3000}
@@ -168,11 +198,29 @@ if [ -n "$DEMO" ]; then
   fetch compose.yaml compose.yaml
   fetch infra/caddy/Caddyfile.demo infra/caddy/Caddyfile.demo
   fetch infra/webhook-catcher/catcher.mjs infra/webhook-catcher/catcher.mjs
+  fetch fixtures/docs/sup-12.eml samples/sup-12.eml
+  # .env keeps the demo's project and ports, so `docker compose` run here later finds the same stack.
+  # Its own project: the repository's `ai-triage` is a dev stack's, with its containers and data.
+  env_set() {
+    touch .env
+    grep -v "^$1=" .env >.env.tmp || true
+    printf '%s=%s\n' "$1" "$2" >>.env.tmp
+    mv .env.tmp .env
+  }
+  [ -n "$(env_get COMPOSE_PROJECT_NAME)" ] || env_set COMPOSE_PROJECT_NAME ai-triage-demo
+  env_set TRIAGE_VERSION "$VERSION"
+  [ -z "${TRIAGE_IMAGE:-}" ] || env_set TRIAGE_IMAGE "$TRIAGE_IMAGE"
+  env_set WEB_PORT "$web"
+  for kv in $demo_ports; do env_set "${kv%%=*}" "${kv#*=}"; done
+  [ -z "$moved" ] || say "Ports already in use elsewhere, so the demo moved:$moved"
   step "Starting the demo (the first start pulls about 350 MB)"
-  TRIAGE_VERSION="$VERSION" docker compose up -d --wait api worker web caddy
+  docker compose up -d --wait api worker web caddy webhook-catcher fake-google llm-sim
   say ""
-  say "The demo is running: http://localhost:3000"
+  say "The demo is running: http://localhost:$web"
   say "  Sign in as admin@demo.test (or reviewer@demo.test) with the password demo-password."
+  say "  Approvals are delivered, signed, to the webhook catcher: http://localhost:$(env_get CATCHER_PORT)"
+  say "  Gmail is faked: connect it in Settings → Mailboxes, then deliver a message into it with"
+  say "    curl --data-binary @$DIR/samples/sup-12.eml http://localhost:$(env_get FAKE_GOOGLE_PORT)/fake/deliver"
   say "  Stop it with: cd $DIR && docker compose down    (add -v to delete its data)"
   exit 0
 fi

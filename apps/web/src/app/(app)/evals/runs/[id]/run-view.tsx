@@ -2,6 +2,7 @@
 
 import type { ConfigSummary, EvalRun, EvalRunDetail } from "@ai-triage/contracts";
 import { AUTOMATION_MODES, type AutomationMode } from "@ai-triage/core";
+import { describeReason } from "@ai-triage/core/review";
 import type { ResultDetail } from "@ai-triage/evals";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -495,7 +496,9 @@ export function RunView({ runId, isAdmin }: { runId: string; isAdmin: boolean })
                 </tbody>
               </DataTable>
               <h3 className="mt-4 text-xs text-muted-foreground">Why items went to review</h3>
-              <p className="text-xs">{metrics.routing.reasons.map((r) => `${r.reason} ${r.n}`).join(" · ") || "-"}</p>
+              <p className="text-xs">
+                {metrics.routing.reasons.map((r) => `${describeReason(r.reason).label} ${r.n}`).join(" · ") || "-"}
+              </p>
               <h3 className="mt-4 text-xs text-muted-foreground">
                 Cost and latency by stage{replay ? " (recorded)" : ""}
               </h3>

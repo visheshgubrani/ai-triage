@@ -8,7 +8,7 @@ export function ago(iso: string, now = Date.now()): string {
 }
 
 /** `invoice_number` → "Invoice number". */
-export const humanize = (name: string) => name.charAt(0).toUpperCase() + name.slice(1).replaceAll("_", " ");
+export { humanize } from "@ai-triage/core/review";
 
 /** True when a key event comes from a text field, where single-letter shortcuts must not fire. */
 export function isTyping(event: KeyboardEvent): boolean {

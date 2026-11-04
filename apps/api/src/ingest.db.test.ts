@@ -253,6 +253,15 @@ describe("REST API", () => {
     expect((await send("tri_00000000_bogusbogusbogusbogusbogusbogusbogu", file)).status).toBe(401);
   });
 
+  it("accepts a PDF sent without a type, as many clients send files", async () => {
+    const { key } = await withTenantTx(pool, demoId, (tx) => createApiKey(tx, { name: "test" }));
+    const pdf = new File([`%PDF-1.4\n% untyped ${randomUUID()}\n`], "invoice.pdf", {
+      type: "application/octet-stream",
+    });
+    const res = await send(key, pdf);
+    expect(res.status).toBe(201);
+  });
+
   it("refuses unsupported types", async () => {
     const { key } = await withTenantTx(pool, demoId, (tx) => createApiKey(tx, { name: "test" }));
     const res = await send(key, new File(["PK"], "a.zip", { type: "application/zip" }));

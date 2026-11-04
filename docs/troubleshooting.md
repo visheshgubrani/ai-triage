@@ -45,6 +45,6 @@ The browser uploads to, and reads from, storage directly at `S3_PUBLIC_ENDPOINT`
 
 ## The demo in Docker
 
-- **A port is already in use:** set `WEB_PORT`, `POSTGRES_PORT`, `S3_PORT` or `CATCHER_PORT` in the environment or `.env`.
+- **A port is already in use:** `install.sh --demo` picks free ports by itself (and `--port` moves the app). From a clone, set `WEB_PORT`, `POSTGRES_PORT`, `S3_PORT`, `S3_CONSOLE_PORT`, `CATCHER_PORT`, `FAKE_GOOGLE_PORT` or `SIM_PORT` in the environment or `.env`.
 - **`docker compose up` builds instead of pulling:** there's no published image for `TRIAGE_VERSION` yet, so it builds from your checkout. That's expected before the first release.
 - **Start over:** `docker compose down -v` deletes the demo's data; then run `docker compose up` again.

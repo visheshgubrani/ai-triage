@@ -1,6 +1,7 @@
 "use client";
 
 import type { SystemHealthResponse } from "@ai-triage/contracts";
+import { describeReason } from "@ai-triage/core/review";
 import { CircleCheck } from "lucide-react";
 import Link from "next/link";
 import { type ReactNode, useCallback, useState } from "react";
@@ -104,7 +105,7 @@ export function HealthView() {
               <ul className="divide-y divide-border">
                 {health.openFailures.map((f) => (
                   <li key={f.reason} className="flex items-center justify-between px-4 py-2.5">
-                    <code className="text-xs">{f.reason}</code>
+                    <span title={f.reason}>{describeReason(f.reason).label}</span>
                     <Pill tone="danger">{f.count}</Pill>
                   </li>
                 ))}

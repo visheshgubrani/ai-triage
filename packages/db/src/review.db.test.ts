@@ -92,6 +92,24 @@ describe("claims", () => {
     expect(new Set(won.map((c) => c.taskId)).size).toBe(3);
   });
 
+  it("claims the oldest task within the queue's filters, then nothing", async () => {
+    const tenantId = await tenantWithConfig();
+    await inTenant(tenantId, (tx) => seedReviewTask(tx, { reasons: ["below_threshold"] }));
+    await inTenant(tenantId, (tx) => seedReviewTask(tx, { kind: "audit", category: "support_request", fields: {} }));
+    const { taskId } = await inTenant(tenantId, (tx) => seedReviewTask(tx, { reasons: ["required_missing:total"] }));
+    const filter = { category: "invoice", reasonCode: "required_missing" };
+    const first = await inTenant(tenantId, (tx) => claimNext(tx, { userId: alice, now: NOW, filter }));
+    expect(first?.taskId).toBe(taskId);
+    expect(await inTenant(tenantId, (tx) => claimNext(tx, { userId: alice, now: NOW, filter }))).toBeNull();
+    // Nothing that young; then the audit task alone.
+    const young = { kind: "audit" as const, olderThan: new Date(Date.now() - 3_600_000) };
+    expect(await inTenant(tenantId, (tx) => claimNext(tx, { userId: alice, now: NOW, filter: young }))).toBeNull();
+    const audit = await inTenant(tenantId, (tx) =>
+      claimNext(tx, { userId: alice, now: NOW, filter: { kind: "audit" } }),
+    );
+    expect(audit).not.toBeNull();
+  });
+
   it("treats a lapsed lease as no claim, and only the holder can extend or release a live one", async () => {
     const tenantId = await tenantWithConfig();
     const { taskId } = await inTenant(tenantId, (tx) => seedReviewTask(tx));

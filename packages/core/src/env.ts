@@ -390,10 +390,10 @@ export const ENV_VARS: readonly EnvVar[] = [
   {
     name: "FAKE_GOOGLE_PORT",
     group: "Google",
-    processes: ["cli"],
+    processes: ["cli", "compose"],
     kind: "int",
     default: "9040",
-    description: "Port of `pnpm fake-google`.",
+    description: "Port of `pnpm fake-google`, and the host port of the Docker demo's fake Google.",
   },
   {
     name: "FAKE_GOOGLE_MAILBOX",
@@ -736,7 +736,11 @@ export const ENV_VARS: readonly EnvVar[] = [
         "Image tag to run (`ghcr.io/visheshgubrani/ai-triage:<version>`). `./triage upgrade --version` changes it.",
         "latest",
       ],
-      ["TRIAGE_IMAGE", "Image repository, for running your own build.", "ghcr.io/visheshgubrani/ai-triage"],
+      [
+        "TRIAGE_IMAGE",
+        "Image repository, for running your own build (installs and the demo).",
+        "ghcr.io/visheshgubrani/ai-triage",
+      ],
       [
         "INSTALL_MODE",
         "local (this machine), server (its own HTTPS on 80/443/8443) or upstream (behind your proxy).",

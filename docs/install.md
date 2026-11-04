@@ -39,7 +39,7 @@ curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/insta
 
 Both names need DNS to the server. Files need a hostname of their own (a separate origin, see [security.md](security.md)). The proxy must pass the `Host` header through, because stored files are signed for it: Caddy does by default, and nginx needs `proxy_set_header Host $host`.
 
-**Just looking?** `… | sh -s -- --demo` runs the demo instead: sample documents, recorded model answers, and no key needed.
+**Just looking?** `… | sh -s -- --demo` runs the demo instead: sample documents, recorded model answers, a fake Gmail and a webhook catcher, and no key needed. It runs as its own compose project (`ai-triage-demo`) and keeps its ports in its `.env`. The app is on 3000 (`--port N` moves it); if storage, the catcher, the fake Google, the simulator or Postgres would clash with another stack, it picks the next free port 100 up and prints the addresses it used.
 
 The installer:
 1. checks Docker and the ports;
@@ -52,7 +52,7 @@ It ends by printing a **setup link**. Re-running it is safe: it keeps `.env` and
 | Option | Does |
 |---|---|
 | `--host NAME --email ADDRESS` | Server install. The app is at `https://NAME`, and stored files at `https://NAME:8443`: a separate origin, so a stored file can never run as the app |
-| `--port N` | Local install on another port (default 3000). Files use N+1 |
+| `--port N` | Local install (or the demo) on another port (default 3000). A local install's files use N+1 |
 | `--host NAME --files-host NAME` | Behind your own reverse proxy (it keeps 80/443): app and files on 127.0.0.1 `--port` and N+1 |
 | `--version X.Y.Z` | Install a specific release (default: latest) |
 | `--dir PATH` | Where to put it (default `./ai-triage`) |
@@ -201,7 +201,7 @@ An agent can do the whole install without prompts. Give it these instructions:
 
 | Symptom | Fix |
 |---|---|
-| "port 3000 is in use" | Add `--port 4000` |
+| "port 3000 is in use" | Add `--port 4000` (the demo too). The demo moves its other ports by itself |
 | A server install can't get a certificate | The DNS record must point at this machine, and ports 80 and 443 must be reachable from the internet. `./triage logs caddy` shows Let's Encrypt's answer |
 | Documents fail | Check `./triage status`. "model blocked" means no key for the workspace's model: set one, or pick another model in Settings → Pipeline |
 | Anything else | See [troubleshooting.md](troubleshooting.md) |

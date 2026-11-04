@@ -62,7 +62,7 @@ The first returns one document. The second returns `{"documents": [...]}`, newes
   "delivery_status": "none",
   "category": "invoice",
   "fields": { "vendor_name": "Northwind Supplies", "total": 120 },
-  "reasons": ["low_confidence"],
+  "reasons": ["below_threshold"],
   "delivered_at": null
 }
 ```
