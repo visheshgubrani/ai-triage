@@ -54,6 +54,34 @@ describe("cli configure", () => {
     });
   });
 
+  it("goes behind an existing reverse proxy: localhost ports, https public addresses, two hostnames", () => {
+    const v = configure(
+      {},
+      { host: "triage.acme.com", upstream: { filesHost: "files.triage.acme.com" }, port: 4600 },
+      {},
+      random,
+    );
+    expect(v).toMatchObject({
+      INSTALL_MODE: "upstream",
+      PUBLIC_URL: "https://triage.acme.com",
+      S3_PUBLIC_ENDPOINT: "https://files.triage.acme.com",
+      APP_SITE: "http://:4600",
+      FILES_SITE: "http://:4601",
+      COMPOSE_FILE: "compose.yaml:compose.local.yaml",
+    });
+    // The app's own production checks accept it (https, and no Let's Encrypt email needed).
+    expect(unsafeConfig({ ...v, NODE_ENV: "production" }, "api")).toEqual([]);
+    // Re-running without flags keeps the mode.
+    expect(configure(v, {}, {}, random)).toMatchObject({
+      INSTALL_MODE: "upstream",
+      FILES_HOST: "files.triage.acme.com",
+    });
+    expect(() => configure({}, { host: "a.acme.com", upstream: { filesHost: "a.acme.com" } }, {}, random)).toThrow(
+      "must differ",
+    );
+    expect(() => configure({}, { upstream: { filesHost: "f.acme.com" } }, {}, random)).toThrow("--host");
+  });
+
   it("takes provider keys from the environment and picks a matching first model", () => {
     const v = configure({}, {}, { OPENAI_API_KEY: " sk-test " }, random);
     expect(v).toMatchObject({

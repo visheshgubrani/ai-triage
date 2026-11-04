@@ -26,6 +26,8 @@ const { values: flags } = parseArgs({
     version: { type: "string" },
     ocr: { type: "string" },
     port: { type: "string" },
+    // Behind an existing reverse proxy: the files' public hostname (with --host for the app's).
+    "files-host": { type: "string" },
     // ./triage restore: take the secrets the restored data needs from the backup's .env.
     "restore-from": { type: "string" },
   },
@@ -57,6 +59,7 @@ try {
       version: flags.version,
       ocr: ocr as OcrBackend | "off" | undefined,
       port: flags.port ? Number(flags.port) : undefined,
+      upstream: flags["files-host"] ? { filesHost: flags["files-host"] } : undefined,
     },
     process.env,
   );
@@ -69,6 +72,7 @@ try {
   renameSync(temp, file);
   const keys = PROVIDER_KEYS.filter((k) => values[k]);
   console.log(`${Object.keys(existing).length > 0 ? "Updated" : "Wrote"} ${file}`);
+  console.log(`  mode:     ${values.INSTALL_MODE}`);
   console.log(`  address:  ${values.PUBLIC_URL}`);
   console.log(`  files:    ${values.S3_PUBLIC_ENDPOINT}`);
   console.log(

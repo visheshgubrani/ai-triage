@@ -19,7 +19,16 @@ export interface InstallOptions {
   ocr?: OcrBackend | "off";
   /** A local install's port (the app; files on the next one). Default 3000. */
   port?: number;
+  /**
+   * Behind a reverse proxy that's already on this machine (nginx, Caddy, Traefik), which owns 80
+   * and 443 and terminates TLS: the app and its files listen on 127.0.0.1 (`port`, `port + 1`),
+   * and the public addresses are https://`host` and https://`filesHost`.
+   */
+  upstream?: { filesHost: string };
 }
+
+/** local: this machine only. server: its own HTTPS on 80/443/8443. upstream: behind your proxy. */
+export type InstallMode = "local" | "server" | "upstream";
 
 /** Provider keys taken from the installer's environment, never from its arguments. */
 export const PROVIDER_KEYS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"] as const;
@@ -64,7 +73,18 @@ export function configure(
   if (host && host !== "localhost" && !HOSTNAME.test(host)) {
     throw new ConfigureError(`"${host}" isn't a hostname (give the name only, such as triage.acme.com)`);
   }
-  const server = host !== undefined && host !== "localhost";
+  const filesHost =
+    options.upstream?.filesHost.trim().toLowerCase() || (options.host ? undefined : existing.FILES_HOST) || undefined;
+  const mode: InstallMode = filesHost ? "upstream" : host !== undefined && host !== "localhost" ? "server" : "local";
+  if (mode === "upstream") {
+    if (!host || host === "localhost")
+      throw new ConfigureError("behind a proxy, --host names the app's public hostname");
+    if (!HOSTNAME.test(filesHost as string)) throw new ConfigureError(`"${filesHost}" isn't a hostname`);
+    if (filesHost === host) {
+      throw new ConfigureError("--files-host must differ from --host: stored files need an origin of their own");
+    }
+  }
+  const server = mode === "server";
   const email = options.email?.trim() || existing.ACME_EMAIL || "";
   if (server && !email.includes("@")) {
     throw new ConfigureError("a server install needs --email: Let's Encrypt sends certificate notices there");
@@ -81,8 +101,13 @@ export function configure(
 
   const port = options.port ?? (Number(existing.APP_PORT) || LOCAL_APP_PORT);
   if (!Number.isInteger(port) || port < 1024 || port > 65534) throw new ConfigureError("--port must be 1024 to 65534");
-  const publicUrl = server ? `https://${host}` : `http://localhost:${port}`;
-  const filesUrl = server ? `https://${host}:${SERVER_FILES_PORT}` : `http://localhost:${port + 1}`;
+  const publicUrl = mode === "local" ? `http://localhost:${port}` : `https://${host}`;
+  const filesUrl =
+    mode === "server"
+      ? `https://${host}:${SERVER_FILES_PORT}`
+      : mode === "upstream"
+        ? `https://${filesHost}`
+        : `http://localhost:${port + 1}`;
   const composeFiles = ["compose.yaml", server ? "compose.server.yaml" : "compose.local.yaml"];
   if (ocr !== "off") composeFiles.push(`compose.ocr-${ocr}.yaml`);
 
@@ -96,7 +121,9 @@ export function configure(
     COMPOSE_PROFILES: existing.COMPOSE_PROFILES ?? "bundled",
     TRIAGE_VERSION: options.version || existing.TRIAGE_VERSION || "latest",
     // Addresses.
+    INSTALL_MODE: mode,
     APP_HOST: host ?? "localhost",
+    ...(filesHost ? { FILES_HOST: filesHost } : {}),
     APP_PORT: String(port),
     FILES_PORT: String(port + 1),
     APP_SITE: server ? (host as string) : `http://:${port}`,

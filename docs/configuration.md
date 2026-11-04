@@ -150,7 +150,9 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 |---|---|---|---|
 | `TRIAGE_VERSION` | compose | `latest` | Image tag to run (`ghcr.io/visheshgubrani/ai-triage:<version>`). `./triage upgrade --version` changes it. |
 | `TRIAGE_IMAGE` | compose | `ghcr.io/visheshgubrani/ai-triage` | Image repository, for running your own build. |
+| `INSTALL_MODE` | compose | `local` | local (this machine), server (its own HTTPS on 80/443/8443) or upstream (behind your proxy). |
 | `APP_HOST` | compose | – | The installation's hostname: `localhost`, or the server's DNS name. |
+| `FILES_HOST` | compose | – | Behind your own reverse proxy (upstream): the hostname that serves stored files. |
 | `APP_PORT` | compose | `3000` | A local install's port (`install.sh --port`); stored files are on the next one (FILES_PORT). |
 | `FILES_PORT` | compose | `3001` | A local install's port for stored files: APP_PORT + 1. |
 | `APP_SITE` | compose | – | Caddy's address for the app: the hostname (HTTPS, automatic certificates), or `http://:3000` locally. |
