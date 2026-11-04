@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkEnv, ENV_VARS, envVar, PLATFORM_ENV, renderConfigDoc, renderEnvExample } from "./env";
+import { checkEnv, ENV_VARS, envVar, PLATFORM_ENV, renderConfigDoc, renderEnvExample, resolvePublicUrls } from "./env";
 
 const root = join(import.meta.dirname, "../../..");
 const SKIP_DIRS = new Set(["node_modules", "dist", ".next", ".turbo", "cassettes", "docs"]);
@@ -78,5 +78,31 @@ describe("env registry", () => {
   it("accepts the example file's values", () => {
     const example = Object.fromEntries(ENV_VARS.filter((v) => v.example).map((v) => [v.name, v.example]));
     for (const p of ["api", "worker", "cli"] as const) expect(checkEnv(example, p)).toEqual([]);
+  });
+});
+
+describe("resolvePublicUrls", () => {
+  it("serves auth and the api from the one public origin", () => {
+    expect(resolvePublicUrls({ PUBLIC_URL: "https://triage.example.com/" })).toEqual({
+      origin: "https://triage.example.com",
+      authBaseUrl: "https://triage.example.com",
+      apiBaseUrl: "https://triage.example.com/api",
+      warnings: [],
+    });
+  });
+
+  it("falls back to WEB_ORIGIN, then localhost", () => {
+    expect(resolvePublicUrls({ WEB_ORIGIN: "http://localhost:3001" }).origin).toBe("http://localhost:3001");
+    expect(resolvePublicUrls({}).origin).toBe("http://localhost:3000");
+  });
+
+  it("refuses a URL with a path", () => {
+    expect(() => resolvePublicUrls({ PUBLIC_URL: "https://example.com/triage" })).toThrow("no path");
+  });
+
+  it("warns about the settings the single origin replaced", () => {
+    const { warnings } = resolvePublicUrls({ BETTER_AUTH_URL: "http://localhost:8787", NEXT_PUBLIC_API_URL: "x" });
+    expect(warnings).toHaveLength(2);
+    expect(resolvePublicUrls({ BETTER_AUTH_URL: "http://localhost:3000" }).warnings).toEqual([]);
   });
 });

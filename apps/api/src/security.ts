@@ -12,7 +12,7 @@ import { secureHeaders } from "hono/secure-headers";
  * Machine-to-machine routes: they authenticate with basic auth (Postmark) or an API key, never a
  * cookie, so they skip the Origin check, and they set their own (larger) body limit.
  */
-const MACHINE_PREFIXES = ["/webhooks/", "/v1/"];
+const MACHINE_PREFIXES = ["/api/webhooks/", "/api/v1/", "/webhooks/", "/v1/"];
 const isMachineRoute = (path: string) => MACHINE_PREFIXES.some((p) => path.startsWith(p));
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);

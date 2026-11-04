@@ -44,6 +44,6 @@ export interface AppDeps {
   googleSignIn: boolean;
   /** How mailbox code reaches Google (tests pass a fake). Better Auth's sign-in uses the global fetch. */
   googleFetch: typeof fetch;
-  /** The API's public URL (BETTER_AUTH_URL), for OAuth redirect URIs. */
+  /** `<PUBLIC_URL>/api`: where the API's routes are reachable from outside, for OAuth redirect URIs. */
   apiBaseUrl: string;
 }

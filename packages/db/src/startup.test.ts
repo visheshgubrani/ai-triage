@@ -5,8 +5,7 @@ import { describeDatabase, explainDatabaseError } from "./startup-checks";
 
 const safe = {
   BETTER_AUTH_SECRET: "x".repeat(44),
-  BETTER_AUTH_URL: "https://api.example.com",
-  WEB_ORIGIN: "https://app.example.com",
+  PUBLIC_URL: "https://triage.example.com",
   POSTMARK_INBOUND_PASSWORD: "a-long-random-postmark-password",
   S3_SECRET_ACCESS_KEY: "a-real-secret",
   DATABASE_URL: "postgres://triage_app:s3cret-pw@db:5432/triage",
@@ -23,8 +22,7 @@ describe("unsafeConfig", () => {
     const problems = unsafeConfig(
       {
         BETTER_AUTH_SECRET: DEV_DEFAULTS.betterAuthSecret,
-        BETTER_AUTH_URL: "http://localhost:8787",
-        WEB_ORIGIN: "http://localhost:3000",
+        PUBLIC_URL: "http://localhost:3000",
         POSTMARK_INBOUND_PASSWORD: DEV_DEFAULTS.postmarkPassword,
         ENCRYPTION_KEY: DEV_ENCRYPTION_KEY,
         S3_SECRET_ACCESS_KEY: DEV_DEFAULTS.s3SecretKey,
@@ -32,13 +30,19 @@ describe("unsafeConfig", () => {
       },
       "api",
     );
-    expect(problems).toHaveLength(7);
+    expect(problems).toHaveLength(6);
   });
 
-  it("flags a short auth secret and a missing auth URL", () => {
-    const problems = unsafeConfig({ ...safe, BETTER_AUTH_SECRET: "short", BETTER_AUTH_URL: undefined }, "api");
+  it("flags a short auth secret and a missing public URL", () => {
+    const problems = unsafeConfig({ ...safe, BETTER_AUTH_SECRET: "short", PUBLIC_URL: undefined }, "api");
     expect(problems.join("\n")).toMatch(/BETTER_AUTH_SECRET/);
-    expect(problems.join("\n")).toMatch(/BETTER_AUTH_URL/);
+    expect(problems.join("\n")).toMatch(/PUBLIC_URL/);
+  });
+
+  it("still accepts the older WEB_ORIGIN as the public URL", () => {
+    expect(unsafeConfig({ ...safe, PUBLIC_URL: undefined, WEB_ORIGIN: "https://triage.example.com" }, "api")).toEqual(
+      [],
+    );
   });
 
   it("requires an operator-chosen encryption key", () => {
@@ -47,7 +51,7 @@ describe("unsafeConfig", () => {
   });
 
   it("checks only storage, database and key settings for the worker", () => {
-    expect(unsafeConfig({ ...safe, BETTER_AUTH_SECRET: undefined, WEB_ORIGIN: undefined }, "worker")).toEqual([]);
+    expect(unsafeConfig({ ...safe, BETTER_AUTH_SECRET: undefined, PUBLIC_URL: undefined }, "worker")).toEqual([]);
     expect(unsafeConfig({ ...safe, S3_SECRET_ACCESS_KEY: DEV_DEFAULTS.s3SecretKey }, "worker")).toHaveLength(1);
   });
 

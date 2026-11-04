@@ -26,9 +26,8 @@ COPY fixtures/package.json fixtures/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
-# The browser calls the API at this URL; Next inlines it at build time.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8787
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
+# No URL is baked in: the browser calls /api on whatever origin serves the app.
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
 FROM node:24-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c

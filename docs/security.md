@@ -85,7 +85,7 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 
 Set these before exposing an instance. `TRIAGE_DEMO` must be unset; the api and worker refuse to start on the dev defaults.
 
-- [ ] TLS in front of web and API, with HSTS on the web's TLS terminator (the API sends its own). `BETTER_AUTH_URL` and `WEB_ORIGIN` are `https://` URLs, and `NODE_ENV=production`.
+- [ ] TLS in front of the app (Caddy, which routes `/api` to the api), with HSTS (the API sends its own). `PUBLIC_URL` is an `https://` origin, and `NODE_ENV=production`.
 - [ ] `pnpm db:migrate` (it also seeds model prices).
 - [ ] `BETTER_AUTH_SECRET`: at least 32 random bytes (`openssl rand -base64 32`).
 - [ ] `ENCRYPTION_KEYS` (or `ENCRYPTION_KEY`): 32 random bytes, base64. Back it up apart from the database; losing it loses the webhook secrets.

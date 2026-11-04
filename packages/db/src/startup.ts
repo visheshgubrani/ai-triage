@@ -48,8 +48,8 @@ export function unsafeConfig(env: Env, role: StartupRole): string[] {
     if (secret === DEV_DEFAULTS.betterAuthSecret || secret.length < 32) {
       problems.push("BETTER_AUTH_SECRET is the dev default or shorter than 32 characters");
     }
-    if (!isHttps(env.BETTER_AUTH_URL)) problems.push("BETTER_AUTH_URL is not an https:// URL");
-    if (!isHttps(env.WEB_ORIGIN)) problems.push("WEB_ORIGIN is not an https:// origin");
+    const publicUrl = env.PUBLIC_URL || env.WEB_ORIGIN;
+    if (!isHttps(publicUrl)) problems.push("PUBLIC_URL is not an https:// origin");
     const postmark = env.POSTMARK_INBOUND_PASSWORD;
     if (
       postmark !== undefined &&

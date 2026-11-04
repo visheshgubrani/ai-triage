@@ -16,8 +16,10 @@ x-app-env: &app-env
   S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-triage}
   S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-triage-secret}
   BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-only-secret-change-me-0123456789abcdef}
-  BETTER_AUTH_URL: http://localhost:${API_PORT:-8787}
-  WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
+  # The one public address: Caddy serves the web app there, and the API under /api.
+  PUBLIC_URL: http://localhost:${WEB_PORT:-3000}
+  # Only Caddy reaches the api, over the compose network, so its X-Forwarded-For is believed.
+  TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
   POSTMARK_INBOUND_USER: postmark
   POSTMARK_INBOUND_PASSWORD: ${POSTMARK_INBOUND_PASSWORD:-dev-only-postmark-password}
   LLM_MODE: ${LLM_MODE:-replay}
@@ -125,8 +127,6 @@ services:
   init:
     build:
       context: .
-      args:
-        NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-8787}
     image: ai-triage-app
     command: ["sh", "-c", "pnpm db:migrate && pnpm db:seed"]
     environment:
@@ -144,8 +144,6 @@ services:
     pull_policy: never
     command: ["pnpm", "--filter", "@ai-triage/api", "start"]
     environment: *app-env
-    ports:
-      - "127.0.0.1:${API_PORT:-8787}:8787"
     depends_on:
       init:
         condition: service_completed_successfully
@@ -170,11 +168,21 @@ services:
       API_INTERNAL_URL: http://api:8787
       # The CSP allows the storage origin (presigned downloads and uploads).
       S3_PUBLIC_ENDPOINT: http://localhost:${S3_PORT:-9020}
-    ports:
-      - "127.0.0.1:${WEB_PORT:-3000}:3000"
     depends_on:
       api:
         condition: service_started
+    restart: unless-stopped
+
+  # The front door: http://localhost:3000 serves the web app, and /api goes straight to the api.
+  caddy:
+    image: caddy:2-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
+    volumes:
+      - ./infra/caddy/Caddyfile.demo:/etc/caddy/Caddyfile:ro
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:80"
+    depends_on:
+      - api
+      - web
     restart: unless-stopped
 
 volumes:

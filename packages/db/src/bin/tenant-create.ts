@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { INVITATION_ACCEPT_METHODS, type InvitationAcceptMethod, isOneOf } from "@ai-triage/core";
+import { INVITATION_ACCEPT_METHODS, type InvitationAcceptMethod, isOneOf, resolvePublicUrls } from "@ai-triage/core";
 import {
   buildPipelineConfig,
   createInvitation,
@@ -41,7 +41,7 @@ if (!isOneOf(INVITATION_ACCEPT_METHODS, acceptWith)) {
   process.exit(2);
 }
 
-const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
+const webOrigin = resolvePublicUrls(process.env).origin;
 const pool = createPool();
 try {
   const { id } = await createTenant(pool, { name, slug, inboundDomain: process.env.INBOUND_DOMAIN || undefined });

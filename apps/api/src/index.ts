@@ -1,4 +1,4 @@
-import { assertEnv, callModeOf, getLlmMode } from "@ai-triage/core";
+import { assertEnv, callModeOf, getLlmMode, resolvePublicUrls } from "@ai-triage/core";
 import { egressPolicyFromEnv } from "@ai-triage/core/pipeline";
 import {
   checkStartup,
@@ -17,20 +17,25 @@ import { parseTrustedProxies } from "./client-ip";
 import { rateLimitsFromEnv } from "./rate-limit";
 import { systemResolve } from "./webhook-url";
 
+let urls: ReturnType<typeof resolvePublicUrls>;
 try {
   assertEnv(process.env, "api");
+  urls = resolvePublicUrls(process.env);
 } catch (err) {
   exitOnStartupError(err);
 }
+for (const warning of urls.warnings) console.warn(warning);
 const port = Number(process.env.API_PORT ?? 8787);
-const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
+// The web app and the API share one origin (the API under /api), so cookies, CORS and the Origin
+// check all use it.
+const webOrigin = urls.origin;
 const secret = process.env.BETTER_AUTH_SECRET as string;
 const databaseUrl = process.env.DATABASE_URL as string;
 
 const pool = createPool(databaseUrl);
 await checkStartup(pool, process.env, "api").catch(exitOnStartupError);
 const db = createDb(pool);
-const baseURL = process.env.BETTER_AUTH_URL ?? `http://localhost:${port}`;
+const baseURL = urls.authBaseUrl;
 const trustedProxies = (process.env.TRUSTED_PROXIES ?? "")
   .split(",")
   .map((s) => s.trim())
@@ -75,7 +80,7 @@ const app = createApp({
   google,
   googleSignIn,
   googleFetch: fetch,
-  apiBaseUrl: baseURL,
+  apiBaseUrl: urls.apiBaseUrl,
 });
 
 const server = serve({ fetch: app.fetch, port }, (info) => {

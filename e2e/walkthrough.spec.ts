@@ -5,7 +5,9 @@ import { expect, type Page, test } from "@playwright/test";
 // revision; a second tab still holding the old revision is refused; the signed webhook reaches the
 // catcher; and a forced Redeliver arrives with the same Idempotency-Key while `actions` keeps one row.
 
-const { API_URL: API = "http://localhost:8787", CATCHER_URL: CATCHER = "http://localhost:9030" } = process.env;
+// The API is the web origin's /api (Caddy in Docker, the Next rewrite in `pnpm dev`).
+const { WEB_URL: WEB = "http://localhost:3000" } = process.env;
+const { API_URL: API = `${WEB}/api`, CATCHER_URL: CATCHER = "http://localhost:9030" } = process.env;
 
 type Delivery = { idempotencyKey: string; signature: string; body: { fields?: Record<string, unknown> } };
 

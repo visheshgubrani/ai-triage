@@ -183,7 +183,7 @@ export const ENV_VARS: readonly EnvVar[] = [
     kind: "string",
     example: "postmark",
     description:
-      "Basic-auth user in the Postmark inbound webhook URL (https://user:pass@host/webhooks/postmark). Unset with the password: the webhook is off.",
+      "Basic-auth user in the Postmark inbound webhook URL (https://user:pass@host/api/webhooks/postmark). Unset with the password: the webhook is off.",
   },
   {
     name: "POSTMARK_INBOUND_PASSWORD",
@@ -222,30 +222,37 @@ export const ENV_VARS: readonly EnvVar[] = [
     description: "Host port of the web app in the Docker demo.",
   },
   {
+    name: "PUBLIC_URL",
+    group: "API and web",
+    processes: ["api", "cli"],
+    kind: "url",
+    default: "WEB_ORIGIN, else http://localhost:3000",
+    example: "http://localhost:3000",
+    description:
+      "The one address people use: the web app, with the API under /api on the same origin (cookies, the Origin check, invite links, OAuth redirect URIs). An origin only, no path. Must be https in production.",
+  },
+  {
     name: "WEB_ORIGIN",
     group: "API and web",
     processes: ["api", "cli"],
     kind: "url",
-    default: "http://localhost:3000",
-    example: "http://localhost:3000",
-    description: "Origin of the web app: CORS, the Origin check, invite links, OAuth redirects back to the UI.",
+    description: "Older name for PUBLIC_URL, still honored when PUBLIC_URL is unset.",
   },
   {
     name: "API_INTERNAL_URL",
     group: "API and web",
     processes: ["web"],
     kind: "url",
-    default: "NEXT_PUBLIC_API_URL",
-    description: "How the web server reaches the api (in compose: http://api:8787). The browser never uses it.",
+    default: "http://localhost:8787",
+    description:
+      "How the web server reaches the api, without /api (in compose: http://api:8787). Server components call it directly; `pnpm dev` also proxies the browser's /api through it.",
   },
   {
     name: "NEXT_PUBLIC_API_URL",
     group: "API and web",
-    processes: ["web"],
+    processes: ["api"],
     kind: "url",
-    default: "http://localhost:8787",
-    example: "http://localhost:8787",
-    description: "The api as the browser sees it. Inlined into the web bundle at build time.",
+    description: "No longer used (the browser calls /api on the same origin). The api warns when it's set.",
   },
   {
     name: "TRUSTED_PROXIES",
@@ -309,9 +316,8 @@ export const ENV_VARS: readonly EnvVar[] = [
     group: "Secrets",
     processes: ["api"],
     kind: "url",
-    default: "http://localhost:<API_PORT>",
-    example: "http://localhost:8787",
-    description: "Public base URL of the api, for auth callbacks. Must be https in production.",
+    description:
+      "No longer needed: auth runs at PUBLIC_URL/api/auth. A value on another origin is ignored with a warning.",
   },
   // ── Google ──
   {
@@ -321,7 +327,7 @@ export const ENV_VARS: readonly EnvVar[] = [
     kind: "string",
     example: "",
     description:
-      "One OAuth client for Sign in with Google and Gmail mailbox sync (docs/google.md). Leave it and the secret empty to hide every Google feature. Redirect URIs to register: <BETTER_AUTH_URL>/api/auth/callback/google and <BETTER_AUTH_URL>/integrations/google/callback.",
+      "One OAuth client for Sign in with Google and Gmail mailbox sync (docs/google.md). Leave it and the secret empty to hide every Google feature. Redirect URIs to register: <PUBLIC_URL>/api/auth/callback/google and <PUBLIC_URL>/api/integrations/google/callback.",
   },
   {
     name: "GOOGLE_CLIENT_SECRET",
@@ -568,7 +574,7 @@ export const ENV_VARS: readonly EnvVar[] = [
     kind: "url",
     default: "http://localhost:8787",
     example: "http://localhost:8787",
-    description: "`pnpm ingest <file>`: the API base URL.",
+    description: "`pnpm ingest <file>`: where the API is (the api itself in dev, or PUBLIC_URL in Docker).",
   },
   {
     name: "TRIAGE_API_KEY",
@@ -593,8 +599,8 @@ export const ENV_VARS: readonly EnvVar[] = [
     group: "End-to-end tests",
     processes: ["cli"],
     kind: "url",
-    default: "http://localhost:8787",
-    description: "`pnpm e2e`: the running api.",
+    default: "WEB_URL/api",
+    description: "`pnpm e2e`: the API, by default WEB_URL/api.",
   },
   {
     name: "CATCHER_URL",
@@ -741,4 +747,37 @@ export function renderConfigDoc(): string {
     }
   }
   return `${out.join("\n")}\n`;
+}
+
+export interface PublicUrls {
+  /** The origin people use: the web app, with the API at `${origin}/api`. */
+  origin: string;
+  /** Better Auth's baseURL (it serves /api/auth on it). */
+  authBaseUrl: string;
+  /** Prefix of the api's own routes, for OAuth redirect URIs. */
+  apiBaseUrl: string;
+  /** Settings that are ignored, worth a warning at startup. */
+  warnings: string[];
+}
+
+/**
+ * One public URL (docs/architecture.md §2): PUBLIC_URL, else the older WEB_ORIGIN, else localhost.
+ * Throws on a URL with a path, which would break cookies and the auth routes.
+ */
+export function resolvePublicUrls(env: Env): PublicUrls {
+  const raw = env.PUBLIC_URL?.trim() || env.WEB_ORIGIN?.trim() || "http://localhost:3000";
+  const url = new URL(raw);
+  if (url.pathname !== "/" || url.search || url.hash) {
+    throw new EnvError(`PUBLIC_URL must be an origin with no path (got "${raw}"): the API lives at /api on it`);
+  }
+  const origin = url.origin;
+  const warnings: string[] = [];
+  const auth = env.BETTER_AUTH_URL?.trim();
+  if (auth && new URL(auth).origin !== origin) {
+    warnings.push(`BETTER_AUTH_URL (${auth}) is ignored: auth now runs at ${origin}/api/auth`);
+  }
+  if (env.NEXT_PUBLIC_API_URL?.trim()) {
+    warnings.push("NEXT_PUBLIC_API_URL is ignored: the browser calls the API at /api on the same origin");
+  }
+  return { origin, authBaseUrl: origin, apiBaseUrl: `${origin}/api`, warnings };
 }

@@ -5,7 +5,9 @@ import { expect, type Page, test } from "@playwright/test";
 // calib run's sweep feeds Freeze; the frozen version runs on test; its cost adds up; two test runs
 // diff; and "Add to eval set" on an approval reports the fixture already in the set.
 
-const { API_URL: API = "http://localhost:8787" } = process.env;
+// The API is the web origin's /api (Caddy in Docker, the Next rewrite in `pnpm dev`).
+const { WEB_URL: WEB = "http://localhost:3000" } = process.env;
+const { API_URL: API = `${WEB}/api` } = process.env;
 
 type Run = { id: string; split: string; status: string; config: { frozen: boolean } };
 

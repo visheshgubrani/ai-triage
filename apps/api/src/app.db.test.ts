@@ -6,8 +6,24 @@ import { createTestApp, WEB_ORIGIN } from "./test-app";
 
 // Sign-in → session → tenant resolution, against the seeded demo tenant in the test database.
 
-const { app, db, signIn, close } = await createTestApp();
+const { app, server, db, signIn, close } = await createTestApp();
 afterAll(close);
+
+describe("paths", () => {
+  it("serves the UI routes under /api only, and health at both", async () => {
+    expect((await server.request("/api/me")).status).toBe(401);
+    expect((await server.request("/me")).status).toBe(404);
+    expect((await server.request("/api/health")).status).toBe(200);
+    expect((await server.request("/health")).status).toBe(200);
+  });
+
+  it("keeps Better Auth at /api/auth", async () => {
+    const res = await server.request("/api/auth/get-session");
+    expect(res.status).toBe(200);
+    const signUp = await server.request("/api/auth/sign-up/email", { method: "POST", headers: { origin: WEB_ORIGIN } });
+    expect(signUp.status).toBe(404);
+  });
+});
 
 describe("GET /me", () => {
   it("returns the user's tenant and role after sign-in", async () => {

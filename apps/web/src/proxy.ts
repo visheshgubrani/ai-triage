@@ -3,11 +3,10 @@ import { type NextRequest, NextResponse } from "next/server";
 // A strict, nonce-based Content Security Policy on every page (docs/security.md). Next.js puts the
 // nonce on its own scripts during dynamic rendering, so every page must render dynamically (the
 // root layout forces it). Styles allow 'unsafe-inline' because React style attributes can't carry
-// a nonce. The API and storage are other origins: the browser fetches the API, PUTs uploads to
-// storage, and shows PDFs and images from presigned storage URLs.
+// a nonce. The API is this origin's /api; storage is another origin: the browser PUTs uploads to it
+// and shows PDFs and images from presigned storage URLs.
 
 const origin = (url: string) => new URL(url).origin;
-const apiOrigin = origin(process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787");
 const storageOrigin = origin(process.env.S3_PUBLIC_ENDPOINT ?? "http://localhost:9020");
 
 function contentSecurityPolicy(nonce: string, options: { dev: boolean; https: boolean }): string {
@@ -18,7 +17,7 @@ function contentSecurityPolicy(nonce: string, options: { dev: boolean; https: bo
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${storageOrigin}`,
     "font-src 'self'",
-    `connect-src 'self' ${apiOrigin} ${storageOrigin}`,
+    `connect-src 'self' ${storageOrigin}`,
     `frame-src ${storageOrigin}`,
     "object-src 'none'",
     "base-uri 'none'",
@@ -33,7 +32,8 @@ export function proxy(request: NextRequest) {
   const nonce = Buffer.from(crypto.randomUUID()).toString("base64");
   const csp = contentSecurityPolicy(nonce, {
     dev: process.env.NODE_ENV === "development",
-    https: request.nextUrl.protocol === "https:",
+    // Behind Caddy the web server itself speaks http; the proxy says what the browser used.
+    https: request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https",
   });
   // Next reads the policy from the request to find the nonce while rendering.
   const requestHeaders = new Headers(request.headers);
@@ -47,8 +47,8 @@ export function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     {
-      // Pages only: static assets and prefetches don't need a policy.
-      source: "/((?!_next/static|_next/image|favicon.ico).*)",
+      // Pages only: static assets, prefetches and the API (proxied in dev) don't need a policy.
+      source: "/((?!_next/static|_next/image|favicon.ico|api/).*)",
       missing: [
         { type: "header", key: "next-router-prefetch" },
         { type: "header", key: "purpose", value: "prefetch" },

@@ -1,9 +1,8 @@
 import { organizationClient, twoFactorClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 
-// Better Auth runs inside the API (/api/auth/*). The browser calls it cross-origin with
-// credentials; on localhost the session cookie is shared because cookies ignore the port.
+// Better Auth runs inside the API, at /api/auth on this same origin. Without a baseURL the client
+// uses window.location.origin (it refuses a relative one).
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787",
   plugins: [organizationClient(), twoFactorClient()],
 });

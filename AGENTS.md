@@ -68,6 +68,8 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 - **Only `packages/db` imports `drizzle-orm` or `pg`.** A second import site once installed a duplicate drizzle-orm and broke types. Expose helpers from `@ai-triage/db` instead.
 - **Core subpaths.** `@ai-triage/core` is constants-only, so web can import it. Parsers and pipeline logic live in `@ai-triage/core/pipeline`.
 - **API.** Contracts are Zod schemas in `packages/contracts`. Web calls the API only through the Hono RPC client.
+  - One origin: every route is under `/api` (`createApp` mounts `apiRoutes`; `AppType` is the un-prefixed set). Caddy routes `/api/*` in containers, a Next rewrite in `pnpm dev`. `PUBLIC_URL` is the only public address (`resolvePublicUrls`).
+  - Tests call `t.app.request("/me")` (the helper adds `/api`); `t.server.request` reaches real paths, such as the root `/health`, `/webhooks` and `/v1`.
 - **Env.** One root `.env`, loaded with `--env-file-if-exists=../../.env` or `process.loadEnvFile`. Every variable is declared in `packages/core/src/env.ts`; the api and worker check theirs at startup (`assertEnv`, then `checkStartup` for the database).
 - **Style.** Biome (2 spaces, double quotes, 120 columns). Tests sit next to source as `*.test.ts`; `*.db.test.ts` need Postgres.
 - **Database roles.**

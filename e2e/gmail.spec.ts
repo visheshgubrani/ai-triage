@@ -6,7 +6,9 @@ import { expect, type Page, test } from "@playwright/test";
 // the demo mailbox through the OAuth round trip, mail delivered into it becomes a document within a
 // poll, the document names its mailbox, and disconnecting revokes the grant at "Google".
 
-const { API_URL: API = "http://localhost:8787", FAKE_GOOGLE_URL: FAKE = "http://localhost:9040" } = process.env;
+// The API is the web origin's /api (Caddy in Docker, the Next rewrite in `pnpm dev`).
+const { WEB_URL: WEB = "http://localhost:3000" } = process.env;
+const { API_URL: API = `${WEB}/api`, FAKE_GOOGLE_URL: FAKE = "http://localhost:9040" } = process.env;
 
 async function signIn(page: Page, email: string) {
   await page.goto("/sign-in");

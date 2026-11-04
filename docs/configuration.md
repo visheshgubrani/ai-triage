@@ -45,7 +45,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 
 | Variable | Read by | Default | Description |
 |---|---|---|---|
-| `POSTMARK_INBOUND_USER` | api | – | Basic-auth user in the Postmark inbound webhook URL (https://user:pass@host/webhooks/postmark). Unset with the password: the webhook is off. |
+| `POSTMARK_INBOUND_USER` | api | – | Basic-auth user in the Postmark inbound webhook URL (https://user:pass@host/api/webhooks/postmark). Unset with the password: the webhook is off. |
 | `POSTMARK_INBOUND_PASSWORD` 🔒 | api | – | Basic-auth password for the Postmark webhook. Production needs 16 or more characters. |
 | `INBOUND_DOMAIN` | api, cli | – | Domain of generated (unguessable) inbound addresses. Empty: new tenants get no address, and existing ones keep their domain. |
 
@@ -55,9 +55,10 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 |---|---|---|---|
 | `API_PORT` | api, compose | `8787` | Port the api listens on. |
 | `WEB_PORT` | compose | `3000` | Host port of the web app in the Docker demo. |
-| `WEB_ORIGIN` | api, cli | `http://localhost:3000` | Origin of the web app: CORS, the Origin check, invite links, OAuth redirects back to the UI. |
-| `API_INTERNAL_URL` | web | `NEXT_PUBLIC_API_URL` | How the web server reaches the api (in compose: http://api:8787). The browser never uses it. |
-| `NEXT_PUBLIC_API_URL` | web | `http://localhost:8787` | The api as the browser sees it. Inlined into the web bundle at build time. |
+| `PUBLIC_URL` | api, cli | `WEB_ORIGIN, else http://localhost:3000` | The one address people use: the web app, with the API under /api on the same origin (cookies, the Origin check, invite links, OAuth redirect URIs). An origin only, no path. Must be https in production. |
+| `WEB_ORIGIN` | api, cli | – | Older name for PUBLIC_URL, still honored when PUBLIC_URL is unset. |
+| `API_INTERNAL_URL` | web | `http://localhost:8787` | How the web server reaches the api, without /api (in compose: http://api:8787). Server components call it directly; `pnpm dev` also proxies the browser's /api through it. |
+| `NEXT_PUBLIC_API_URL` | api | – | No longer used (the browser calls /api on the same origin). The api warns when it's set. |
 | `TRUSTED_PROXIES` | api | – | Proxies in front of the API (IPs or CIDRs, comma-separated): only their X-Forwarded-For is believed, for rate limits, audit and session IPs. Empty: the socket address is the client. |
 | `RATE_LIMIT_SCALE` | api, worker | `1` | Multiplies every request limit (apps/api/src/rate-limit.ts), for a busy instance. |
 | `REQUIRE_ADMIN_2FA` | api | `true (false with TRIAGE_DEMO=true)` | Admin-only routes need the admin's TOTP 2FA. Defaults to on, except with TRIAGE_DEMO=true. |
@@ -69,13 +70,13 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `ENCRYPTION_KEY` 🔒 | api, worker, cli | – | Encrypts webhook signing secrets and mailbox tokens at rest: 32 random bytes, base64 (`openssl rand -base64 32`). Unset in development and the demo, a published dev key is used; production refuses to start without one. |
 | `ENCRYPTION_KEYS` 🔒 | api, worker, cli | – | A key ring for rotation, newest first: `new:<base64>,old:<base64>`. Then run `pnpm secrets:rotate-key`. Takes precedence over ENCRYPTION_KEY. |
 | `BETTER_AUTH_SECRET` 🔒 (required: api) | api | – | Signs sessions. Dev-only value here; generate a real one with `openssl rand -base64 32`. |
-| `BETTER_AUTH_URL` | api | `http://localhost:<API_PORT>` | Public base URL of the api, for auth callbacks. Must be https in production. |
+| `BETTER_AUTH_URL` | api | – | No longer needed: auth runs at PUBLIC_URL/api/auth. A value on another origin is ignored with a warning. |
 
 ## Google
 
 | Variable | Read by | Default | Description |
 |---|---|---|---|
-| `GOOGLE_CLIENT_ID` | api, worker, cli | – | One OAuth client for Sign in with Google and Gmail mailbox sync (docs/google.md). Leave it and the secret empty to hide every Google feature. Redirect URIs to register: <BETTER_AUTH_URL>/api/auth/callback/google and <BETTER_AUTH_URL>/integrations/google/callback. |
+| `GOOGLE_CLIENT_ID` | api, worker, cli | – | One OAuth client for Sign in with Google and Gmail mailbox sync (docs/google.md). Leave it and the secret empty to hide every Google feature. Redirect URIs to register: <PUBLIC_URL>/api/auth/callback/google and <PUBLIC_URL>/api/integrations/google/callback. |
 | `GOOGLE_CLIENT_SECRET` 🔒 | api, worker, cli | – | The OAuth client's secret. Set both or neither. |
 | `GOOGLE_OAUTH_URL` | api, worker, cli | – | Points Google's consent screen at the local fake (`pnpm fake-google`, e.g. http://localhost:9040) for the demo and e2e. Production refuses it unless TRIAGE_DEMO=true. |
 | `GOOGLE_TOKEN_URL` | api, worker, cli | `GOOGLE_OAUTH_URL` | The fake's token endpoint as the server reaches it, when that differs from the browser's address. |
@@ -123,7 +124,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 
 | Variable | Read by | Default | Description |
 |---|---|---|---|
-| `TRIAGE_API_URL` | cli | `http://localhost:8787` | `pnpm ingest <file>`: the API base URL. |
+| `TRIAGE_API_URL` | cli | `http://localhost:8787` | `pnpm ingest <file>`: where the API is (the api itself in dev, or PUBLIC_URL in Docker). |
 | `TRIAGE_API_KEY` 🔒 | cli | – | `pnpm ingest <file>`: a tenant API key (create one with `pnpm api-key:create --tenant demo`). |
 
 ## End-to-end tests
@@ -131,7 +132,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | Variable | Read by | Default | Description |
 |---|---|---|---|
 | `WEB_URL` | cli | `http://localhost:3000` | `pnpm e2e`: the running web app. |
-| `API_URL` | cli | `http://localhost:8787` | `pnpm e2e`: the running api. |
+| `API_URL` | cli | `WEB_URL/api` | `pnpm e2e`: the API, by default WEB_URL/api. |
 | `CATCHER_URL` | cli | `http://localhost:9030` | `pnpm e2e`: the webhook catcher. |
 | `FAKE_GOOGLE_URL` | cli | `http://localhost:9040` | `pnpm e2e`: the fake Google (`pnpm fake-google`). |
 | `WALKTHROUGH_VIDEO` | cli | – | `pnpm e2e`: record videos of the walkthroughs (the README GIFs). |

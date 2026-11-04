@@ -154,6 +154,29 @@ describe("Postmark webhook", () => {
     expect(await count()).toBe(jobsBefore);
   });
 
+  it("takes a large payload with no Origin header at /api and at the older root path", async () => {
+    // Over the 1 MiB JSON limit of the UI routes; Postmark sends no Origin.
+    const big = (messageId: string) => ({
+      ...payload(messageId),
+      TextBody: `Please pay invoice 42.${" ".repeat(2 ** 21)}`,
+    });
+    const init = (body: unknown) => ({
+      method: "POST",
+      headers: { authorization: auth, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const atApi = await t.server.request("/api/webhooks/postmark", init(big(randomUUID())));
+    expect(atApi.status).toBe(200);
+    expect(atApi.headers.get("deprecation")).toBeNull();
+    const atRoot = await t.server.request("/webhooks/postmark", init(big(randomUUID())));
+    expect(atRoot.status).toBe(200);
+    expect(atRoot.headers.get("deprecation")).toBe("true");
+    expect(atRoot.headers.get("link")).toBe('</api/webhooks/postmark>; rel="successor-version"');
+    // The root path keeps the edge stack: request ids and secure headers.
+    expect(atRoot.headers.get("x-request-id")).toBeTruthy();
+    expect(atRoot.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
   it("ignores mail for an unknown address", async () => {
     const res = await post(payload(randomUUID(), "nobody@inbound.localhost"));
     expect(res.status).toBe(200);

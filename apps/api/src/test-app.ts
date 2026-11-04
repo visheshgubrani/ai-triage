@@ -58,14 +58,14 @@ export async function createTestApp(
   const auth = createAuth({
     db,
     secret: "test-only-secret-0123456789abcdef0123456789",
-    baseURL: "http://localhost:8787",
+    baseURL: WEB_ORIGIN,
     webOrigin: WEB_ORIGIN,
     google,
   });
   const boss: PgBoss = createBoss(appUrl, { supervise: false, schedule: false });
   await boss.start();
   const storage = createStorage(storageConfigFromEnv());
-  const app = createApp({
+  const server = createApp({
     db,
     pool,
     auth,
@@ -88,8 +88,17 @@ export async function createTestApp(
     google,
     googleSignIn: google !== null,
     googleFetch: options.googleFetch ?? (() => Promise.reject(new Error("no Google in this test"))),
-    apiBaseUrl: "http://localhost:8787",
+    apiBaseUrl: `${WEB_ORIGIN}/api`,
   });
+
+  /**
+   * The app as tests talk to it: paths are the `/api` routes without the prefix (`/me`), as the
+   * web's typed client sees them. `server.request` reaches the real paths, root ones included.
+   */
+  const app = {
+    request: (path: string, init?: RequestInit) =>
+      server.request(path.startsWith("/api/") ? path : `/api${path}`, init),
+  };
 
   /** Pins the app's clock (null: real time again). */
   function setNow(at: Date | null) {
@@ -123,7 +132,7 @@ export async function createTestApp(
     await pool.end();
   }
 
-  return { app, pool, db, boss, storage, signIn, memberCookie, setNow, close };
+  return { app, server, pool, db, boss, storage, signIn, memberCookie, setNow, close };
 }
 
 /** RFC 6238 TOTP (SHA-1, 30 s, 6 digits), as authenticator apps compute it. */

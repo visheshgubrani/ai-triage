@@ -6,9 +6,9 @@ One OAuth client serves both features:
 
 | Feature | Scopes | Redirect URI | Tokens kept |
 |---|---|---|---|
-| Sign in with Google (Better Auth) | `openid email profile` | `${BETTER_AUTH_URL}/api/auth/callback/google` | None. Sign-in needs only the identity, so the tokens are dropped |
-| Mailbox connection (an admin connects e.g. `ap@company.com`) | `openid email` + `https://www.googleapis.com/auth/gmail.readonly` | `${BETTER_AUTH_URL}/integrations/google/callback` | A refresh token per mailbox, encrypted with the key ring (`ENCRYPTION_KEYS`), which belongs to the tenant rather than to the admin who connected it |
-| Workspace domain check (auto-join) | `openid email` | `${BETTER_AUTH_URL}/integrations/google/callback` | None. Only the `hd` claim is read |
+| Sign in with Google (Better Auth) | `openid email profile` | `${PUBLIC_URL}/api/auth/callback/google` | None. Sign-in needs only the identity, so the tokens are dropped |
+| Mailbox connection (an admin connects e.g. `ap@company.com`) | `openid email` + `https://www.googleapis.com/auth/gmail.readonly` | `${PUBLIC_URL}/api/integrations/google/callback` | A refresh token per mailbox, encrypted with the key ring (`ENCRYPTION_KEYS`), which belongs to the tenant rather than to the admin who connected it |
+| Workspace domain check (auto-join) | `openid email` | `${PUBLIC_URL}/api/integrations/google/callback` | None. Only the `hd` claim is read |
 
 Without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, every Google feature is hidden and the rest of the app works as before. The demo runs against a local fake Google (`pnpm fake-google`, from `packages/mailbox/src/testing/`), so it needs no Google project.
 
@@ -22,10 +22,12 @@ Without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, every Google feature is h
    - **External:** any Google account. This is needed for a hosted instance that serves several companies, and Google's rules below apply.
 5. **Data access:** add the scopes `openid`, `.../auth/userinfo.email`, `.../auth/userinfo.profile` and `.../auth/gmail.readonly`.
 6. **Clients → Create client → Web application.** Add both authorized redirect URIs, exactly:
-   - `https://<api host>/api/auth/callback/google`
-   - `https://<api host>/integrations/google/callback`
+   - `https://<your host>/api/auth/callback/google`
+   - `https://<your host>/api/integrations/google/callback`
 
-   The API host is `BETTER_AUTH_URL`. Locally that is `http://localhost:8787`, which Google accepts over http.
+   The host is `PUBLIC_URL`: the web app, which serves the API under `/api`. Locally that is `http://localhost:3000`, which Google accepts over http.
+
+   **Changed in 0.7:** both URIs used to be on the API's own host (`BETTER_AUTH_URL`), and the mailbox one had no `/api`. Register the new ones before upgrading.
 7. Put the client id and secret in the environment of the **api and the worker**:
    ```bash
    GOOGLE_CLIENT_ID=1234-abc.apps.googleusercontent.com
