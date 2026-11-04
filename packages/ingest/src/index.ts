@@ -133,6 +133,16 @@ export async function writeStoredEmail(
   return { attachments, json };
 }
 
+/** The document this email already became, if it was ingested before (a webhook redelivery). */
+export function findEmailDuplicate(
+  deps: IngestDeps,
+  tenantId: string,
+  email: NormalizedEmail,
+  input: { source: DocumentSource; postmark?: PostmarkInbound; eml?: Uint8Array },
+) {
+  return existing(deps, tenantId, input.source, emailExternalId(email, input));
+}
+
 /**
  * Ingests an email for a tenant: each attachment becomes its own object, the normalized email is
  * stored as the document's source (`email.json`), and the original (Postmark payload or .eml) is

@@ -539,6 +539,21 @@ export const ENV_VARS: readonly EnvVar[] = [
     description: "New messages one sync of a mailbox takes; the rest follow a minute later.",
   },
   {
+    name: "WORKER_TENANT_CONCURRENCY",
+    group: "Worker",
+    processes: ["worker"],
+    kind: "int",
+    description:
+      "Fairness across tenants: at most this many of one tenant's jobs run at once per queue (pipeline stages, delivery, Gmail fetch), counted across every worker. Unset: no cap (one company). With several tenants, about half the cluster's slots per LLM queue (replicas × WORKER_LLM_CONCURRENCY).",
+  },
+  {
+    name: "WORKER_TENANT_EVAL_CONCURRENCY",
+    group: "Worker",
+    processes: ["worker"],
+    kind: "int",
+    description: "The same cap for eval items, so one tenant's eval run can't take every eval slot.",
+  },
+  {
     name: "WORKER_SHUTDOWN_GRACE_MS",
     group: "Worker",
     processes: ["worker"],

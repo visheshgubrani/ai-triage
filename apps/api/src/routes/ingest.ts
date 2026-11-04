@@ -1,7 +1,14 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IgnoredResponse, IngestResponse } from "@ai-triage/contracts";
 import { normalizePostmark, type PostmarkInbound } from "@ai-triage/core/pipeline";
-import { checkEmailLimits, IngestRejected, ingestEmail, ingestFile, resolveEmailTenant } from "@ai-triage/ingest";
+import {
+  checkEmailLimits,
+  findEmailDuplicate,
+  IngestRejected,
+  ingestEmail,
+  ingestFile,
+  resolveEmailTenant,
+} from "@ai-triage/ingest";
 import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
 import { bodyLimit } from "hono/body-limit";
@@ -71,6 +78,9 @@ export const webhookRoutes = (deps: AppDeps) =>
         const body: IgnoredResponse = { ignored: "unknown_recipient" };
         return c.json(body, 200);
       }
+      // A redelivered webhook is answered before the limit counts it, so retries can't use it up.
+      const dup = await findEmailDuplicate(deps, tenantId, email, { source: "email", postmark: payload });
+      if (dup) return c.json(dup satisfies IngestResponse, 200);
       // Per tenant: anyone who knows an inbound address can send to it. A 429 makes Postmark retry
       // later, so a burst is delayed rather than lost.
       const limited = await overLimit(c, deps, deps.rateLimits.postmarkPerTenant, `tenant:${tenantId}:inbound`);

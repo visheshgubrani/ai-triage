@@ -50,24 +50,28 @@ const now = () => new Date();
 await registerPipeline(
   boss,
   { pool, boss, storage, llm, limits, auditDraw, now },
-  { llmConcurrency: config.llmConcurrency },
+  { llmConcurrency: config.llmConcurrency, tenantConcurrency: config.tenantConcurrency },
 );
 // Eval runs: the same parsing, requests and evaluation, but results only (no queue, actions or delivery).
 await registerEvals(
   boss,
   { pool, storage, llm, limits, llmMode: callModeOf(mode), now },
-  { concurrency: config.evalConcurrency },
+  { concurrency: config.evalConcurrency, tenantConcurrency: config.tenantEvalConcurrency },
 );
 // Signed webhooks for approved actions. These deps have no LLM or storage: delivery only posts.
 // Webhook URLs are tenant-chosen, so every connection goes through the SSRF guard.
-await registerDelivery(boss, {
-  pool,
+await registerDelivery(
   boss,
-  keys: keyRingFromEnv(process.env),
-  fetch: createGuardedFetch(egressPolicyFromEnv(process.env)),
-  now: () => new Date(),
-  timeoutMs: config.webhookTimeoutMs,
-});
+  {
+    pool,
+    boss,
+    keys: keyRingFromEnv(process.env),
+    fetch: createGuardedFetch(egressPolicyFromEnv(process.env)),
+    now: () => new Date(),
+    timeoutMs: config.webhookTimeoutMs,
+  },
+  { tenantConcurrency: config.tenantConcurrency },
+);
 
 await registerMaintenance(boss, { pool, boss, storage, now: () => new Date() });
 
@@ -88,12 +92,13 @@ await registerMailbox(
     },
     now,
   },
-  { fetchConcurrency: config.mailboxConcurrency },
+  { fetchConcurrency: config.mailboxConcurrency, tenantConcurrency: config.tenantConcurrency },
 );
 
 console.log(
   `worker started (llm mode: ${mode}${mode === "replay" ? `, cassettes: ${config.cassetteDir}` : ""}; ` +
-    `gmail sync: ${google ? "on" : "off, no GOOGLE_CLIENT_ID"})`,
+    `gmail sync: ${google ? "on" : "off, no GOOGLE_CLIENT_ID"}; ` +
+    `per-tenant cap: ${config.tenantConcurrency ?? "off"})`,
 );
 
 // SIGTERM: stop fetching, let running jobs finish for up to the grace period, then abort their model

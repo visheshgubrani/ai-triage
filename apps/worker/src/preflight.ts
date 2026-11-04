@@ -131,6 +131,15 @@ export async function checkDatabase(env: Env, mode: LlmMode, cassetteDir: string
       out.push(warn("Tenants", "none yet", "pnpm db:seed (demo) or pnpm tenant:create"));
       return out;
     }
+    if (tenants.length > 1 && !env.WORKER_TENANT_CONCURRENCY) {
+      out.push(
+        warn(
+          "Fairness",
+          `${tenants.length} tenants share the workers with no per-tenant cap, so one tenant's backlog can delay the others`,
+          "set WORKER_TENANT_CONCURRENCY to about half the cluster's slots per LLM queue (docs/configuration.md)",
+        ),
+      );
+    }
     const recorded = readRecorded(cassetteDir);
     for (const tenant of tenants) {
       const config = await withTenantTx(pool, tenant.id, (tx) => getActiveConfig(tx));

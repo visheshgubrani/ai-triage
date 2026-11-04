@@ -1,11 +1,14 @@
 import {
+  clearCooldown,
   createDb,
   findModelPrice,
   findReusableAttempt,
   insertAttempt,
   type Pool,
+  providerState,
   reserveBudget,
   settleBudget,
+  tripCooldown,
   withTenantTx,
 } from "@ai-triage/db";
 import { createLlmGateway, type GatewayHooks, type LlmMode, type Transport } from "@ai-triage/llm";
@@ -31,5 +34,12 @@ export function createDbLlmGateway(input: { pool: Pool; mode: LlmMode; transport
       settle: (tenantId, day, reserved, actual) => settleBudget(pool, tenantId, day, reserved, actual),
     },
     findPrice: (model, promptTokens) => findModelPrice(db, model, promptTokens),
+    cooldown: {
+      state: (provider, model) => providerState(db, provider, model),
+      trip: async (provider, model, retryAfterMs, reason) => {
+        await tripCooldown(db, { provider, model, retryAfterMs, reason, now: new Date() });
+      },
+      clear: (provider, model) => clearCooldown(db, provider, model),
+    },
   });
 }

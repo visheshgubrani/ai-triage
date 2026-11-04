@@ -223,9 +223,10 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
   [QUEUES.ping]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 60 },
   // Parsing runs in a sandbox bounded by PARSE_TIMEOUT_MS (60 s by default).
   [QUEUES.parse]: stage(3, 300),
-  // One model call each: classify's 120 s timeout, extract's at most 600 s, plus a margin.
-  [QUEUES.classify]: stage(4, 300),
-  [QUEUES.extract]: stage(4, 660),
+  // One model call each: classify's 120 s timeout, extract's at most 600 s, plus a margin. Ten
+  // retries with backoff capped at 5 minutes ride out about an hour of a busy provider.
+  [QUEUES.classify]: stage(10, 300),
+  [QUEUES.extract]: stage(10, 660),
   [QUEUES.route]: stage(3, 120),
   [QUEUES.failed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 120 },
   [QUEUES.deliver]: {

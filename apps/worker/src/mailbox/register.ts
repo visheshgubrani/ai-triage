@@ -1,11 +1,16 @@
 import { MAILBOX_POLL_CRON, type MailboxFetchJob, type MailboxSyncJob, QUEUES } from "@ai-triage/core";
 import type { PgBoss } from "@ai-triage/db";
+import { tenantCap } from "../config";
 import type { MailboxDeps } from "./deps";
 import { fetchFailed, fetchMessage } from "./fetch";
 import { pollMailboxes, syncMailbox } from "./sync";
 
 /** Schedules the minute poll (pg-boss keeps one schedule per queue) and subscribes the mailbox queues. */
-export async function registerMailbox(boss: PgBoss, deps: MailboxDeps, options: { fetchConcurrency: number }) {
+export async function registerMailbox(
+  boss: PgBoss,
+  deps: MailboxDeps,
+  options: { fetchConcurrency: number; tenantConcurrency?: number | null },
+) {
   await boss.schedule(QUEUES.mailboxPoll, MAILBOX_POLL_CRON, {}, { tz: "UTC" });
   await boss.work(QUEUES.mailboxPoll, async () => {
     await pollMailboxes(deps);
@@ -19,7 +24,11 @@ export async function registerMailbox(boss: PgBoss, deps: MailboxDeps, options: 
   );
   await boss.work<MailboxFetchJob>(
     QUEUES.mailboxFetch,
-    { localConcurrency: options.fetchConcurrency, pollingIntervalSeconds: 1 },
+    {
+      localConcurrency: options.fetchConcurrency,
+      pollingIntervalSeconds: 1,
+      ...tenantCap(options.tenantConcurrency ?? null),
+    },
     async ([job]) => {
       if (job) await fetchMessage(deps, job.data);
     },

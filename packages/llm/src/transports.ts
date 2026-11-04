@@ -4,7 +4,7 @@ import type { LlmCallMode, LlmStage, Provider } from "@ai-triage/core";
 import { PipelineError } from "@ai-triage/core/pipeline";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { CassetteMissError } from "./errors";
+import { CassetteMissError, ProviderBusyError } from "./errors";
 import { CASSETTE_FORMAT } from "./hash";
 import type { OpenAiCompatibleProvider, WireRequest } from "./providers";
 
@@ -69,8 +69,31 @@ function openAiClient(provider: OpenAiCompatibleProvider, env: NodeJS.ProcessEnv
   return new OpenAI({ apiKey, maxRetries: 0, ...(baseURL ? { baseURL } : {}) });
 }
 
-/** Errors retrying can't fix become PipelineErrors, so the run fails at once. */
+/** Statuses that mean "too busy, come back later": rate limited, overloaded (Claude's 529), unavailable. */
+const BUSY_STATUSES = new Set([429, 503, 529]);
+
+/** The provider's Retry-After in milliseconds (`retry-after-ms`, or `retry-after` in seconds or as a date). */
+export function retryAfterMs(headers: Headers | Record<string, string> | undefined, now = Date.now()): number | null {
+  const get = (name: string) =>
+    headers instanceof Headers ? headers.get(name) : (headers?.[name] ?? headers?.[name.toLowerCase()] ?? null);
+  const ms = Number(get("retry-after-ms"));
+  if (Number.isFinite(ms) && ms > 0) return ms;
+  const value = get("retry-after");
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? null : Math.max(0, date - now);
+}
+
+/**
+ * Errors retrying can't fix become PipelineErrors, so the run fails at once. A busy provider
+ * becomes a ProviderBusyError, which the gateway turns into a shared cooldown.
+ */
 function classify(err: unknown, sdk: typeof Anthropic | typeof OpenAI): unknown {
+  if (err instanceof sdk.APIError && err.status !== undefined && BUSY_STATUSES.has(err.status)) {
+    return new ProviderBusyError(err.status, retryAfterMs(err.headers as Headers | undefined), err.message);
+  }
   if (err instanceof sdk.APIError && err.status === 413) return new PipelineError("request_too_large", err.message);
   if (
     err instanceof sdk.BadRequestError ||

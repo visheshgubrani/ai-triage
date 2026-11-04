@@ -1,14 +1,19 @@
 import { type EvalItemJob, QUEUES } from "@ai-triage/core";
 import type { PgBoss } from "@ai-triage/db";
+import { tenantCap } from "../config";
 import { jobSignal } from "../shutdown";
 import type { EvalDeps } from "./deps";
 import { failedEvalItem, runEvalItem } from "./run-item";
 
 /** Subscribes the eval item handler and its dead letter. The boss is only for receiving jobs. */
-export async function registerEvals(boss: PgBoss, deps: EvalDeps, options: { concurrency: number }) {
+export async function registerEvals(
+  boss: PgBoss,
+  deps: EvalDeps,
+  options: { concurrency: number; tenantConcurrency: number | null },
+) {
   await boss.work<EvalItemJob>(
     QUEUES.evalItem,
-    { localConcurrency: options.concurrency, pollingIntervalSeconds: 1 },
+    { localConcurrency: options.concurrency, pollingIntervalSeconds: 1, ...tenantCap(options.tenantConcurrency) },
     async ([job]) => {
       if (job) await runEvalItem(deps, job.data, jobSignal(job));
     },

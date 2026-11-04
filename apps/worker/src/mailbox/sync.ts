@@ -7,6 +7,7 @@ import {
   recordAudit,
   recordSyncProblem,
   SYSTEM_ACTOR,
+  sendTenantJob,
   syncState,
   type TenantTx,
   withTenantTx,
@@ -39,7 +40,7 @@ export async function pollMailboxes(deps: MailboxDeps): Promise<number> {
   const due = await dueMailboxes(createDb(deps.pool), deps.now());
   for (const { tenantId, id } of due) {
     const job: MailboxSyncJob = { tenantId, connectionId: id };
-    await deps.boss.send(QUEUES.mailboxSync, job, { singletonKey: id });
+    await sendTenantJob(deps.boss, tenantId, QUEUES.mailboxSync, job, { singletonKey: id });
   }
   return due.length;
 }

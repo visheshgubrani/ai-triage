@@ -31,9 +31,36 @@ export function createBoss(connectionString: string, options: ConstructorOptions
   return boss;
 }
 
+/**
+ * Every tenant job carries its tenant as its pg-boss group, so a worker's `groupConcurrency` caps
+ * how many of one tenant's jobs run at once across the cluster (docs/architecture.md §5, fairness).
+ * Jobs are sent only through these helpers (a source scan checks).
+ */
+export const tenantGroup = (tenantId: string) => ({ id: tenantId });
+
 /** Enqueues on the tenant transaction's client, so the job exists only if the transaction commits. */
 export function enqueue(boss: PgBoss, tx: TenantTx, name: QueueName, data: object, options: SendOptions = {}) {
-  return boss.send(name, data, { ...options, db: tx.queueDb });
+  return boss.send(name, data, { group: tenantGroup(tx.tenantId), ...options, db: tx.queueDb });
+}
+
+/** Many jobs of one queue in one insert, inside the tenant transaction. */
+export function enqueueMany(boss: PgBoss, tx: TenantTx, name: QueueName, jobs: { id?: string; data: object }[]) {
+  return boss.insert(
+    name,
+    jobs.map((job) => ({ ...job, group: tenantGroup(tx.tenantId) })),
+    { db: tx.queueDb },
+  );
+}
+
+/** A tenant job sent outside a transaction (the cron's fan-out, where nothing else commits with it). */
+export function sendTenantJob(
+  boss: PgBoss,
+  tenantId: string,
+  name: QueueName,
+  data: object,
+  options: SendOptions = {},
+) {
+  return boss.send(name, data, { group: tenantGroup(tenantId), ...options });
 }
 
 /**

@@ -1,7 +1,8 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { type LlmCallContext, type LlmCallMode, type LlmStage, llmTimeoutMs } from "@ai-triage/core";
 import { type LlmRequest, PipelineError } from "@ai-triage/core/pipeline";
 import { estimatePromptTokens, estimateWorstCaseUsd, type FindPrice, responseCostUsd } from "./cost";
-import { BudgetExhaustedError } from "./errors";
+import { BudgetExhaustedError, ProviderBusyError, ProviderCoolingDownError } from "./errors";
 import { requestHash } from "./hash";
 import type { LlmMode } from "./index";
 import { readOutput } from "./output";
@@ -54,14 +55,26 @@ export interface GatewayHooks {
   afterAttemptSaved?: (info: { stage: LlmStage; attemptId: string }) => void | Promise<void>;
 }
 
+/** Shared provider backpressure (packages/db provider-state.ts). Absent: no cooldowns (tests, replay). */
+export interface CooldownPort {
+  state(provider: string, model: string): Promise<{ cooldownUntil: Date; consecutiveFailures: number } | null>;
+  trip(provider: string, model: string, retryAfterMs: number | null, reason: string): Promise<void>;
+  clear(provider: string, model: string): Promise<void>;
+}
+
 export interface GatewayDeps {
   mode: LlmMode;
   transport: Transport;
   store: AttemptStore;
   budget: BudgetPort;
   findPrice: FindPrice;
+  cooldown?: CooldownPort;
+  now?: () => Date;
   hooks?: GatewayHooks;
 }
+
+/** A call meeting a cooldown that ends this soon waits it out; a longer one gives the job back. */
+export const COOLDOWN_WAIT_MS = 20_000;
 
 export interface CallResult {
   attemptId: string;
@@ -74,13 +87,15 @@ const describe = (err: unknown) => (err instanceof Error ? `${err.name}: ${err.m
 /**
  * Every model call goes through here (invariant 4):
  * 1. Reuse a saved successful attempt for (context, stage) if there is one.
- * 2. Otherwise reserve the worst case against the daily budget (live and record modes only).
+ * 2. Otherwise wait out (briefly) or give back a provider cooldown, then reserve the worst case
+ *    against the daily budget (live and record modes only).
  * 3. Call, then save the attempt with its response in its own transaction immediately.
  * 4. Settle the budget to the actual cost, and only then interpret the response.
  * A crash between 3's call and its save loses the response, and the retry pays again: repeat calls
  * are possible, but saved responses are always reused. Never call this inside a transaction.
  */
 export function createLlmGateway(deps: GatewayDeps) {
+  const now = deps.now ?? (() => new Date());
   async function call(input: {
     tenantId: string;
     ctx: LlmCallContext;
@@ -100,6 +115,15 @@ export function createLlmGateway(deps: GatewayDeps) {
 
     const wire = toWireRequest(request);
     const hash = requestHash(wire);
+    const provider = wire.provider;
+    // Backpressure: replay never calls a provider, so only live calls wait for a busy one.
+    const cooldown = deps.mode === "replay" ? undefined : deps.cooldown;
+    const state = await cooldown?.state(provider, request.model);
+    if (state) {
+      const wait = state.cooldownUntil.getTime() - now().getTime();
+      if (wait > COOLDOWN_WAIT_MS) throw new ProviderCoolingDownError(request.model, state.cooldownUntil);
+      if (wait > 0) await sleep(wait, undefined, { signal });
+    }
     let reservation: { day: string; usd: number } | null = null;
     if (deps.mode !== "replay") {
       const price = await deps.findPrice(request.model, estimatePromptTokens(request));
@@ -121,6 +145,9 @@ export function createLlmGateway(deps: GatewayDeps) {
       });
     } catch (err) {
       if (reservation) await deps.budget.settle(tenantId, reservation.day, reservation.usd, 0);
+      if (err instanceof ProviderBusyError) {
+        await cooldown?.trip(provider, request.model, err.retryAfterMs, `${err.status}`);
+      }
       // A call that reached the API but failed is still an attempt (replay misses never call anything).
       if (deps.mode !== "replay") {
         await deps.store.insert(tenantId, ctx, {
@@ -143,6 +170,8 @@ export function createLlmGateway(deps: GatewayDeps) {
       throw err;
     }
 
+    // The provider answered: a model that had been cooling down is healthy again.
+    if (state && cooldown) await cooldown.clear(provider, request.model);
     await deps.hooks?.afterResponse?.({ stage: request.stage });
     const response: NormalizedResponse = normalizeResponse(request.model, sent.response);
     let outputError: unknown = null;

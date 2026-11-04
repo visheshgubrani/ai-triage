@@ -29,9 +29,13 @@ Phase 7: production-ready (docs/architecture.md §9).
   - Postgres (statement, lock and pool timeouts);
   - S3 and slow HTTP clients;
   - shutdown (the worker drains, then aborts its in-flight calls).
+- Fairness across tenants: `WORKER_TENANT_CONCURRENCY` caps how many of one tenant's jobs run at once per queue, across every worker. Eval items have their own cap (`WORKER_TENANT_EVAL_CONCURRENCY`).
+- Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
 ### Fixed
 
 - A slow model call could outlast its job's expiry, so pg-boss retried it while the first call was still running and paid twice. Expiries now outlast the longest call.
+- A Gmail message deferred by the inbound limit could lose its next job if the worker crashed at the wrong moment. Deferred messages also all woke at once, and each refused attempt counted against the limit again.
+- A Postmark redelivery counted against the tenant's inbound limit.
 - A `.env` copied from `.env.example` no longer points the Docker demo's fake Google at the real one.
 - The Docker demo no longer gives the database owner URL to the api, worker and web, or any secret to web.

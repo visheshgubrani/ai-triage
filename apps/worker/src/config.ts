@@ -18,6 +18,12 @@ export const repoPath = (value: string | undefined, fallback: string) => {
   return isAbsolute(path) ? path : join(repoRoot(), path);
 };
 
+/**
+ * pg-boss work options for a per-tenant cap: at most `cap` jobs of one tenant run at once in this
+ * queue, across every worker (the group is the tenant, set by enqueue()). No cap: none.
+ */
+export const tenantCap = (cap: number | null) => (cap ? { groupConcurrency: cap } : {});
+
 export const workerConfig = (env: NodeJS.ProcessEnv = process.env) => ({
   cassetteDir: repoPath(env.CASSETTE_DIR, "fixtures/cassettes"),
   fixturesDir: repoPath(env.FIXTURES_DIR, "fixtures"),
@@ -29,6 +35,9 @@ export const workerConfig = (env: NodeJS.ProcessEnv = process.env) => ({
   mailboxConcurrency: Number(env.WORKER_MAILBOX_CONCURRENCY ?? 4),
   mailboxSyncBatch: Number(env.MAILBOX_SYNC_BATCH ?? 200),
   shutdownGraceMs: Number(env.WORKER_SHUTDOWN_GRACE_MS ?? 25_000),
+  // Off unless set: a single-company install has no one to be fair to.
+  tenantConcurrency: Number(env.WORKER_TENANT_CONCURRENCY) || null,
+  tenantEvalConcurrency: Number(env.WORKER_TENANT_EVAL_CONCURRENCY) || null,
   parseTimeoutMs: Number(env.PARSE_TIMEOUT_MS ?? 60_000),
   parseMaxMemoryMb: Number(env.PARSE_MAX_MEMORY_MB ?? 512),
   // The api's inbound email limit (postmarkPerTenant, 500 an hour), shared by Gmail sync.

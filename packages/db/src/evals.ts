@@ -11,6 +11,7 @@ import {
 import { type CallRow, type FieldScores, type ResultDetail, type RunSummary, runMetrics } from "@ai-triage/evals";
 import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
+import { deterministicJobId, enqueueMany } from "./boss";
 import {
   type CategoryChange,
   createCandidateConfig,
@@ -219,10 +220,12 @@ export async function createEvalRun(
     .values({ tenantId: tx.tenantId, ...input, itemCount: items.length })
     .returning({ id: evalRuns.id });
   if (!run) throw new Error("eval run insert returned no row");
+  // Deterministic ids: the reconciler can tell whether an item's job still exists.
   const jobs = items.map((item) => ({
+    id: deterministicJobId(run.id, item.id),
     data: { tenantId: tx.tenantId, evalRunId: run.id, evalItemId: item.id } satisfies EvalItemJob,
   }));
-  await boss.insert(QUEUES.evalItem, jobs, { db: tx.queueDb });
+  await enqueueMany(boss, tx, QUEUES.evalItem, jobs);
   return { runId: run.id, itemCount: items.length };
 }
 

@@ -341,9 +341,12 @@ export async function failedStage(
     console.error(`doc.failed: unknown source queue ${source.queue} for run ${job.runId}`);
     return;
   }
-  const output = source.output as { message?: unknown } | null;
+  const output = source.output as { message?: unknown; name?: unknown } | null;
   const message = typeof output?.message === "string" ? output.message : JSON.stringify(source.output ?? null);
+  // Retries that ran out because the provider stayed busy say so: Retry all, once it recovers.
+  const busy = output?.name === "ProviderBusyError" || output?.name === "ProviderCoolingDownError";
+  const reason = busy ? "provider_unavailable" : "retries_exhausted";
   await withTenantTx(deps.pool, job.tenantId, (tx) =>
-    failRun(tx, { runId: job.runId, expectedStatus: STAGE_INPUT_STATUS[stage], reason: "retries_exhausted", message }),
+    failRun(tx, { runId: job.runId, expectedStatus: STAGE_INPUT_STATUS[stage], reason, message }),
   );
 }
