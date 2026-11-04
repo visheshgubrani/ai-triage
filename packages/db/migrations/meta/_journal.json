@@ -211,6 +211,13 @@
       "when": 1793771953765,
       "tag": "0029_worker_heartbeats",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793772928912,
+      "tag": "0030_simulated_calls",
+      "breakpoints": true
     }
   ]
 }

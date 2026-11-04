@@ -149,8 +149,11 @@ export function createLlmGateway(deps: GatewayDeps) {
     const wire = toWireRequest(request);
     const hash = requestHash(wire);
     const provider = wire.provider;
-    // Backpressure: replay never calls a provider, so only live calls wait for a busy one.
-    const cooldown = deps.mode === "replay" ? undefined : deps.cooldown;
+    // A simulated call reaches the simulator even in replay mode; replay never calls a provider.
+    const calls = deps.mode !== "replay" || provider === "sim";
+    const callMode: LlmCallMode = provider === "sim" ? "simulated" : "live";
+    // Backpressure: only calls that reach a provider wait for a busy one.
+    const cooldown = calls ? deps.cooldown : undefined;
     const state = await cooldown?.state(provider, request.model);
     if (state) {
       const wait = state.cooldownUntil.getTime() - now().getTime();
@@ -158,7 +161,7 @@ export function createLlmGateway(deps: GatewayDeps) {
       if (wait > 0) await sleep(wait, undefined, { signal });
     }
     let reservation: { day: string; usd: number } | null = null;
-    if (deps.mode !== "replay") {
+    if (calls) {
       const price = await deps.findPrice(request.model, estimatePromptTokens(request));
       if (!price) throw new PipelineError("llm_bad_request", `no price configured for ${request.model}`);
       const usd = estimateWorstCaseUsd(request, price);
@@ -182,10 +185,10 @@ export function createLlmGateway(deps: GatewayDeps) {
         await cooldown?.trip(provider, request.model, err.retryAfterMs, `${err.status}`);
       }
       // A call that reached the API but failed is still an attempt (replay misses never call anything).
-      if (deps.mode !== "replay") {
+      if (calls) {
         await deps.store.insert(tenantId, ctx, {
           ...base,
-          mode: "live",
+          mode: callMode,
           inputTokens: 0,
           outputTokens: 0,
           cacheCreationInputTokens: 0,
@@ -202,7 +205,7 @@ export function createLlmGateway(deps: GatewayDeps) {
       }
       report({
         provider,
-        mode: deps.mode === "replay" ? "replay" : "live",
+        mode: calls ? callMode : "replay",
         reused: false,
         latencyMs: null,
         inputTokens: 0,

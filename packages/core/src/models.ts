@@ -6,7 +6,7 @@ import type { Effort } from "./index";
 // live calls reserve budget at the model's price, so an unpriced model can't be called.
 
 /** `anthropic` uses the Messages API; the others speak the OpenAI Chat Completions API. */
-export const PROVIDERS = ["anthropic", "openai", "deepseek", "openrouter", "compat"] as const;
+export const PROVIDERS = ["anthropic", "openai", "deepseek", "openrouter", "compat", "sim"] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
 export interface ModelInfo {
@@ -49,6 +49,15 @@ export const MODEL_CATALOG = {
     structuredOutput: "json_schema",
     inputs: { pdf: true, images: true },
     efforts: GPT_EFFORTS,
+  },
+  // The simulator (`pnpm llm-sim`, at LLM_SIMULATOR_URL): schema-valid fake answers for load tests,
+  // integration tests and custom categories, at no cost. Its calls are stored as `simulated`, and any
+  // worker makes them, whatever its LLM_MODE (docs/llm.md).
+  "sim:simulated": {
+    provider: "sim",
+    structuredOutput: "json_schema",
+    inputs: { pdf: false, images: false },
+    efforts: ["none"],
   },
   // Any OpenAI-compatible server (Ollama, vLLM, LM Studio) at OPENAI_COMPAT_BASE_URL.
   "compat:qwen3": {

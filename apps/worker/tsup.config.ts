@@ -20,5 +20,6 @@ export default defineConfig({
     "bin/tenant-delete": "src/bin/tenant-delete.ts",
     "bin/preflight": "src/bin/preflight.ts",
     "bin/fake-google": "../../packages/mailbox/src/testing/serve.ts",
+    "bin/llm-sim": "../../packages/llm/src/testing/serve.ts",
   },
 });

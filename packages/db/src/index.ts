@@ -1,3 +1,4 @@
+import { createLogger, logLevelFromEnv } from "@ai-triage/telemetry";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
@@ -50,8 +51,14 @@ export type Pool = pg.Pool;
 export function createPool(connectionString = process.env.DATABASE_URL, options: { max?: number } = {}) {
   if (!connectionString) throw new Error("DATABASE_URL is not set");
   const max = options.max ?? (Number(process.env.DB_POOL_MAX) || 10);
-  return new pg.Pool({ connectionString, max, connectionTimeoutMillis: 10_000 });
+  const pool = new pg.Pool({ connectionString, max, connectionTimeoutMillis: 10_000 });
+  // An idle connection the server dropped (a Postgres restart, a failover) is discarded by the pool
+  // and replaced on the next query. Without a listener the event would crash the process.
+  pool.on("error", (err) => poolLog.warn("an idle database connection was closed", { err: err.message }));
+  return pool;
 }
+
+const poolLog = createLogger({ service: "db", level: logLevelFromEnv() });
 
 /**
  * Drizzle on the pool, outside any tenant context. RLS hides every tenant table here, so use it

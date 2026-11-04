@@ -13,7 +13,8 @@
     "eval:import": "tsx --env-file-if-exists=../../.env src/bin/eval-import.ts",
     "cassettes:record": "tsx --env-file-if-exists=../../.env src/bin/record-cassettes.ts",
     "tenant:delete": "tsx --env-file-if-exists=../../.env src/bin/tenant-delete.ts",
-    "preflight": "tsx --env-file-if-exists=../../.env src/bin/preflight.ts"
+    "preflight": "tsx --env-file-if-exists=../../.env src/bin/preflight.ts",
+    "load": "tsx --env-file-if-exists=../../.env src/bin/load.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",

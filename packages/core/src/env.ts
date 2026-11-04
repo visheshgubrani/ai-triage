@@ -493,6 +493,38 @@ export const ENV_VARS: readonly EnvVar[] = [
     description: "Key for the compat server, if it needs one.",
   },
   {
+    name: "LLM_SIMULATOR_URL",
+    group: "Models",
+    processes: ["worker", "cli"],
+    kind: "url",
+    description:
+      "The simulator for `sim:` models (`pnpm llm-sim`, e.g. http://localhost:9050/v1): schema-valid fake answers at no cost, in any LLM_MODE. For load tests, integration tests and trying custom categories; never for real decisions.",
+  },
+  {
+    name: "LLM_SIMULATOR_KEY",
+    group: "Models",
+    processes: ["worker"],
+    kind: "string",
+    description: "Sent to the simulator as its API key; it ignores it.",
+  },
+  {
+    name: "LLM_SIM_PORT",
+    group: "Models",
+    processes: ["cli"],
+    kind: "int",
+    default: "9050",
+    description:
+      "Port of `pnpm llm-sim`. Its latency and fault rates come from SIM_LATENCY_MS, SIM_JITTER_MS, SIM_RATE_429 and SIM_RATE_500, or POST /sim/config.",
+  },
+  {
+    name: "SIM_PORT",
+    group: "Models",
+    processes: ["compose"],
+    kind: "int",
+    default: "9050",
+    description: "Host port of the Docker demo's simulator.",
+  },
+  {
     name: "CASSETTE_DIR",
     group: "Models",
     processes: ["worker", "cli"],

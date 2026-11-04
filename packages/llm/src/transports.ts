@@ -51,6 +51,7 @@ export const OPENAI_COMPATIBLE_ENDPOINTS: Record<
   },
   // Local servers usually ignore the key.
   compat: { keyEnv: "OPENAI_COMPAT_API_KEY", baseUrlEnv: "OPENAI_COMPAT_BASE_URL", baseUrl: null, keyRequired: false },
+  sim: { keyEnv: "LLM_SIMULATOR_KEY", baseUrlEnv: "LLM_SIMULATOR_URL", baseUrl: null, keyRequired: false },
 };
 
 /** The env var holding a provider's API key (for preflight checks such as the cassette recorder). */
@@ -64,7 +65,7 @@ function openAiClient(provider: OpenAiCompatibleProvider, env: NodeJS.ProcessEnv
   const apiKey = env[endpoint.keyEnv] || (endpoint.keyRequired ? undefined : "unused");
   if (!apiKey) throw missing(endpoint.keyEnv);
   const baseURL = env[endpoint.baseUrlEnv] || endpoint.baseUrl;
-  if (provider === "compat" && !baseURL) throw missing(endpoint.baseUrlEnv);
+  if ((provider === "compat" || provider === "sim") && !baseURL) throw missing(endpoint.baseUrlEnv);
   // pg-boss owns retries (with backoff and a dead letter), so the SDK makes none of its own.
   return new OpenAI({ apiKey, maxRetries: 0, ...(baseURL ? { baseURL } : {}) });
 }
@@ -124,7 +125,7 @@ export function liveTransport(options: { anthropic?: Anthropic; env?: NodeJS.Pro
         response,
         latencyMs: Math.round(performance.now() - started),
         requestId,
-        mode: "live",
+        mode: request.provider === "sim" ? "simulated" : "live",
       });
       if (request.provider === "anthropic") {
         if (!anthropic) {

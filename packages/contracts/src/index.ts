@@ -17,6 +17,7 @@ import {
   FAILURE_REASONS,
   INVITATION_ACCEPT_METHODS,
   JOIN_ROLES,
+  type LlmCallMode,
   MAILBOX_BACKFILL_MAX_DAYS,
   MAILBOX_MESSAGE_REASONS,
   MAILBOX_MESSAGE_STATUSES,
@@ -649,8 +650,11 @@ export interface EvalRun {
   datasetName: string;
   split: EvalSplit;
   status: (typeof EVAL_RUN_STATUSES)[number];
-  /** `replay`: served from cassettes, so costs are recorded figures and latencies recorded live latencies. */
-  llmMode: "live" | "replay";
+  /**
+   * `replay`: served from cassettes, so costs are recorded figures and latencies recorded live
+   * latencies. `simulated`: the simulator answered (`sim:` models), so nothing measures a real model.
+   */
+  llmMode: LlmCallMode;
   itemCount: number;
   /** Results stored so far. */
   done: number;
@@ -665,7 +669,7 @@ export interface EvalRun {
 export interface EvalRunList {
   runs: EvalRun[];
   /** How a run started now would call models (the deployment's LLM_MODE). */
-  newRunMode: "live" | "replay";
+  newRunMode: LlmCallMode;
 }
 
 /** POST /evals/runs. Test-split runs need a frozen config (422 config_not_frozen). */

@@ -47,6 +47,16 @@ export function configBlocker(
   recorded: Record<string, RecordedSet>,
 ): { detail: string; fix: string } | null {
   for (const { model, effort } of stages) {
+    // The simulator answers in every mode, and needs only its address.
+    if (model.startsWith("sim:")) {
+      if (!env.LLM_SIMULATOR_URL) {
+        return {
+          detail: `${model} needs LLM_SIMULATOR_URL`,
+          fix: "run `pnpm llm-sim` and set LLM_SIMULATOR_URL=http://localhost:9050/v1",
+        };
+      }
+      continue;
+    }
     if (mode === "replay") {
       const set = recorded[model];
       if (!set) {

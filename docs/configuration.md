@@ -101,6 +101,10 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `OPENROUTER_BASE_URL` | worker, cli | `https://openrouter.ai/api/v1` | Overrides the OpenRouter endpoint. |
 | `OPENAI_COMPAT_BASE_URL` | worker, cli | – | Any OpenAI-compatible server for `compat:` models, e.g. Ollama at http://localhost:11434/v1. |
 | `OPENAI_COMPAT_API_KEY` 🔒 | worker, cli | – | Key for the compat server, if it needs one. |
+| `LLM_SIMULATOR_URL` | worker, cli | – | The simulator for `sim:` models (`pnpm llm-sim`, e.g. http://localhost:9050/v1): schema-valid fake answers at no cost, in any LLM_MODE. For load tests, integration tests and trying custom categories; never for real decisions. |
+| `LLM_SIMULATOR_KEY` | worker | – | Sent to the simulator as its API key; it ignores it. |
+| `LLM_SIM_PORT` | cli | `9050` | Port of `pnpm llm-sim`. Its latency and fault rates come from SIM_LATENCY_MS, SIM_JITTER_MS, SIM_RATE_429 and SIM_RATE_500, or POST /sim/config. |
+| `SIM_PORT` | compose | `9050` | Host port of the Docker demo's simulator. |
 | `CASSETTE_DIR` | worker, cli | `fixtures/cassettes` | Recorded responses (replay reads, record writes). Relative to the repo root. |
 | `FIXTURES_DIR` | worker, cli | `fixtures` | The synthetic documents used by the seeds and the recorder. |
 

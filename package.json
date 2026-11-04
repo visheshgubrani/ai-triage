@@ -30,6 +30,8 @@
     "tenant:delete": "pnpm --filter @ai-triage/worker tenant:delete",
     "ingest": "pnpm --filter @ai-triage/api ingest",
     "fake-google": "pnpm --filter @ai-triage/mailbox fake-google",
+    "llm-sim": "pnpm --filter @ai-triage/llm llm-sim",
+    "load": "pnpm --filter @ai-triage/worker load",
     "fixtures:generate": "pnpm --filter @ai-triage/fixtures generate",
     "cassettes:record": "pnpm --filter @ai-triage/worker cassettes:record",
     "eval:import": "pnpm --filter @ai-triage/worker eval:import",

@@ -102,8 +102,11 @@ export type EvalRunStatus = (typeof EVAL_RUN_STATUSES)[number];
 /** Execution context of an llm_calls row: a processing run, or an eval run + item (never both). */
 export type LlmCallContext = { runId: string } | { evalRunId: string; evalItemId: string };
 
-/** How an llm_calls row was produced. `record` mode calls the live API, so it stores `live`. */
-export const LLM_CALL_MODES = ["live", "replay"] as const;
+/**
+ * How an llm_calls row was produced. `record` mode calls the live API, so it stores `live`.
+ * `simulated`: the simulator answered (a `sim:` model), never money and never a real model.
+ */
+export const LLM_CALL_MODES = ["live", "replay", "simulated"] as const;
 export type LlmCallMode = (typeof LLM_CALL_MODES)[number];
 
 /** How the deployment calls models: `replay` (cassettes, the default), `record` (live, saved) or `live`. */

@@ -39,6 +39,8 @@ Phase 7: production-ready (docs/architecture.md §9).
   - worker heartbeats with a "No worker is running" banner, and a budget-reached banner;
   - Settings → System health;
   - `docs/operations.md` (alerts and runbooks) and `docs/troubleshooting.md`.
+- **The simulator** (`pnpm llm-sim`, `sim:simulated`): schema-valid fake answers from the document text, with latency and fault injection. It works in any LLM mode, costs nothing, and its calls are stored as `simulated`.
+- **A mail variety generator** of hundreds of kinds of real-world email, a parse robustness test over 500 of them, and **`pnpm load`**: a load and chaos test with invariant checks. The results are in `docs/reliability.md`.
 - Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
 ### Fixed
@@ -46,5 +48,6 @@ Phase 7: production-ready (docs/architecture.md §9).
 - A slow model call could outlast its job's expiry, so pg-boss retried it while the first call was still running and paid twice. Expiries now outlast the longest call.
 - A Gmail message deferred by the inbound limit could lose its next job if the worker crashed at the wrong moment. Deferred messages also all woke at once, and each refused attempt counted against the limit again.
 - A Postmark redelivery counted against the tenant's inbound limit.
+- A Postgres restart could crash the worker: a connection that died while checked out emitted an unhandled `error` event.
 - A `.env` copied from `.env.example` no longer points the Docker demo's fake Google at the real one.
 - The Docker demo no longer gives the database owner URL to the api, worker and web, or any secret to web.

@@ -25,7 +25,10 @@ export async function drainTenantJobs(deps: PipelineDeps, tenantId: string, opti
           failures.set(job.id, count);
           if (count > QUEUE_OPTIONS[queue].retryLimit) {
             await deps.boss.deleteJob(queue, job.id);
-            await failedStage(deps, job.data, { queue, output: { message: (err as Error).message } });
+            await failedStage(deps, job.data, {
+              queue,
+              output: { name: (err as Error).name, message: (err as Error).message },
+            });
           }
         }
       }

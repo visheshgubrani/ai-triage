@@ -38,6 +38,10 @@ x-app-env: &app-env
   GOOGLE_OAUTH_URL: ${GOOGLE_OAUTH_URL:-http://localhost:9040}
   GOOGLE_TOKEN_URL: ${GOOGLE_TOKEN_URL:-http://fake-google:9040}
   GOOGLE_API_URL: ${GOOGLE_API_URL:-http://fake-google:9040}
+  LLM_SIMULATOR_URL: ${LLM_SIMULATOR_URL:-http://llm-sim:9050/v1}
+  # Off unless set (one company has no one to be fair to); `pnpm load` compares both.
+  WORKER_TENANT_CONCURRENCY: ${WORKER_TENANT_CONCURRENCY:-}
+  RATE_LIMIT_SCALE: ${RATE_LIMIT_SCALE:-1}
 
 services:
   postgres:
@@ -121,6 +125,21 @@ services:
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-demo-fake-google-secret}
     ports:
       - "127.0.0.1:9040:9040"
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # The LLM simulator for `sim:` models (load tests, custom categories without a key): free,
+  # schema-valid fake answers. The worker reaches it at http://llm-sim:9050/v1; `pnpm load` changes
+  # its faults on localhost (POST /sim/config).
+  llm-sim:
+    image: *app-image
+    pull_policy: never
+    init: true
+    command: ["cli", "llm-sim"]
+    ports:
+      - "127.0.0.1:${SIM_PORT:-9050}:9050"
     depends_on:
       init:
         condition: service_completed_successfully

@@ -66,12 +66,28 @@
 
 ## LLM modes
 
-- `LLM_MODE` is `replay` (the default), `record` or `live`.
+- `LLM_MODE` is `replay` (the default), `record` or `live`. `sim:` models ignore it (above).
   - `replay` serves cassettes from `fixtures/cassettes`. A missing cassette is a hard error (`CassetteMissError`), never a fallback to a paid call.
   - `record` calls the live API and writes cassettes.
   - `live` has to be set on purpose.
 - `LLM_MODES`, `getLlmMode` and `callModeOf` live in `@ai-triage/core`, so the api reads them without loading SDKs. `@ai-triage/llm` re-exports them.
 - A run (processing or eval) stores the mode it expects. A worker whose mode differs fails the run rather than spending, or replaying, unexpectedly.
+
+## The simulator (`sim:` models)
+
+- **What it is:** `pnpm llm-sim` (port 9050, and a service in the Docker demo) is an OpenAI-compatible Chat Completions server. Its code is `packages/llm/src/testing/simulator.ts`. It answers any classify or extract request with schema-valid output built from the document text:
+  - **classify:** the offered category whose name and description words the document uses most;
+  - **extract:** labelled values, dates, emails and amounts, quoted verbatim so the evidence gate can verify them.
+
+  Answers are deterministic for a request. Latency and fault rates (429 with Retry-After, 500, slow answers, malformed JSON, refusals) are set with `SIM_*` variables, or `POST /sim/config` during a run.
+- **How to use it:** point the worker at it with `LLM_SIMULATOR_URL=http://localhost:9050/v1`, and use the catalog's `sim:simulated` model.
+- **Any mode:** simulated calls reach the simulator whatever `LLM_MODE` is, never a cassette. They're stored with `llm_calls.mode = 'simulated'`, cost $0, and are badged "Simulated" wherever Replay is badged.
+- **What it's for:**
+  - load and chaos tests (`pnpm load`, docs/reliability.md);
+  - integration tests;
+  - trying custom categories or Gmail intake without a key.
+
+  Never for real decisions: its numbers measure the system, not a model.
 
 ## Cassettes
 

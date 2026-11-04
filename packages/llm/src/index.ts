@@ -15,7 +15,14 @@ import { liveTransport, recordTransport, replayTransport, type Transport } from 
 
 /** The transport for a mode. Only record and live construct API clients (and need keys). */
 export function createTransport(mode: LlmMode, cassetteDir: string): Transport {
-  if (mode === "replay") return replayTransport(cassetteDir);
-  if (mode === "record") return recordTransport(liveTransport(), cassetteDir);
-  return liveTransport();
+  const base =
+    mode === "replay"
+      ? replayTransport(cassetteDir)
+      : mode === "record"
+        ? recordTransport(liveTransport(), cassetteDir)
+        : liveTransport();
+  // The simulator costs nothing and isn't a real model, so whatever the mode, `sim:` requests go to
+  // it (never to a cassette, never recorded).
+  const simulator = liveTransport();
+  return { send: (request, meta) => (request.provider === "sim" ? simulator : base).send(request, meta) };
 }

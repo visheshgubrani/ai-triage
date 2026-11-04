@@ -57,6 +57,8 @@ pnpm ingest <file>           # .pdf/.docx/.eml/.png/.txt via the REST API (TRIAG
 pnpm api-key:create --tenant demo
 pnpm tenant:create --name Acme --slug acme --admin you@acme.com   # a real tenant + the first admin's invite link
 pnpm fake-google             # a fake Google on :9040 for mailbox sync without a Google project (docs/google.md)
+pnpm llm-sim                 # the simulator on :9050 for `sim:simulated` (LLM_SIMULATOR_URL=http://localhost:9050/v1), any LLM_MODE, $0
+pnpm load --docs 1000 --tenants 5 --skew 0.8   # load and chaos test against a running stack (docs/reliability.md)
 pnpm eval:import <items.jsonl> [--dataset Main]
 LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY (see docs/llm.md)
 docker compose up            # the whole demo in containers (pulls the GHCR image; --build builds it), replay mode, no key
