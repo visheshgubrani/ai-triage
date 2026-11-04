@@ -1,30 +1,48 @@
-import type { ButtonHTMLAttributes } from "react";
+import type { ComponentProps } from "react";
+import { Button as UiButton } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
+import { cn } from "@/lib/utils";
 
 const VARIANTS = {
-  primary:
-    "bg-neutral-900 text-white hover:bg-neutral-700 dark:bg-neutral-100 dark:text-neutral-900 dark:hover:bg-neutral-300",
-  secondary: "border border-neutral-300 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800",
-  danger:
-    "border border-red-300 text-red-700 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950",
+  primary: "default",
+  secondary: "outline",
+  danger: "destructive",
+  ghost: "ghost",
+  link: "link",
 } as const;
 
+/**
+ * The app's button: shadcn's, with a keyboard hint. `shortcut` goes inside the button, so it is part
+ * of the accessible name (`Approve a`); it can't combine with `asChild`, which needs a single child.
+ */
 export function Button({
   variant = "secondary",
   shortcut,
-  className = "",
+  className,
   children,
+  asChild,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: keyof typeof VARIANTS; shortcut?: string }) {
+}: Omit<ComponentProps<typeof UiButton>, "variant"> & { variant?: keyof typeof VARIANTS; shortcut?: string }) {
+  if (asChild) {
+    return (
+      <UiButton asChild variant={VARIANTS[variant]} className={className} {...props}>
+        {children}
+      </UiButton>
+    );
+  }
   return (
-    <button
-      type="button"
-      {...props}
-      className={`inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTS[variant]} ${className}`}
-    >
+    <UiButton type="button" variant={VARIANTS[variant]} className={cn(className)} {...props}>
       {children}
       {shortcut && (
-        <kbd className="rounded border border-current/30 px-1 font-mono text-[10px] opacity-70">{shortcut}</kbd>
+        <Kbd
+          className={cn(
+            "ml-0.5 h-4 min-w-4 font-mono text-[10px]",
+            variant === "primary" && "bg-primary-foreground/20 text-primary-foreground",
+          )}
+        >
+          {shortcut}
+        </Kbd>
       )}
-    </button>
+    </UiButton>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Button } from "@/components/button";
 import { signInWithGoogle } from "@/lib/google";
 
 /** "Continue with Google": a full-width secondary button with Google's mark. */
@@ -16,8 +17,9 @@ export function GoogleButton({
 }) {
   const [pending, setPending] = useState(false);
   return (
-    <button
-      type="button"
+    <Button
+      className="w-full"
+      size="lg"
       disabled={pending}
       onClick={async () => {
         setPending(true);
@@ -27,7 +29,6 @@ export function GoogleButton({
           onError(problem);
         }
       }}
-      className="flex w-full items-center justify-center gap-2 rounded-md border border-neutral-300 px-3 py-2 text-sm font-medium hover:bg-neutral-100 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
     >
       <svg aria-hidden="true" viewBox="0 0 48 48" className="h-4 w-4">
         <path
@@ -48,6 +49,15 @@ export function GoogleButton({
         />
       </svg>
       {pending ? "Opening Google…" : "Continue with Google"}
-    </button>
+    </Button>
+  );
+}
+
+/** Between two ways of signing in. */
+export function OrDivider({ children }: { children: string }) {
+  return (
+    <p className="flex items-center gap-3 text-xs text-muted-foreground before:h-px before:flex-1 before:bg-border after:h-px after:flex-1 after:bg-border">
+      {children}
+    </p>
   );
 }

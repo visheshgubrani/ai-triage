@@ -79,6 +79,9 @@ TRIAGE_SOURCE=$PWD TRIAGE_IMAGE=ai-triage ./install.sh --version dev --port 4200
 - **API.** Contracts are Zod schemas in `packages/contracts`. Web calls the API only through the Hono RPC client.
   - One origin: every route is under `/api` (`createApp` mounts `apiRoutes`; `AppType` is the un-prefixed set). Caddy routes `/api/*` in containers, a Next rewrite in `pnpm dev`. `PUBLIC_URL` is the only public address (`resolvePublicUrls`).
   - Tests call `t.app.request("/me")` (the helper adds `/api`); `t.server.request` reaches real paths, such as the root `/health`, `/webhooks` and `/v1`.
+- **UI.** shadcn/ui on Radix: primitives in `apps/web/src/components/ui` are generated (`pnpm dlx shadcn@4.23.0 add <name>`; left as generated, apart from `SidebarInset` being a div). App components (`Button`, `Section`, `DataTable`, `Badge`/`Pill`, `Notice`, `useConfirm`…) sit in `components/`. Colours come from the tokens in `globals.css`, never raw palette classes.
+  - Theme is a cookie the root layout reads, with no script (the CSP refuses inline ones). Charts use the fixed `--chart-N` slots.
+  - The e2e specs count on one `<main>` per page (the shell's), native `<select>`s, mailbox cards being `<section>`s, and no stray `role=alert`/`status`: so no toasts, and system banners sit outside `<main>`.
 - **Env.** One root `.env`, loaded with `--env-file-if-exists=../../.env` or `process.loadEnvFile`. Every variable is declared in `packages/core/src/env.ts`; the api and worker check theirs at startup (`assertEnv`, then `checkStartup` for the database).
 - **Style.** Biome (2 spaces, double quotes, 120 columns). Tests sit next to source as `*.test.ts`; `*.db.test.ts` need Postgres.
 - **Database roles.**

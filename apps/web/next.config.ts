@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
     "@ai-triage/api",
     "@ai-triage/evals",
     "@ai-triage/schemas",
+    "geist",
   ],
   poweredByHeader: false,
   // The Docker image runs `.next/standalone` (a server plus only the files it needs), traced from

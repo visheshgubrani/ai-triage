@@ -39,6 +39,8 @@ export function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set("x-nonce", nonce);
   requestHeaders.set("content-security-policy", csp);
+  // Where a signed-out visitor was going, so sign-in can bring them back (app/(app)/layout.tsx).
+  requestHeaders.set("x-pathname", request.nextUrl.pathname + request.nextUrl.search);
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set("content-security-policy", csp);
   return response;

@@ -1,25 +1,36 @@
 "use client";
 
+import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/button";
+import { EmptyState } from "@/components/empty-state";
 
 /** Any page that failed to render: what to try, and the digest to look up in the web's log. */
 export default function ErrorPage({ error, reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
-    <main className="mx-auto max-w-xl px-4 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Something went wrong</h1>
-      <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-        This page couldn't load. Try again; if it keeps failing, the api may be down (an admin can check Settings →
-        System health, or run <code>pnpm preflight</code>).
-      </p>
-      {error.digest && <p className="mt-2 font-mono text-xs text-neutral-500">Reference: {error.digest}</p>}
-      <div className="mt-6 flex gap-4 text-sm">
-        <button type="button" onClick={reset} className="underline underline-offset-2">
-          Try again
-        </button>
-        <Link href="/" className="underline underline-offset-2">
-          Home
-        </Link>
-      </div>
+    <main className="flex min-h-[60svh] items-center justify-center p-4">
+      <EmptyState
+        heading
+        icon={TriangleAlert}
+        title="Something went wrong"
+        description={
+          <>
+            This page couldn't load. Try again; if it keeps failing, the api may be down (an admin can check Settings →
+            System health, or run <code>pnpm preflight</code>).
+            {error.digest && <span className="mt-2 block font-mono text-xs">Reference: {error.digest}</span>}
+          </>
+        }
+        action={
+          <>
+            <Button variant="primary" onClick={reset}>
+              Try again
+            </Button>
+            <Button asChild>
+              <Link href="/">Home</Link>
+            </Button>
+          </>
+        }
+      />
     </main>
   );
 }
