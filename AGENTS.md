@@ -15,7 +15,7 @@ Context for coding agents (and humans). Keep it lean: only what every session ne
 
 It's an MVP and a portfolio project: correct where correctness is cheap, runnable by a stranger with no API key, and readable.
 
-**Status:** phases 1–6 (foundation, pipeline, review, evals, security, Google Workspace) are done. Next: reliability (architecture §9).
+**Status:** phases 1–6 (foundation, pipeline, review, evals, security, Google Workspace) are done. Phase 7 (production-ready: reliability, getting started, custom categories) is in progress (architecture §9).
 
 ## Repo map
 

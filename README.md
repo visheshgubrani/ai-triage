@@ -1,6 +1,6 @@
 # ai-triage
 
-An open-source AI triage inbox. Emails and documents come in, Claude classifies them and extracts structured, schema-validated fields, and anything uncertain goes to a human approval queue instead of being acted on. An evals page measures accuracy per category plus cost and latency per request.
+An open-source AI triage inbox. Emails and documents come in, an LLM (Claude, or any OpenAI-compatible model) classifies them and extracts structured, schema-validated fields, and anything uncertain goes to a human approval queue instead of being acted on. An evals page measures accuracy per category plus cost and latency per request.
 
 > **Status: the MVP is complete.** Documents are ingested, classified and extracted; uncertain ones go to a review queue; approvals are delivered as signed webhooks; and an evals page measures the same pipeline on labeled data, with every rate shown with its n and a 95% Wilson lower bound. See [docs/architecture.md](docs/architecture.md) for the design.
 

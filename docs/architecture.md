@@ -39,16 +39,17 @@ Stack: **TypeScript monorepo, Hono API + Next.js UI, Postgres (RLS) + pg-boss, S
  Postmark inbound ─┐                                     ┌─> Next.js: inbox · review · evals · settings
  Upload (2-step)   ├─> Hono API ─tx─> Postgres (RLS) <───┤   (Hono RPC typed client)
  REST API / CLI   ─┘    insert doc + enqueue (same tx)    │
+ Gmail (sync) ─────> worker: poll → history → fetch ──────┤   (per-mailbox OAuth, read-only)
                         │                                 │
                   RustFS/S3 (server-issued keys)          │
                         ^                                 │
  pg-boss ──> worker: parse → classify → extract → route ──┼─> auto (+not sampled) ─> actions outbox ─> signed webhook
                          │ LLM response saved immediately └─> review / audit ─> human ─> actions outbox
                          v
-                   Claude API      (eval runner: same core, results → eval_results only)
+                   model API       (eval runner: same core, results → eval_results only)
 ```
 
-Three processes from one image (`web`, `api`, `worker`), plus Postgres and RustFS in docker-compose.
+Three processes from one image (`web`, `api`, `worker`), plus Postgres and RustFS in docker-compose. The model API is Claude or any OpenAI-compatible provider (§5); the demo replays GPT-6.1 Terra.
 
 **Why pg-boss over QStash:** jobs are enqueued in the same transaction as the data that triggers them, and only when the transaction's client is passed to `boss.send(…, { db })`; sharing a database isn't enough on its own. It also means no public worker endpoints, no HTTP timeouts on slow LLM or PDF work, built-in retries, cron and dead-lettering, and stuck jobs you can find with SQL. The queue sits behind a small `Queue` interface.
 
@@ -59,21 +60,25 @@ Three processes from one image (`web`, `api`, `worker`), plus Postgres and RustF
 ```
 apps/web        Next.js App Router (UI only)
 apps/api        Hono on Node: UI REST, public API (tenant API keys), Postmark webhook, upload flow
-apps/worker     pg-boss handlers: pipeline stages, webhook delivery and their dead letters
+apps/worker     pg-boss handlers: pipeline stages, webhook delivery, mailbox sync, evals, maintenance
 packages/db         Drizzle schema, RLS + composite-FK migrations, withTenantTx(), seeds
-packages/core       pure pipeline: parse, classify, extract, verifyEvidence, gates, route → {decision, proposedAction}
+packages/core       closed sets, and the pure pipeline (./pipeline): parse, classify, extract, verifyEvidence, gates, route
 packages/llm        model gateway (Claude + OpenAI-compatible adapters): call → llm_calls (tokens, cost, latency); live | record | replay modes
 packages/schemas    category templates (Zod) → JSON Schema; toApiSchema(); Ajv validators
+packages/storage    S3 client, presigned URLs, server-issued storage keys
+packages/ingest     ingestion paths: store the source, then create document + run + parse job
 packages/evals      comparators, metrics, Wilson interval, threshold sweep, run diff
+packages/mailbox    mail providers: Google OAuth and Gmail REST over an injected fetch, plus a fake Google
 packages/contracts  Zod API types shared by api + web
 fixtures/           synthetic emails/PDFs/scans per category (+ ambiguous, injection); LLM cassettes
-infra/              webhook-catcher (local receiver that verifies signatures), later the Dockerfile
+infra/              webhook-catcher (a local receiver that verifies signatures)
+Dockerfile          one image for api, worker, web and the one-shot init
 ```
 
 **OSS ergonomics:**
 - **The quickstart is `docker compose up --build`.** A one-shot `init` service runs migrations, creates the storage bucket and seeds the demo tenant (around 60 synthetic documents and a labeled dataset with splits), and it is idempotent. `api`, `worker` and `web` wait for it with `depends_on: condition: service_completed_successfully`. The demo runs in **replay mode**, so the evals page is populated and no API key is needed.
 - **`LLM_MODE` is explicit.** `replay` (the default) serves cassettes from `fixtures/cassettes`, keyed by request hash. **A missing cassette is a hard error** (`CassetteMissError`, naming the hash and the record command), never a silent fallback to a paid call. `record` calls the live API and writes cassettes. `live` has to be set on purpose.
-- The contributor dev loop is `docker compose up -d postgres storage` followed by `pnpm dev`. `pnpm ingest <file>` pushes an .eml, PDF or JSON file through the real ingestion path.
+- The contributor dev loop is `pnpm infra:up`, `pnpm db:migrate`, `pnpm db:seed`, then `pnpm dev`. `pnpm ingest <file>` pushes an .eml, PDF or JSON file through the real ingestion path.
 - **Web in Docker:** server components call the API at `API_INTERNAL_URL` (compose: `http://api:8787`); the browser uses `NEXT_PUBLIC_API_URL`, inlined at build time.
 - **Fixtures** are generated once and committed, and cassettes are keyed by the exact request bytes, so fixtures don't change casually. Providers, modes and recording are in [llm.md](llm.md).
 - The README carries the architecture diagram, an evals screenshot, a "design decisions" section and a "known limits" section (repeat model calls, what evidence matching proves, injection).
@@ -201,7 +206,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 **Claude calls (`@anthropic-ai/sdk`):**
 - `messages.create` with `output_config.format` json_schema, sent the stripped schema. Ajv then validates the **full** schema.
-- Model and effort come from the config. The default is `claude-opus-5-5` at `effort: "low"` for classify and `"low"`/`"medium"` for extract, and the evals page compares alternatives such as `claude-sonnet-5-5` and `claude-haiku-5-5`.
+- Model and effort come from the config. The default is `claude-opus-5-5` at `effort: "low"` for both stages, and the evals page compares alternatives such as `claude-sonnet-5-5` and `claude-haiku-5-5`.
 - `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`), with a `stop_reason` check before reading content.
 - The system prompt (instructions, category definitions, few-shot examples) is cached; the document comes after it.
 - **Budget:** a daily cap per tenant (admins edit it in Settings; today's row takes the new cap at once), reserved atomically before each live call:
@@ -251,7 +256,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 ## 8. Evals
 
-- **Datasets** have dev, calib and test splits. Items can be imported from JSONL, promoted from reviews, or labeled in the review UI's label mode. The demo seed ships a labeled set.
+- **Datasets** have dev, calib and test splits. Items can be imported from JSONL, or promoted from reviews ("Add to eval set"). The demo seed ships a labeled set.
 - **Workflow the UI enforces:**
   1. Iterate prompts, models and effort on **dev**.
   2. Run the candidate config on **calib**, open the per-category **threshold sweep** (threshold vs auto rate vs precision, each with n and a Wilson lower bound) and the **reliability table** (score bucket vs accuracy and n), pick thresholds, then **Freeze** to create an immutable config version.
@@ -309,7 +314,23 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
    - M5: Workspace domain auto-join.
    - M6: sender authentication for synced mail, source display, eval parity.
    - M7: a fake Google for the demo and e2e, and the security docs.
-7. **Reliability (planned):** real mail volume and variety (hundreds of email types), per-tenant fairness, observability, backpressure.
+7. **Production-ready (in progress):** reliability under real mail volume, a fast path from clone to a real deployment, and tenant-defined categories. Milestones:
+   - M0: docs and closed sets.
+   - M1: a config registry, `pnpm preflight` and one-command dev setup.
+   - M2: a single origin, with the API under `/api`, and one `PUBLIC_URL`.
+   - M3: slim prebuilt images on GHCR, releases and a CHANGELOG.
+   - M4: timeouts, pools, graceful shutdown and sandboxed parsing.
+   - M5: per-tenant fairness (pg-boss groups) and provider backpressure.
+   - M6: self-healing (a reconciler for stalled work) and Retry all.
+   - M7: observability: JSON logs, metrics, health, worker heartbeats, a System health page.
+   - M8: a simulated model, a mail variety generator, load and chaos tests.
+   - M9: intake filters for auto-replies, bounces and bulk mail.
+   - M10: a first-run setup page, a getting-started checklist and UI polish.
+   - M11: pipeline settings (activating `review_all` configs without freezing).
+   - M12: custom categories.
+   - M13: the public API's reads, key scopes and OpenAPI.
+   - M14: production deploy on one VM (Compose and Caddy).
+   - M15: docs, e2e in CI and release 0.7.0.
 
 **Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Microsoft 365 / Outlook sync, Gmail push (Pub/Sub) and Workspace domain-wide delegation, outbound invitation email, erasing eval items, SSE, OpenTelemetry, and dual-run agreement.
 

@@ -10,7 +10,7 @@ One OAuth client serves both features:
 | Mailbox connection (an admin connects e.g. `ap@company.com`) | `openid email` + `https://www.googleapis.com/auth/gmail.readonly` | `${BETTER_AUTH_URL}/integrations/google/callback` | A refresh token per mailbox, encrypted with the key ring (`ENCRYPTION_KEYS`), which belongs to the tenant rather than to the admin who connected it |
 | Workspace domain check (auto-join) | `openid email` | `${BETTER_AUTH_URL}/integrations/google/callback` | None. Only the `hd` claim is read |
 
-Without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, every Google feature is hidden and the rest of the app works as before. The demo runs against a local fake Google (`infra/fake-google`), so it needs no Google project.
+Without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, every Google feature is hidden and the rest of the app works as before. The demo runs against a local fake Google (`pnpm fake-google`, from `packages/mailbox/src/testing/`), so it needs no Google project.
 
 ## 1. Create the OAuth client
 

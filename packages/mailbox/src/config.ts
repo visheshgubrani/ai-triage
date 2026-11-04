@@ -2,7 +2,7 @@
 // Auth) and mailbox connections (this package), so both read it from here. Unset: every Google
 // feature is hidden, and the demo needs no Google project (docs/google.md).
 
-/** Google's endpoints. Tests and the local demo point them at infra/fake-google. */
+/** Google's endpoints. Tests and the local demo point them at the fake in ./testing (`pnpm fake-google`). */
 export const GOOGLE_ENDPOINTS = {
   oauth: "https://accounts.google.com",
   token: "https://oauth2.googleapis.com",
@@ -31,7 +31,7 @@ const trimSlash = (url: string) => url.replace(/\/+$/, "");
 /**
  * The Google client, or null when GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are both unset. One
  * without the other is a mistake, not "off". GOOGLE_OAUTH_URL / GOOGLE_TOKEN_URL / GOOGLE_API_URL
- * point the Google endpoints at a fake (tests, the demo's infra/fake-google); startup refuses them in production
+ * point the Google endpoints at a fake (tests, the demo's `pnpm fake-google`); startup refuses them in production
  * unless TRIAGE_DEMO=true (packages/db/src/startup.ts).
  */
 export function googleConfigFromEnv(env: Env): GoogleConfig | null {

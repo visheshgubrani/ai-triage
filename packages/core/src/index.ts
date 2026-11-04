@@ -153,6 +153,8 @@ export const QUEUES = {
   mailboxFetch: "mailbox.fetch",
   /** Dead-letter queue of `mailbox.fetch`: marks the message failed once retries are exhausted. */
   mailboxFailed: "mailbox.failed",
+  /** Every five minutes (cron): fails runs, actions and eval runs left waiting on a job that is gone. */
+  reconcile: "system.reconcile",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -238,6 +240,8 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
     deadLetter: QUEUES.mailboxFailed,
   },
   [QUEUES.mailboxFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
+  // A missed pass is caught by the next one.
+  [QUEUES.reconcile]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 240 },
 };
 
 /** When the maintenance job runs (cron, UTC). */
@@ -245,6 +249,9 @@ export const MAINTENANCE_CRON = "15 3 * * *";
 
 /** When the mailbox poll runs: every minute, pg-boss's finest cron granularity. */
 export const MAILBOX_POLL_CRON = "* * * * *";
+
+/** When the reconciler runs: every five minutes. */
+export const RECONCILE_CRON = "*/5 * * * *";
 
 /** Payload of `storage.delete`: objects and key prefixes, all inside `t/{tenantId}/`. */
 export interface StorageDeleteJob {
@@ -456,6 +463,10 @@ export const AUDIT_ACTIONS = [
   "mailbox.updated",
   "mailbox.disconnected",
   "mailbox.reauth_required",
+  "setup.completed",
+  "category.version_created",
+  "runs.bulk_retried",
+  "intake_filters.updated",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -539,6 +550,12 @@ export const FAILURE_REASONS = [
   "cassette_missing",
   "budget_exhausted",
   "retries_exhausted",
+  /** Parsing a file ran past PARSE_TIMEOUT_MS (or its memory limit) in the parse sandbox. */
+  "parse_timeout",
+  /** The model provider kept answering 429/529/503 until the stage's retries ran out. */
+  "provider_unavailable",
+  /** The reconciler found the run waiting on a job that no longer exists (docs/architecture.md §5). */
+  "stalled",
 ] as const;
 export type FailureReason = (typeof FAILURE_REASONS)[number];
 
