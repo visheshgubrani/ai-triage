@@ -15,6 +15,7 @@ IMAGE_REPO=${TRIAGE_IMAGE:-ghcr.io/$REPO}
 VERSION=latest
 DIR=./ai-triage
 HOST=
+FILES_HOST=
 EMAIL=
 PORT=
 OCR=
@@ -37,6 +38,9 @@ usage: install.sh [options]
   (no options)        a local install on http://localhost:3000, for this computer only
   --host NAME         a server install with HTTPS on NAME (its DNS must point here)
   --email ADDRESS     Let's Encrypt account email (needed with --host)
+  --files-host NAME   behind a reverse proxy you already run (nginx, Caddy, Traefik) that owns 80/443:
+                      with --host, the app and its files listen on 127.0.0.1 (--port, --port + 1)
+                      and the proxy serves https://HOST and https://NAME. Prints its config
   --port N            a local install's port (default 3000; files use N+1)
   --ocr BACKEND       read scans and photos with PaddleOCR-VL: nvidia, vulkan (AMD and Intel
                       GPUs) or cpu; off turns it off again. Downloads about 3 GB the first time
@@ -55,6 +59,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --host) HOST="${2:?--host needs a value}"; shift 2 ;;
     --email) EMAIL="${2:?--email needs a value}"; shift 2 ;;
+    --files-host) FILES_HOST="${2:?--files-host needs a value}"; shift 2 ;;
     --port) PORT="${2:?--port needs a value}"; shift 2 ;;
     --ocr) OCR="${2:?--ocr needs a value}"; shift 2 ;;
     --version) VERSION="${2:?--version needs a value}"; shift 2 ;;
@@ -94,6 +99,12 @@ if [ -n "$DEMO" ]; then
   [ -z "$HOST" ] || die "--demo runs on this computer only" "drop --host, or drop --demo for a real install"
   for p in 3000 9020; do
     port_busy "$p" && ! already_ours && die "port $p is in use" "stop what uses it, then run this again"
+  done
+elif [ -n "$FILES_HOST" ]; then
+  [ -n "$HOST" ] || die "--files-host goes with --host (the app's public hostname)" "add --host triage.example.com"
+  p=${PORT:-3000}
+  for q in "$p" "$((p + 1))"; do
+    port_busy "$q" && ! already_ours && die "port $q is in use" "run again with --port <another port>, such as --port 4600"
   done
 elif [ -n "$HOST" ]; then
   [ -n "$EMAIL" ] || die "--host needs --email (Let's Encrypt sends certificate notices there)" "add --email you@example.com"
@@ -180,7 +191,11 @@ fi
 
 step "Writing .env"
 set -- --dir /work --version "$VERSION"
-[ -n "$HOST" ] && set -- "$@" --host "$HOST" --email "$EMAIL"
+if [ -n "$FILES_HOST" ]; then
+  set -- "$@" --host "$HOST" --files-host "$FILES_HOST"
+elif [ -n "$HOST" ]; then
+  set -- "$@" --host "$HOST" --email "$EMAIL"
+fi
 [ -n "$PORT" ] && set -- "$@" --port "$PORT"
 [ -n "$OCR" ] && set -- "$@" --ocr "$OCR"
 docker run --rm -v "$DIR:/work" --user "$(id -u):$(id -g)" \
@@ -198,7 +213,23 @@ fi
 ./triage start >/dev/null
 
 url=$(./triage open)
-if [ -n "$HOST" ]; then
+if [ -n "$FILES_HOST" ]; then
+  app_port=$(sed -n 's/^APP_PORT=//p' .env)
+  say ""
+  say "Point your reverse proxy at it (both hostnames need DNS to this server). For Caddy:"
+  say ""
+  say "  $HOST {"
+  say "      reverse_proxy 127.0.0.1:$app_port"
+  say "  }"
+  say "  $FILES_HOST {"
+  say "      request_body { max_size 100MB }"
+  say "      reverse_proxy 127.0.0.1:$((app_port + 1))"
+  say "  }"
+  say ""
+  say "  For nginx: two server blocks, proxy_pass http://127.0.0.1:$app_port and :$((app_port + 1)), with"
+  say "  proxy_set_header Host \$host, X-Forwarded-For \$proxy_add_x_forwarded_for, X-Forwarded-Proto \$scheme,"
+  say "  and client_max_body_size 100m. Keep the Host header: stored files are signed for it."
+elif [ -n "$HOST" ]; then
   # Caddy gets the certificate on the first request; give it a minute.
   ok=
   for _ in $(seq 1 30); do

@@ -5,6 +5,12 @@
 {
 	admin off
 	email {$ACME_EMAIL}
+	# Behind a reverse proxy on this machine (install.sh --files-host), requests arrive from the
+	# Docker bridge: believe its X-Forwarded-For, so the api sees each client's own address.
+	# Clients on the internet never connect from a private address, so a server install is unaffected.
+	servers {
+		trusted_proxies static private_ranges
+	}
 }
 
 {$APP_SITE} {

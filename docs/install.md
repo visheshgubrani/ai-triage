@@ -31,6 +31,14 @@ curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/insta
   --host triage.example.com --email ops@example.com
 ```
 
+**Already running nginx, Caddy or Traefik on 80/443?** Install behind it instead: the app and its stored files listen on `127.0.0.1`, your proxy terminates HTTPS, and the installer prints the proxy config to add.
+
+```bash
+… | sh -s -- --host triage.example.com --files-host files.triage.example.com --port 4600
+```
+
+Both names need DNS to the server. Files need a hostname of their own (a separate origin, see [security.md](security.md)). The proxy must pass the `Host` header through, because stored files are signed for it: Caddy does by default, and nginx needs `proxy_set_header Host $host`.
+
 **Just looking?** `… | sh -s -- --demo` runs the demo instead: sample documents, recorded model answers, and no key needed.
 
 The installer:
@@ -45,6 +53,7 @@ It ends by printing a **setup link**. Re-running it is safe: it keeps `.env` and
 |---|---|
 | `--host NAME --email ADDRESS` | Server install. The app is at `https://NAME`, and stored files at `https://NAME:8443`: a separate origin, so a stored file can never run as the app |
 | `--port N` | Local install on another port (default 3000). Files use N+1 |
+| `--host NAME --files-host NAME` | Behind your own reverse proxy (it keeps 80/443): app and files on 127.0.0.1 `--port` and N+1 |
 | `--version X.Y.Z` | Install a specific release (default: latest) |
 | `--dir PATH` | Where to put it (default `./ai-triage`) |
 | `--ocr nvidia\|vulkan\|cpu` | Read scans and photos with OCR (below). `--ocr off` turns it off again |

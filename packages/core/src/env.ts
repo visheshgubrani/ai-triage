@@ -737,7 +737,13 @@ export const ENV_VARS: readonly EnvVar[] = [
         "latest",
       ],
       ["TRIAGE_IMAGE", "Image repository, for running your own build.", "ghcr.io/visheshgubrani/ai-triage"],
+      [
+        "INSTALL_MODE",
+        "local (this machine), server (its own HTTPS on 80/443/8443) or upstream (behind your proxy).",
+        "local",
+      ],
       ["APP_HOST", "The installation's hostname: `localhost`, or the server's DNS name.", undefined],
+      ["FILES_HOST", "Behind your own reverse proxy (upstream): the hostname that serves stored files.", undefined],
       [
         "APP_PORT",
         "A local install's port (`install.sh --port`); stored files are on the next one (FILES_PORT).",
