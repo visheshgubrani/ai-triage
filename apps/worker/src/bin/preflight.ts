@@ -7,6 +7,7 @@ import {
   checkApi,
   checkDatabase,
   checkEnvironment,
+  checkOcr,
   checkStorage,
   checkVersions,
   DEV_HINTS,
@@ -35,6 +36,7 @@ try {
 results.push(...(await checkDatabase(env, mode, workerConfig(env).cassetteDir, hints)));
 results.push(...(await checkStorage(env, hints)));
 results.push(...(await checkApi(env, hints)));
+results.push(...(await checkOcr(env, hints)));
 
 // Installed, a missing provider key is set with ./triage (which reads it from the environment).
 if (hints.installed) {

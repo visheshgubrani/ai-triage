@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { join } from "node:path";
 import { normalizeEml } from "@ai-triage/core/pipeline";
 import {
   activateConfig,
@@ -74,7 +76,21 @@ Tax: 20.00
 Total: 120.00
 Please pay this invoice by 2026-10-31.`;
 
-async function setup() {
+/** A fake OCR server (llama.cpp's OpenAI-compatible API): one answer for every page, or a status. */
+let ocrAnswer: { status: number; text: string } = { status: 200, text: "" };
+let ocrServer: Server;
+let ocrUrl = "";
+beforeAll(async () => {
+  ocrServer = createServer((_req, res) => {
+    res.writeHead(ocrAnswer.status, { "content-type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: ocrAnswer.text } }] }));
+  });
+  await new Promise<void>((resolve) => ocrServer.listen(0, resolve));
+  ocrUrl = `http://localhost:${(ocrServer.address() as AddressInfo).port}/v1`;
+});
+afterAll(() => ocrServer.close());
+
+async function setup(options: { ocr?: boolean } = {}) {
   const tenantId = await newTenant(pool);
   const config = await withTenantTx(pool, tenantId, (tx) =>
     buildPipelineConfig(tx, {
@@ -87,16 +103,26 @@ async function setup() {
     boss,
     storage,
     llm: createDbLlmGateway({ pool, mode: "replay", transport: createTransport("replay", workerConfig().cassetteDir) }),
-    limits: { maxPdfPages: 100 },
+    limits: {
+      maxPdfPages: 100,
+      // The real sandbox, so page images come out of the thread the worker uses.
+      sandbox: { timeoutMs: 30_000, maxMemoryMb: 256 },
+      ocr: options.ocr ? { url: ocrUrl, timeoutMs: 5000, maxPages: 20 } : null,
+    },
     auditDraw: () => 0.5,
     now: () => new Date(),
   };
-  const ingest = async (text: string) =>
+  const ingest = async (text: string | Uint8Array, filename = "invoice.txt", mime = "text/plain") =>
     (
       await ingestFile(
         { pool, boss, storage },
         tenantId,
-        { bytes: new TextEncoder().encode(text), filename: "invoice.txt", mime: "text/plain", source: "api" },
+        {
+          bytes: typeof text === "string" ? new TextEncoder().encode(text) : text,
+          filename,
+          mime,
+          source: "api",
+        },
         { maxFileBytes: 2 ** 20 },
       )
     ).documentId;
@@ -185,6 +211,47 @@ Please supply 200 units of part A-17 against this purchase order.`;
       .findLast((c) => c.includes("- purchase_order: "));
     expect(system).toContain("Answer: purchase_order");
     expect(system).not.toContain("Answer: invoice");
+  });
+});
+
+describe("optional OCR", () => {
+  const scan = () => new Uint8Array(readFileSync(join(workerConfig().fixturesDir, "docs/scan-inv.pdf")));
+  const SCAN_TEXT = `Kestrel Logistics GmbH
+INVOICE
+Invoice No.: KL-2857
+Invoice date: May 27, 2026
+Vendor name: Kestrel Logistics GmbH
+Subtotal: 10648.99
+Total due: 10648.99 USD`;
+
+  it("reads a scanned PDF, so its quotes are checked against the OCR'd text", async () => {
+    const t = await setup({ ocr: true });
+    ocrAnswer = { status: 200, text: SCAN_TEXT };
+    const documentId = await t.ingest(scan(), "scan-inv.pdf", "application/pdf");
+    await t.drain();
+    const detail = await withTenantTx(pool, t.tenantId, (tx) => getDocumentDetail(tx, documentId));
+    expect(detail?.document.processingStatus).toBe("done");
+    expect(detail?.parts.map((p) => [p.evidenceMode, p.text.includes("KL-2857")])).toEqual([["ocr_text", true]]);
+    expect(detail?.classification?.category).toBe("invoice");
+    // No longer unverifiable: the gate checked the quotes against the OCR'd page.
+    const reasons = detail?.task?.reasons ?? detail?.extraction?.decisionReasons ?? [];
+    expect(reasons).not.toContain("evidence_unverifiable");
+  });
+
+  // The simulator reads no PDFs or images, like any text-only model: OCR is what lets it read a scan.
+  it("falls back to no OCR when OCR fails: the scan stays unverifiable, as with OCR off", async () => {
+    const t = await setup({ ocr: true });
+    ocrAnswer = { status: 503, text: "" };
+    try {
+      const documentId = await t.ingest(scan(), "scan-inv.pdf", "application/pdf");
+      await t.drain();
+      const detail = await withTenantTx(pool, t.tenantId, (tx) => getDocumentDetail(tx, documentId));
+      expect(detail?.parts.map((p) => p.evidenceMode)).toEqual(["unverifiable"]);
+      // Parsing succeeded; the text-only model then can't read the scan, exactly as without OCR.
+      expect(detail?.run?.error).toMatch(/^unsupported_file/);
+    } finally {
+      ocrAnswer = { status: 200, text: "" };
+    }
   });
 });
 

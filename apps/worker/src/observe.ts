@@ -69,6 +69,15 @@ export function observed<J extends JobLike>(queue: string, handler: (job: J) => 
   };
 }
 
+const ocrPages = registry.counter("triage_ocr_pages_total", "Pages sent to OCR, by outcome (ok, failed).");
+const ocrSeconds = registry.histogram("triage_ocr_page_seconds", "Time OCR took for one page.");
+
+/** One OCR'd page: the metrics (the parse stage logs the document's outcome). */
+export function recordOcrPage(ok: boolean, ms: number): void {
+  ocrPages.inc({ outcome: ok ? "ok" : "failed" });
+  if (ok) ocrSeconds.observe({}, ms / 1000);
+}
+
 /** The gateway's per-call hook: one log line and the model metrics. */
 export function recordLlmCall(info: CallInfo): void {
   const outcome = info.reused ? "reused" : info.error ? "error" : "ok";
@@ -125,7 +134,7 @@ export function workerCapabilities(env: NodeJS.ProcessEnv, cassetteDir: string) 
     model,
     effort: set.effort ?? "low",
   }));
-  return { providers, simulator: Boolean(env.LLM_SIMULATOR_URL), recorded };
+  return { providers, simulator: Boolean(env.LLM_SIMULATOR_URL), recorded, ocr: Boolean(env.OCR_URL) };
 }
 
 /**

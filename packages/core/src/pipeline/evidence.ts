@@ -4,7 +4,9 @@ import type { EvidenceQuote } from "./outputs";
 // The evidence gate (docs/architecture.md §6): a quote must appear in the source after
 // normalization. `text` parts are searched for quotes without a page; `pdf_text` quotes must be on
 // the cited page; any `unverifiable` part (a scan or image) sends the document to review. A match
-// proves the quote exists, not that it supports the value.
+// proves the quote exists, not that it supports the value. `ocr_text` (a scan or photo read by the
+// optional OCR) counts as the source's text: a page of a scanned PDF like `pdf_text`, a photo like
+// `text`. Its quotes are only as good as the OCR, which calibration on scans measures.
 
 export interface EvidencePart {
   partIndex: number;
@@ -97,13 +99,19 @@ export function verifyEvidence(
   evidence: Readonly<Record<string, EvidenceQuote | null>>,
   fields: readonly string[],
 ): EvidenceResult {
-  const textParts = parts.filter((p) => p.evidenceMode === "text");
-  const pdfParts = parts.filter((p) => p.evidenceMode === "pdf_text");
+  const ocr = (p: EvidencePart) => p.evidenceMode === "ocr_text";
+  const textParts = parts.filter((p) => p.evidenceMode === "text" || (ocr(p) && p.page === null));
+  const pdfParts = parts.filter((p) => p.evidenceMode === "pdf_text" || (ocr(p) && p.page !== null));
   const checks = fields.map((field): EvidenceCheck => {
     const ev = evidence[field];
     if (!ev?.quote.trim()) return { field, status: "missing" };
     // A page only means something for PDFs; with no text PDF in the document, search the text parts.
-    const candidates = ev.page !== null && pdfParts.length > 0 ? pdfParts.filter((p) => p.page === ev.page) : textParts;
+    // A quote without a page may come from an OCR'd scan page too: a model that only read OCR'd
+    // text can't know which page it was (scoped to ocr_text, so text PDFs are checked as before).
+    const candidates =
+      ev.page !== null && pdfParts.length > 0
+        ? pdfParts.filter((p) => p.page === ev.page)
+        : [...textParts, ...pdfParts.filter((p) => ocr(p))];
     const hit = find(ev.quote, candidates);
     return hit ? { field, status: "verified", ...hit } : { field, status: "not_found", quote: ev.quote, page: ev.page };
   });

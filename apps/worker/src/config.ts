@@ -42,6 +42,14 @@ export const workerConfig = (env: NodeJS.ProcessEnv = process.env) => ({
   reconcileStallMinutes: Number(env.RECONCILE_STALL_MINUTES ?? 30),
   httpPort: Number(env.WORKER_HTTP_PORT ?? 9100),
   parseMaxMemoryMb: Number(env.PARSE_MAX_MEMORY_MB ?? 512),
+  // Optional OCR for scans and photos (core/pipeline/ocr.ts); null when OCR_URL is unset.
+  ocr: env.OCR_URL
+    ? {
+        url: env.OCR_URL,
+        timeoutMs: Number(env.OCR_TIMEOUT_MS ?? 120_000),
+        maxPages: Number(env.OCR_MAX_PAGES ?? 20),
+      }
+    : null,
   // The api's inbound email limit (postmarkPerTenant, 500 an hour), shared by Gmail sync.
   inboundPerHour: Math.ceil(500 * (Number(env.RATE_LIMIT_SCALE) > 0 ? Number(env.RATE_LIMIT_SCALE) : 1)),
 });

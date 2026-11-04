@@ -126,6 +126,14 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `PARSE_TIMEOUT_MS` | worker | `60000` | Files are parsed in a sandboxed thread; one that takes longer fails as parse_timeout. |
 | `PARSE_MAX_MEMORY_MB` | worker | `512` | Heap limit of the parse thread. A file that needs more fails as parse_timeout. |
 
+## OCR (optional)
+
+| Variable | Read by | Default | Description |
+|---|---|---|---|
+| `OCR_URL` | worker, cli | – | PaddleOCR-VL behind llama.cpp's server (OpenAI-compatible), such as http://ocr:8080/v1: scans and photos get text, so their quotes can be checked and text-only models can read them. `install.sh --ocr <backend>` sets it. Unset: off. |
+| `OCR_TIMEOUT_MS` | worker | `120000` | Longest one page may take. A document's pages share a 10-minute budget (OCR_BUDGET_MS in core). |
+| `OCR_MAX_PAGES` | worker | `20` | Pages of one document OCR reads at most; the rest stay unverifiable (sent to review). |
+
 ## Webhooks
 
 | Variable | Read by | Default | Description |

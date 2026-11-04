@@ -50,6 +50,7 @@ const llm = createDbLlmGateway({
 const limits = {
   maxPdfPages: config.maxPdfPages,
   sandbox: { timeoutMs: config.parseTimeoutMs, maxMemoryMb: config.parseMaxMemoryMb },
+  ocr: config.ocr,
 };
 const now = () => new Date();
 

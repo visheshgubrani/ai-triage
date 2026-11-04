@@ -207,6 +207,9 @@ export function SourcePanel({
                       {p.page ? ` · page ${p.page}` : ""}
                     </span>
                     <Badge value={p.evidenceMode} />
+                    {p.evidenceMode === "ocr_text" && (
+                      <span>read by OCR from the scan: check figures against the original</span>
+                    )}
                   </p>
                   {p.evidenceMode === "unverifiable" && !p.text.trim() ? (
                     <p className="text-sm text-neutral-500">No text layer (a scan or image). Check the original.</p>

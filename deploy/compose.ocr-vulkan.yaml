@@ -1,0 +1,54 @@
+# Optional OCR for scans and photos (install.sh --ocr vulkan; docs/install.md, "OCR"). On an AMD or Intel GPU through Vulkan (/dev/dri): about 8 to 10 s a page on a Radeon RX 6600.
+# PaddleOCR-VL 1.6 served by llama.cpp's server; the worker calls its OpenAI-compatible API.
+services:
+  # One-shot: the pinned model files (about 1.8 GB the first time), checked by SHA-256.
+  ocr-model:
+    image: ${TRIAGE_IMAGE:-ghcr.io/visheshgubrani/ai-triage}:${TRIAGE_VERSION:-latest}
+    command: ["cli", "ocr-model", "--dir", "/models"]
+    volumes:
+      - ocr-models:/models
+    restart: "no"
+
+  ocr:
+    image: ghcr.io/ggml-org/llama.cpp:server-vulkan@sha256:ea25dfe06c405f1b67eb03755b3307d31d85f600c5ba9d98e5d5a2a5df0361de
+    command:
+      - -m
+      - /models/PaddleOCR-VL-1.6-GGUF.gguf
+      - --mmproj
+      - /models/PaddleOCR-VL-1.6-GGUF-mmproj.gguf
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8080"
+      - --temp
+      - "0"
+      - -c
+      - "8192"
+      - -ngl
+      - "99"
+    volumes:
+      - ocr-models:/models:ro
+    devices:
+      - /dev/dri:/dev/dri
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      ocr-model:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: 20m, max-file: "5" }
+
+  worker:
+    environment:
+      OCR_URL: http://ocr:8080/v1
+    depends_on:
+      ocr:
+        condition: service_healthy
+
+volumes:
+  ocr-models:

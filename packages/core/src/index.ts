@@ -70,7 +70,11 @@ export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
 export const DOCUMENT_SOURCES = ["email", "upload", "api", "gmail"] as const;
 export type DocumentSource = (typeof DOCUMENT_SOURCES)[number];
 
-export const EVIDENCE_MODES = ["text", "pdf_text", "unverifiable"] as const;
+/**
+ * How a part's quotes are verified: `text` and `pdf_text` against the source's own text;
+ * `ocr_text` against text OCR read from a scan or photo (optional OCR); `unverifiable` not at all.
+ */
+export const EVIDENCE_MODES = ["text", "pdf_text", "unverifiable", "ocr_text"] as const;
 export type EvidenceMode = (typeof EVIDENCE_MODES)[number];
 
 /** What a document part is: an email's rendered body, one of its attachments, or an uploaded file. */
@@ -264,11 +268,20 @@ export function llmTimeoutMs(stage: LlmStage, maxTokens: number): number {
   return Math.min(600_000, 60_000 + Math.ceil(maxTokens / 40) * 1000);
 }
 
+/** The parse sandbox's default time limit (PARSE_TIMEOUT_MS). */
+export const PARSE_TIMEOUT_DEFAULT_MS = 60_000;
+/**
+ * The most time optional OCR spends on one document, across its pages (each also bounded by
+ * OCR_TIMEOUT_MS). Pages it doesn't reach stay unverifiable. The parse stage's expiry covers it.
+ */
+export const OCR_BUDGET_MS = 600_000;
+
 /** Retry policy per queue, applied by `db:migrate` (create, or update an existing queue). */
 export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
   [QUEUES.ping]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 60 },
-  // Parsing runs in a sandbox bounded by PARSE_TIMEOUT_MS (60 s by default).
-  [QUEUES.parse]: stage(3, 300),
+  // Parsing runs in a sandbox bounded by PARSE_TIMEOUT_MS (60 s by default), then optional OCR,
+  // bounded by OCR_BUDGET_MS.
+  [QUEUES.parse]: stage(3, 720),
   // One model call each: classify's 120 s timeout, extract's at most 600 s, plus a margin. Ten
   // retries with backoff capped at 5 minutes ride out about an hour of a busy provider.
   [QUEUES.classify]: stage(10, 300),
@@ -290,13 +303,14 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
     retryDelayMax: 300,
     expireInSeconds: 60,
   },
-  // An item parses and makes up to two model calls in one job, so its expiry covers all three.
+  // An item parses (with optional OCR) and makes up to two model calls in one job, so its expiry
+  // covers all of them.
   [QUEUES.evalItem]: {
     retryLimit: 3,
     retryDelay: 5,
     retryBackoff: true,
     retryDelayMax: 300,
-    expireInSeconds: 900,
+    expireInSeconds: 1500,
     heartbeatSeconds: 30,
     deadLetter: QUEUES.evalFailed,
   },

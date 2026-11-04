@@ -117,6 +117,7 @@ TRIAGE_SOURCE=$PWD TRIAGE_IMAGE=ai-triage ./install.sh --version dev --port 4200
 | The eval runner (`apps/worker/src/evals/`) | No `createAction`, `enqueue` or delivery imports; a source scan and a type test enforce this |
 | A built-in category (template) | Built-ins are code with rules; keep `BUILTIN_CATEGORY_NAMES` (schemas), `BUILTIN_CATEGORIES` (core) and `TEMPLATES` equal (`categories.db.test.ts`). Tenants' own types are data: definitions in `packages/schemas/src/definition.ts`, created in Settings → Categories |
 | How a definition compiles (`compileDefinition`) | Stored versions are insert-only, so old versions keep their schema. Keep the output inside `toApiSchema`'s subset (`definition.test.ts` runs every starter) |
+| Optional OCR (`core/pipeline/ocr.ts`, `deploy/compose.ocr-*.yaml`) | It runs inside `parseSource`, so production and evals OCR alike. Requests change only for `ocr_text` parts, never with OCR off. Pin new model files by revision and SHA-256 in `cli ocr-model` |
 | A public API route (`/api/v1`) | snake_case like the webhook payload, a scope check (`requireScope`), and docs/api.md |
 | What an installation runs (`deploy/`, `install.sh`, `cli configure`) | `scripts/install-smoke.sh` (CI's install-smoke) and docs/install.md. An installation's compose project is never `ai-triage`: that's the repository's demo and dev stack |
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |

@@ -47,6 +47,8 @@ export interface WorkerCapabilities {
   providers: string[];
   simulator: boolean;
   recorded: { model: string; effort: string }[];
+  /** OCR_URL is set (optional OCR). Absent in heartbeats from before OCR. */
+  ocr?: boolean;
 }
 
 /**

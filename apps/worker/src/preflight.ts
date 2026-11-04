@@ -236,6 +236,27 @@ export async function checkStorage(env: Env, hints: Hints = DEV_HINTS): Promise<
   }
 }
 
+/** The optional OCR server (OCR_URL): reachable, and serving a model. */
+export async function checkOcr(env: Env, hints: Hints = DEV_HINTS): Promise<CheckResult[]> {
+  if (!env.OCR_URL) return [ok("OCR", "off (no OCR_URL): scans and photos go to the model as images")];
+  try {
+    const res = await fetch(`${env.OCR_URL.replace(/\/+$/, "")}/models`, { signal: AbortSignal.timeout(3000) });
+    return [
+      res.ok
+        ? ok("OCR", `ready at ${env.OCR_URL}`)
+        : warn("OCR", `${env.OCR_URL} answered ${res.status}; scans stay unverifiable until it's up`),
+    ];
+  } catch {
+    return [
+      warn(
+        "OCR",
+        `not reachable at ${env.OCR_URL}; scans stay unverifiable until it is`,
+        hints.installed ? "./triage logs ocr ocr-model" : "start the OCR server (docs/install.md, OCR)",
+      ),
+    ];
+  }
+}
+
 export async function checkApi(env: Env, hints: Hints = DEV_HINTS): Promise<CheckResult[]> {
   const base = env.TRIAGE_API_URL ?? `http://localhost:${env.API_PORT ?? 8787}`;
   try {

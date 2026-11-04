@@ -656,6 +656,32 @@ export const ENV_VARS: readonly EnvVar[] = [
     default: "512",
     description: "Heap limit of the parse thread. A file that needs more fails as parse_timeout.",
   },
+  // ── OCR (optional) ──
+  {
+    name: "OCR_URL",
+    group: "OCR (optional)",
+    processes: ["worker", "cli"],
+    kind: "url",
+    example: "",
+    description:
+      "PaddleOCR-VL behind llama.cpp's server (OpenAI-compatible), such as http://ocr:8080/v1: scans and photos get text, so their quotes can be checked and text-only models can read them. `install.sh --ocr <backend>` sets it. Unset: off.",
+  },
+  {
+    name: "OCR_TIMEOUT_MS",
+    group: "OCR (optional)",
+    processes: ["worker"],
+    kind: "int",
+    default: "120000",
+    description: "Longest one page may take. A document's pages share a 10-minute budget (OCR_BUDGET_MS in core).",
+  },
+  {
+    name: "OCR_MAX_PAGES",
+    group: "OCR (optional)",
+    processes: ["worker"],
+    kind: "int",
+    default: "20",
+    description: "Pages of one document OCR reads at most; the rest stay unverifiable (sent to review).",
+  },
   // ── Webhooks ──
   {
     name: "WEBHOOK_ALLOWED_HOSTS",

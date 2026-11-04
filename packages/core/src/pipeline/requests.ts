@@ -64,7 +64,8 @@ function partTag(part: DocumentPart, page = false): string {
  * The document as content blocks, in part order: text parts as tagged text, each PDF once as a
  * document block (all its pages), images as image blocks. DOCX and plain text go as text.
  * For a model that can't read PDFs, a text-layer PDF goes as tagged text per page instead (so
- * page-cited evidence still checks out); a scan or image it can't read fails as `unsupported_file`.
+ * page-cited evidence still checks out); a scan or image it can't read fails as `unsupported_file`,
+ * unless OCR read it (`ocr_text`).
  */
 export function documentContent(
   parts: readonly DocumentPart[],
@@ -74,9 +75,35 @@ export function documentContent(
   const content: LlmContent[] = [];
   const sent = new Set<string>();
   let bytes = 0;
+  /** A PDF once (all its pages) or an image, as the model reads it. */
+  const pushBinary = (part: DocumentPart) => {
+    if (!part.storageKey || sent.has(part.storageKey)) return;
+    sent.add(part.storageKey);
+    const blob = blobs.get(part.storageKey);
+    if (!blob) throw new Error(`blob for part ${part.partIndex} was not loaded`);
+    const data = Buffer.from(blob).toString("base64");
+    bytes += data.length;
+    if (part.mime === DOCUMENT_MIMES.pdf) {
+      const pages = parts.filter((p) => p.storageKey === part.storageKey).length;
+      content.push({ type: "document", mime: DOCUMENT_MIMES.pdf, data, title: part.label, pages });
+    } else {
+      content.push({ type: "text", text: `${partTag(part)}(image follows)</part>` });
+      content.push({ type: "image", mime: part.mime as "image/png" | "image/jpeg", data });
+    }
+  };
   for (const part of parts) {
     const pdf = part.mime === DOCUMENT_MIMES.pdf;
     const image = part.mime === DOCUMENT_MIMES.png || part.mime === DOCUMENT_MIMES.jpeg;
+    // A scan or photo read by OCR: its text, which quotes are checked against, then the original
+    // for a model that reads it. A model that reads neither PDFs nor images gets the text alone.
+    // (Only with OCR on: without it no part is `ocr_text`, so requests don't change.)
+    if (part.evidenceMode === "ocr_text") {
+      const text = `${partTag(part, true).replace(/>$/, ' read="ocr">')}\n${escapePartText(part.text)}\n</part>`;
+      bytes += Buffer.byteLength(text);
+      content.push({ type: "text", text });
+      if ((pdf && inputs.pdf) || (image && inputs.images)) pushBinary(part);
+      continue;
+    }
     if (pdf && !inputs.pdf && part.evidenceMode === "pdf_text") {
       const text = `${partTag(part, true)}\n${escapePartText(part.text)}\n</part>`;
       bytes += Buffer.byteLength(text);
@@ -87,23 +114,11 @@ export function documentContent(
       throw new PipelineError(
         "unsupported_file",
         `part ${part.partIndex} is ${pdf ? "a scanned PDF" : "an image"}, which the configured model can't read; ` +
-          "choose a model that reads PDFs and images",
+          "choose a model that reads PDFs and images, or turn on OCR",
       );
     }
     if ((pdf || image) && part.storageKey) {
-      if (sent.has(part.storageKey)) continue;
-      sent.add(part.storageKey);
-      const blob = blobs.get(part.storageKey);
-      if (!blob) throw new Error(`blob for part ${part.partIndex} was not loaded`);
-      const data = Buffer.from(blob).toString("base64");
-      bytes += data.length;
-      if (part.mime === DOCUMENT_MIMES.pdf) {
-        const pages = parts.filter((p) => p.storageKey === part.storageKey).length;
-        content.push({ type: "document", mime: DOCUMENT_MIMES.pdf, data, title: part.label, pages });
-      } else {
-        content.push({ type: "text", text: `${partTag(part)}(image follows)</part>` });
-        content.push({ type: "image", mime: part.mime as "image/png" | "image/jpeg", data });
-      }
+      pushBinary(part);
     } else {
       const text = `${partTag(part)}\n${escapePartText(part.text)}\n</part>`;
       bytes += Buffer.byteLength(text);

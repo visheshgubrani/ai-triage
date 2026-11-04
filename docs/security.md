@@ -74,6 +74,10 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 
 - **The model can still be fooled.** Gates catch forged structure, missing evidence, failed arithmetic, injection phrasing and (where the config requires it) unauthenticated senders. They can't prove that a well-formed, authenticated document from a real sender is honest. Automation is opt-in per category, and the audit sample measures how often it is wrong.
 - **Evidence matching proves a quote exists, not that it supports the value.**
+- **OCR'd text is document content, so it's untrusted like the rest.**
+  - The OCR server runs inside the compose network with no published port, and receives only page images.
+  - Its model files are pinned by Hugging Face revision and SHA-256 (`cli ocr-model`), and its image by digest.
+  - A misread figure is checked like any other value: quotes are verified against the OCR'd text, and automation needs calibration.
 - **API keys are SHA-256 hashed without a pepper.** They carry 192 bits of randomness, so a leaked hash can't be brute-forced.
 - **Eval snapshots outlive a purged document.** They are copies a human chose to keep. Erasing eval items comes later.
 - **Sender authentication depends on the forwarding path.** Forwarding breaks SPF, and a header any sender can write proves nothing, so for forwarded mail the gate needs the tenant to name the receiving server it trusts and is off by default. For Gmail-synced mail it is on, trusting Google's results by their position in the header block: that rule follows Gmail's documented layout and should be rechecked against real raw messages whenever Gmail changes its trace headers.

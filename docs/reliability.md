@@ -84,3 +84,17 @@ What the runs show:
 | `DB_POOL_MAX` | The app pool per process. Watch `triage_db_pool_connections{state="waiting"}` |
 | `RECONCILE_STALL_MINUTES` | How soon work with no job left is failed visibly (default 30) |
 | `PARSE_TIMEOUT_MS`, `PARSE_MAX_MEMORY_MB` | Bounds of the parse sandbox |
+
+## OCR (optional, PaddleOCR-VL 1.6 on llama.cpp)
+
+Measured on 2026-11-04 on this machine: 12 cores, 15 GB, Radeon RX 6600. Each page is one full-page 910×1287 scan from `fixtures/docs` (an invoice and a contract), with the `OCR:` prompt at temperature 0:
+
+| Backend | Time per page (uncached) | Memory | Text |
+|---|---|---|---|
+| CPU (`llama.cpp:server`) | 27–29 s | 1.2 GB | Every labeled field right, on both pages |
+| Vulkan (`server-vulkan`, default flash attention) | 8–10 s | 0.4 GB host | Identical to CPU |
+| Vulkan with `-fa off` | 12–13 s | | Identical |
+
+Getting the page image out of a scanned PDF (`unpdf` `extractImages`) took 63 ms. On the installed stack (`install.sh --ocr vulkan`), the scanned invoice went through parse, OCR, classify and extract in 15 s. OCR takes 9.9 s of that, and the simulator, a text-only model, read it.
+
+PaddleOCR's layout stage wasn't needed for this: the model reads whole pages in reading order, tables as `|` rows. llama.cpp serves the same model on CUDA too; that backend wasn't measured here.

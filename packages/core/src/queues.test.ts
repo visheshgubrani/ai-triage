@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { llmTimeoutMs, QUEUE_OPTIONS, QUEUES } from "./index";
+import { llmTimeoutMs, OCR_BUDGET_MS, PARSE_TIMEOUT_DEFAULT_MS, QUEUE_OPTIONS, QUEUES } from "./index";
 
 // A job that outlives its expiry is retried while the first handler may still be paying for its
 // call (architecture §5), so every LLM stage's expiry must outlast its longest model call.
@@ -16,9 +16,17 @@ describe("queue timing", () => {
     );
   });
 
-  it("an eval item has room to parse, classify and extract", () => {
+  it("parse has room to parse and then OCR", () => {
+    expect(QUEUE_OPTIONS[QUEUES.parse].expireInSeconds * 1000).toBeGreaterThan(
+      PARSE_TIMEOUT_DEFAULT_MS + OCR_BUDGET_MS + MARGIN_MS,
+    );
+  });
+
+  it("an eval item has room to parse, OCR, classify and extract", () => {
     const calls = llmTimeoutMs("classify", 4096) + llmTimeoutMs("extract", LARGEST_EXTRACT_MAX_TOKENS);
-    expect(QUEUE_OPTIONS[QUEUES.evalItem].expireInSeconds * 1000).toBeGreaterThan(calls + 60_000 + MARGIN_MS);
+    expect(QUEUE_OPTIONS[QUEUES.evalItem].expireInSeconds * 1000).toBeGreaterThan(
+      PARSE_TIMEOUT_DEFAULT_MS + OCR_BUDGET_MS + calls + MARGIN_MS,
+    );
   });
 
   it("caps the extract timeout, and grows it with max_tokens up to there", () => {

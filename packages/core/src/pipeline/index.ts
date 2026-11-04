@@ -7,6 +7,7 @@ export * from "./evaluate";
 export * from "./evidence";
 export * from "./gates";
 export * from "./intake";
+export * from "./ocr";
 export * from "./outputs";
 export * from "./parse";
 export * from "./requests";

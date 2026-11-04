@@ -47,6 +47,7 @@ It ends by printing a **setup link**. Re-running it is safe: it keeps `.env` and
 | `--port N` | Local install on another port (default 3000). Files use N+1 |
 | `--version X.Y.Z` | Install a specific release (default: latest) |
 | `--dir PATH` | Where to put it (default `./ai-triage`) |
+| `--ocr nvidia\|vulkan\|cpu` | Read scans and photos with OCR (below). `--ocr off` turns it off again |
 | `--yes` | Never prompt |
 
 **Which model:** the first workspace uses a model of the first provider whose key you gave:
@@ -107,6 +108,27 @@ Approved documents are POSTed to your webhook, signed and delivered at least onc
 3. Verify signatures as [api.md](api.md) shows.
 
 Other systems can also send documents with the REST API and look up what happened to each one. Create a key in **Settings → API keys**.
+
+## OCR for scans and photos (optional)
+
+A scanned PDF or a photo has no text, so the evidence gate can't verify its quotes: every one goes to review, and a model that reads no images can't read it at all. With OCR on, the worker reads each such page first, using [PaddleOCR-VL 1.6](https://huggingface.co/PaddlePaddle/PaddleOCR-VL-1.6), an open (Apache-2.0) 0.9B document model served by llama.cpp:
+- **Quotes on scans can be verified,** against the OCR'd text.
+- **A text-only model can process scans and photos.**
+- **Reviewers see the OCR'd text,** marked "read by OCR", beside the original.
+
+Pick the backend that fits the machine when installing, or later by re-running the installer with the flag:
+
+| `--ocr` | Runs on | Measured |
+|---|---|---|
+| `vulkan` | Any AMD or Intel GPU (`/dev/dri`) | About 10 s a page on a Radeon RX 6600 |
+| `nvidia` | An NVIDIA GPU (needs the NVIDIA Container Toolkit) | Not measured; expect faster than Vulkan |
+| `cpu` | Any machine | About 30 s a page on 12 cores; 1.2 GB of memory |
+
+How it behaves:
+- **First start:** it downloads the model (1.8 GB, checked against pinned SHA-256 hashes) and the llama.cpp server image (about 1.2 GB).
+- **Limits:** OCR reads up to `OCR_MAX_PAGES` pages of a document (20) within a 10-minute budget.
+- **Best effort:** if OCR is down or slow, a document carries on as without OCR. Its scans stay unverifiable, and the image still goes to models that read images.
+- **Checking it:** `./triage status` reports whether OCR is reachable, and `./triage logs ocr` shows the server.
 
 ## Running it
 

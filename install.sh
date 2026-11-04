@@ -17,6 +17,7 @@ DIR=./ai-triage
 HOST=
 EMAIL=
 PORT=
+OCR=
 DEMO=
 YES=
 # TRIAGE_SOURCE=<checkout>: copy the files from a local checkout instead of downloading (CI, testing).
@@ -38,6 +39,8 @@ usage: install.sh [options]
   --host NAME         a server install with HTTPS on NAME (its DNS must point here)
   --email ADDRESS     Let's Encrypt account email (needed with --host)
   --port N            a local install's port (default 3000; files use N+1)
+  --ocr BACKEND       read scans and photos with PaddleOCR-VL: nvidia, vulkan (AMD and Intel
+                      GPUs) or cpu; off turns it off again. Downloads about 3 GB the first time
   --demo              the demo instead: sample data and recorded model answers, no key needed
   --version X.Y.Z     the release to install (default: latest)
   --dir PATH          where to put it (default: ./ai-triage)
@@ -54,6 +57,7 @@ while [ $# -gt 0 ]; do
     --host) HOST="${2:?--host needs a value}"; shift 2 ;;
     --email) EMAIL="${2:?--email needs a value}"; shift 2 ;;
     --port) PORT="${2:?--port needs a value}"; shift 2 ;;
+    --ocr) OCR="${2:?--ocr needs a value}"; shift 2 ;;
     --version) VERSION="${2:?--version needs a value}"; shift 2 ;;
     --dir) DIR="${2:?--dir needs a value}"; shift 2 ;;
     --demo) DEMO=1; shift ;;
@@ -109,6 +113,18 @@ else
     die "port $((p + 1)) is in use (stored files use the port after the app's)" "run again with --port <another port>"
   fi
 fi
+case "$OCR" in
+  "" | off | cpu) ;;
+  vulkan)
+    [ -e /dev/dri ] || die "--ocr vulkan needs a GPU at /dev/dri" "install the GPU's drivers (Mesa for AMD and Intel), or use --ocr cpu"
+    ;;
+  nvidia)
+    docker info --format '{{json .Runtimes}}' 2>/dev/null | grep -q nvidia ||
+      die "--ocr nvidia needs the NVIDIA Container Toolkit" "install it: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html, or use --ocr cpu"
+    ;;
+  *) die "--ocr must be nvidia, vulkan, cpu or off" ;;
+esac
+[ -z "$OCR" ] || [ -z "$DEMO" ] || die "--ocr doesn't apply to the demo"
 say "Docker $(docker version --format '{{.Server.Version}}' 2>/dev/null), $(docker compose version --short), $(uname -m): ok"
 
 # ── Files ──
@@ -152,6 +168,7 @@ fi
 
 step "Downloading the deploy files into $DIR"
 for f in compose.yaml compose.local.yaml compose.server.yaml Caddyfile triage; do fetch "deploy/$f" "$f"; done
+for b in nvidia vulkan cpu; do fetch "deploy/compose.ocr-$b.yaml" "compose.ocr-$b.yaml"; done
 chmod +x triage
 
 if [ "$VERSION" != latest ] && docker image inspect "$image" >/dev/null 2>&1; then
@@ -165,6 +182,7 @@ step "Writing .env"
 set -- --dir /work --version "$VERSION"
 [ -n "$HOST" ] && set -- "$@" --host "$HOST" --email "$EMAIL"
 [ -n "$PORT" ] && set -- "$@" --port "$PORT"
+[ -n "$OCR" ] && set -- "$@" --ocr "$OCR"
 docker run --rm -v "$DIR:/work" --user "$(id -u):$(id -g)" \
   -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e DEEPSEEK_API_KEY -e OPENROUTER_API_KEY \
   "$image" cli configure "$@"
@@ -172,7 +190,11 @@ if [ -n "${TRIAGE_IMAGE:-}" ]; then
   grep -q '^TRIAGE_IMAGE=' .env || printf 'TRIAGE_IMAGE=%s\n' "$TRIAGE_IMAGE" >>.env
 fi
 
-step "Starting (migrations run first)"
+if grep -q '^OCR_BACKEND=\(nvidia\|vulkan\|cpu\)' .env; then
+  step "Starting, with OCR (the first start downloads the OCR model, about 1.8 GB)"
+else
+  step "Starting (migrations run first)"
+fi
 ./triage start >/dev/null
 
 url=$(./triage open)

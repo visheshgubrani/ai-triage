@@ -5,7 +5,8 @@ import { randomBytes } from "node:crypto";
 // existing value (secrets above all: a new database password would lock the app out of its data)
 // and changes only what the flags say, which makes it the upgrade path too.
 
-export const OCR_BACKENDS = ["nvidia", "vulkan", "rocm", "cpu"] as const;
+/** Where the optional OCR runs: an NVIDIA GPU (CUDA), any AMD or Intel GPU (Vulkan), or the CPU. */
+export const OCR_BACKENDS = ["nvidia", "vulkan", "cpu"] as const;
 export type OcrBackend = (typeof OCR_BACKENDS)[number];
 
 export interface InstallOptions {

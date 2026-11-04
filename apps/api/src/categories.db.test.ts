@@ -86,17 +86,18 @@ describe("Settings → Categories", () => {
     expect((await send(admin, "DELETE", "/categories/receipt")).status).toBe(404);
 
     const audit = await withTenantTx(t.pool, tenantId, (tx) =>
-      tx.db.execute("select action from audit_events order by created_at"),
+      tx.db.execute("select action from audit_events order by created_at, action"),
     );
+    // One transaction per change, so one timestamp: within it, rows sort by action.
     expect(audit.rows.map((r) => r.action)).toEqual([
       "category.version_created",
-      "config.created",
       "config.activated",
+      "config.created",
       "category.version_created",
-      "config.created",
       "config.activated",
       "config.created",
       "config.activated",
+      "config.created",
     ]);
   });
 
