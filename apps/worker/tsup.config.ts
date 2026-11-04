@@ -1,14 +1,22 @@
 import { defineConfig } from "tsup";
+import { serverBundle } from "./tsup.shared";
 
+// The worker, and every command the Docker image runs (`entrypoint cli <name>`): the bundles share
+// chunks, so the CLIs add little.
 export default defineConfig({
-  entry: ["src/index.ts"],
-  format: ["esm"],
-  target: "node24",
-  platform: "node",
-  // Workspace packages ship TypeScript source, so bundle them in.
-  noExternal: [/^@ai-triage\//],
-  // Bundled CommonJS deps (pg, via @ai-triage/db) call require() for Node builtins, which an ESM
-  // bundle lacks. Give the bundle a real require.
-  banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
-  clean: true,
+  ...serverBundle,
+  entry: {
+    index: "src/index.ts",
+    "bin/migrate": "../../packages/db/src/bin/migrate.ts",
+    "bin/seed": "../../packages/db/src/bin/seed.ts",
+    "bin/tenant-create": "../../packages/db/src/bin/tenant-create.ts",
+    "bin/api-key-create": "../../packages/db/src/bin/api-key.ts",
+    "bin/secrets-rotate-key": "../../packages/db/src/bin/rotate-key.ts",
+    "bin/seed-documents": "src/bin/seed-documents.ts",
+    "bin/seed-evals": "src/bin/seed-evals.ts",
+    "bin/eval-import": "src/bin/eval-import.ts",
+    "bin/tenant-delete": "src/bin/tenant-delete.ts",
+    "bin/preflight": "src/bin/preflight.ts",
+    "bin/fake-google": "../../packages/mailbox/src/testing/serve.ts",
+  },
 });

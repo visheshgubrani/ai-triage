@@ -4,6 +4,9 @@
 // The `as const` arrays are the single source of truth: packages/db builds its
 // CHECK constraints from them.
 
+/** This release (Keep a Changelog, CHANGELOG.md). A test keeps it equal to the root package.json. */
+export const APP_VERSION = "0.7.0";
+
 export const PIPELINE_STAGES = ["parse", "classify", "extract", "route"] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 

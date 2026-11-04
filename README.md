@@ -28,10 +28,10 @@ TypeScript · Hono (API) · Next.js (UI) · Postgres + Drizzle + pg-boss · S3-c
 Requires Docker only. No API key: models run in **replay mode** from recorded responses.
 
 ```bash
-docker compose up --build
+docker compose up
 ```
 
-A one-shot `init` service applies the migrations and seeds a demo tenant with 60 synthetic documents and the labeled eval dataset; the worker then processes them and runs the first evals (dev, calib, and test on a frozen config). Open http://localhost:3000 and sign in as `admin@demo.test` / `demo-password`. Re-running is idempotent.
+It pulls the prebuilt image (`ghcr.io/visheshgubrani/ai-triage`, about 320 MB; `--build` builds it from your checkout instead). A one-shot `init` service applies the migrations and seeds a demo tenant with 60 synthetic documents and the labeled eval dataset; the worker then processes them and runs the first evals (dev, calib, and test on a frozen config). Open http://localhost:3000 and sign in as `admin@demo.test` / `demo-password`. Re-running is idempotent.
 
 ## Getting started (development)
 

@@ -1,8 +1,10 @@
 name: ai-triage
 
-# `docker compose up --build` runs everything: infrastructure, a one-shot `init` (migrations, bucket,
-# demo seed including the eval dataset and runs), then api, worker and web in replay mode, so no API
-# key is needed. Contributors run only the infrastructure (`pnpm infra:up`) and `pnpm dev`.
+# `docker compose up` runs everything: infrastructure, a one-shot `init` (migrations, bucket, demo
+# seed including the eval dataset and runs), then api, worker and web in replay mode, so no API key is
+# needed. It pulls the published image (TRIAGE_VERSION, default latest) and builds it from this
+# checkout when it can't, or with `--build`. Contributors run only the infrastructure
+# (`pnpm infra:up`) and `pnpm dev`.
 # Secrets below are dev-only defaults; override them in the environment for anything else.
 # TRIAGE_DEMO=true lets the production image start on them (with a warning); never expose it.
 # The api and worker get the app role only; the owner URL goes to `init` alone, and web gets no secrets.
@@ -110,9 +112,10 @@ services:
   # A fake Google (OAuth consent, tokens, Gmail) for the demo's mailbox sync: the consent screen
   # agrees at once; deliver mail with `curl --data-binary @mail.eml http://localhost:9040/fake/deliver`.
   fake-google:
-    image: ai-triage-app
+    image: &app-image ghcr.io/visheshgubrani/ai-triage:${TRIAGE_VERSION:-latest}
     pull_policy: never
-    command: ["pnpm", "fake-google"]
+    init: true
+    command: ["cli", "fake-google"]
     environment:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-demo-fake-google}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-demo-fake-google-secret}
@@ -127,8 +130,9 @@ services:
   init:
     build:
       context: .
-    image: ai-triage-app
-    command: ["sh", "-c", "pnpm db:migrate && pnpm db:seed"]
+    image: *app-image
+    pull_policy: missing
+    command: ["seed-demo"]
     environment:
       <<: *app-env
       DATABASE_OWNER_URL: postgres://triage:triage@postgres:5432/triage
@@ -140,19 +144,34 @@ services:
     restart: "no"
 
   api:
-    image: ai-triage-app
+    image: *app-image
     pull_policy: never
-    command: ["pnpm", "--filter", "@ai-triage/api", "start"]
+    init: true
+    command: ["api"]
     environment: *app-env
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       init:
         condition: service_completed_successfully
     restart: unless-stopped
 
   worker:
-    image: ai-triage-app
+    image: *app-image
     pull_policy: never
-    command: ["pnpm", "--filter", "@ai-triage/worker", "start"]
+    init: true
+    # A worker drains its jobs on SIGTERM before exiting.
+    stop_grace_period: 40s
+    command: ["worker"]
     environment: *app-env
     depends_on:
       init:
@@ -160,17 +179,29 @@ services:
     restart: unless-stopped
 
   web:
-    image: ai-triage-app
+    image: *app-image
     pull_policy: never
-    command: ["pnpm", "--filter", "@ai-triage/web", "start"]
+    init: true
+    command: ["web"]
     environment:
       # Server components call the API inside the compose network; the browser uses localhost.
       API_INTERNAL_URL: http://api:8787
       # The CSP allows the storage origin (presigned downloads and uploads).
       S3_PUBLIC_ENDPOINT: http://localhost:${S3_PORT:-9020}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/sign-in').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
 
   # The front door: http://localhost:3000 serves the web app, and /api goes straight to the api.
@@ -181,8 +212,10 @@ services:
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:80"
     depends_on:
-      - api
-      - web
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:

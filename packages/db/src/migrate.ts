@@ -7,7 +7,8 @@ import { APP_GROUP_ROLE, ensureAppRole } from "./roles";
 import { seedPrices } from "./seed/prices";
 import { encryptLegacyWebhookSecrets } from "./settings";
 
-const migrationsFolder = fileURLToPath(new URL("../migrations", import.meta.url));
+// The SQL files sit next to the source; a bundled CLI (the Docker image) says where they are.
+const migrationsFolder = process.env.MIGRATIONS_DIR || fileURLToPath(new URL("../migrations", import.meta.url));
 
 export interface MigrationUrls {
   /** Owner (the compose superuser): runs DDL and creates the app role. */

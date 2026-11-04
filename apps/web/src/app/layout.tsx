@@ -1,3 +1,4 @@
+import { APP_VERSION } from "@ai-triage/core";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { Header } from "@/components/header";
@@ -18,6 +19,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body className="min-h-screen bg-white text-neutral-900 antialiased dark:bg-neutral-950 dark:text-neutral-100">
         <Header />
         {children}
+        <footer className="mx-auto max-w-7xl px-4 py-8 text-xs text-neutral-400">
+          ai-triage {APP_VERSION} ·{" "}
+          <a className="underline-offset-2 hover:underline" href="https://github.com/visheshgubrani/ai-triage">
+            source
+          </a>
+        </footer>
       </body>
     </html>
   );

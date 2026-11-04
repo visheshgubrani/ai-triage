@@ -81,6 +81,13 @@ describe("env registry", () => {
   });
 });
 
+describe("APP_VERSION", () => {
+  it("is the root package.json version", async () => {
+    const { APP_VERSION } = await import("./index");
+    expect(APP_VERSION).toBe(JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version);
+  });
+});
+
 describe("resolvePublicUrls", () => {
   it("serves auth and the api from the one public origin", () => {
     expect(resolvePublicUrls({ PUBLIC_URL: "https://triage.example.com/" })).toEqual({

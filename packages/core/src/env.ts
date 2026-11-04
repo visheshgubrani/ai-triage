@@ -70,6 +70,14 @@ export const ENV_VARS: readonly EnvVar[] = [
     description: "The owner role: migrations, seeds and the admin CLIs only. Never give it to the api, worker or web.",
   },
   {
+    name: "MIGRATIONS_DIR",
+    group: "Postgres",
+    processes: ["cli"],
+    kind: "string",
+    default: "packages/db/migrations (next to the source)",
+    description: "Where `db:migrate` finds the SQL migrations. The Docker image sets it for its bundled CLI.",
+  },
+  {
     name: "DATABASE_URL",
     group: "Postgres",
     processes: SERVER,

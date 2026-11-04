@@ -1,4 +1,5 @@
 import type { AuthProvidersResponse, ErrorResponse, HealthResponse, Issue, MeResponse } from "@ai-triage/contracts";
+import { APP_VERSION } from "@ai-triage/core";
 import { PipelineError } from "@ai-triage/core/pipeline";
 import { ConfigError, EvalRequestError, getTenant, MemberError, pingDb, ReviewError } from "@ai-triage/db";
 import { IngestRejected } from "@ai-triage/ingest";
@@ -107,6 +108,7 @@ const health = (deps: AppDeps) => async (c: Context) => {
     status: dbUp ? "ok" : "degraded",
     db: dbUp ? "up" : "down",
     time: new Date().toISOString(),
+    version: APP_VERSION,
   };
   return c.json(body, dbUp ? 200 : 503);
 };

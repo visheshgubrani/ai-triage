@@ -57,13 +57,13 @@ pnpm tenant:create --name Acme --slug acme --admin you@acme.com   # a real tenan
 pnpm fake-google             # a fake Google on :9040 for mailbox sync without a Google project (docs/google.md)
 pnpm eval:import <items.jsonl> [--dataset Main]
 LLM_MODE=record pnpm cassettes:record --yes   # SPENDS MONEY (see docs/llm.md)
-docker compose up --build    # the whole demo in containers, replay mode, no key
+docker compose up            # the whole demo in containers (pulls the GHCR image; --build builds it), replay mode, no key
 ```
 
 ## Conventions
 
 - **Workspace packages ship TypeScript source** (`"exports": "./src/index.ts"`, no build step).
-  - api and worker bundle them with tsup (`noExternal: [/^@ai-triage\//]`), and Next uses `transpilePackages`.
+  - api and worker bundle them **and their npm dependencies** with tsup (`apps/worker/tsup.shared.ts`), and Next uses `transpilePackages` with `output: "standalone"`. So the image holds no node_modules for the server processes.
   - Internal deps use `"workspace:*"`; add deps with `pnpm --filter <pkg> add <dep>`.
 - **Only `packages/db` imports `drizzle-orm` or `pg`.** A second import site once installed a duplicate drizzle-orm and broke types. Expose helpers from `@ai-triage/db` instead.
 - **Core subpaths.** `@ai-triage/core` is constants-only, so web can import it. Parsers and pipeline logic live in `@ai-triage/core/pipeline`.
@@ -109,6 +109,7 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |
 | Add a document-derived table | Add it to `purge_document()` (a new migration replacing the function), or purges fail on the FK |
 | Read a new environment variable | Register it in `packages/core/src/env.ts`, then `pnpm config:docs`. `env.test.ts` fails on an unregistered `process.env.X` or a stale `.env.example` |
+| A command the image should run | Add its entry to `apps/worker/tsup.config.ts` (`bin/<name>`); `entrypoint cli <name>` runs it. Anything read from disk at runtime needs a `COPY` in the Dockerfile's runtime stage |
 | A Better Auth table | Keep BA's model and field names, and use `uuid().defaultRandom()` ids |
 | An encrypted column (`encryptSecret`) | Re-encrypt it in `pnpm secrets:rotate-key` (`packages/db/src/bin/rotate-key.ts`) |
 | Add a mail provider | `MAILBOX_PROVIDERS` and `MAILBOX_AUTHSERV_IDS` in core, a client in `packages/mailbox/src/<provider>/`, and a fake beside `testing/fake-google.ts` |
@@ -116,7 +117,8 @@ docker compose up --build    # the whole demo in containers, replay mode, no key
 
 ## Gotchas
 
-- tsup bundles CommonJS deps such as `pg` into the ESM output. So api and worker add a `createRequire` banner; without it, `node dist/index.js` fails with "Dynamic require of "events" is not supported".
+- tsup bundles CommonJS deps such as `pg` into the ESM output. So api and worker add a `createRequire` banner (`apps/worker/tsup.shared.ts`); without it, `node dist/index.js` fails with "Dynamic require of "events" is not supported".
+- The runtime image is Alpine (musl). Next traces `sharp` (glibc) into its standalone output even with `images.unoptimized`, so the Dockerfile deletes it; don't add `next/image` or another native module without changing that.
 - Better Auth's `disableSignUp` also blocks server-side `signUpEmail`, so seeds and tests use `ensurePasswordUser()`.
 - Better Auth's TOTP step only follows `/sign-in/email`. `packages/db/src/auth-oauth-2fa.ts` repeats it after a Google callback by writing the twoFactor plugin's own cookie and verification rows, so keep `better-auth` pinned; `google-auth.db.test.ts` fails if those internals move.
 - Google sign-up goes through one gate, `admissionRefusal()` (`packages/db/src/admission.ts`), called from Better Auth's `user.create.before` hook. Don't add `trustedProviders: ["google"]`: it would let Google link an account whose email Google didn't verify.

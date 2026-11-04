@@ -19,6 +19,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 |---|---|---|---|
 | `POSTGRES_PORT` | compose | `5440` | Host port of the compose Postgres. |
 | `DATABASE_OWNER_URL` 🔒 | cli | – | The owner role: migrations, seeds and the admin CLIs only. Never give it to the api, worker or web. |
+| `MIGRATIONS_DIR` | cli | `packages/db/migrations (next to the source)` | Where `db:migrate` finds the SQL migrations. The Docker image sets it for its bundled CLI. |
 | `DATABASE_URL` 🔒 (required: api, worker) | api, worker, cli | – | The app role, created by `pnpm db:migrate` and subject to row-level security. The worker needs a direct (non-pooled) connection: pg-boss uses LISTEN and advisory locks. |
 
 ## Storage
