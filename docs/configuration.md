@@ -60,6 +60,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `PUBLIC_URL` | api, cli | `WEB_ORIGIN, else http://localhost:3000` | The one address people use: the web app, with the API under /api on the same origin (cookies, the Origin check, invite links, OAuth redirect URIs). An origin only, no path. Must be https in production. |
 | `WEB_ORIGIN` | api, cli | – | Older name for PUBLIC_URL, still honored when PUBLIC_URL is unset. |
 | `API_INTERNAL_URL` | web | `http://localhost:8787` | How the web server reaches the api, without /api (in compose: http://api:8787). Server components call it directly; `pnpm dev` also proxies the browser's /api through it. |
+| `METRICS_TOKEN` 🔒 | api | – | Turns on /api/metrics (Prometheus) for scrapers sending `Authorization: Bearer <token>`. Unset: the endpoint answers 404. |
 | `NEXT_PUBLIC_API_URL` | api | – | No longer used (the browser calls /api on the same origin). The api warns when it's set. |
 | `TRUSTED_PROXIES` | api | – | Proxies in front of the API (IPs or CIDRs, comma-separated): only their X-Forwarded-For is believed, for rate limits, audit and session IPs. Empty: the socket address is the client. |
 | `RATE_LIMIT_SCALE` | api, worker | `1` | Multiplies every request limit (apps/api/src/rate-limit.ts), for a busy instance. |
@@ -113,6 +114,8 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `MAILBOX_SYNC_BATCH` | worker | `200` | New messages one sync of a mailbox takes; the rest follow a minute later. |
 | `WORKER_TENANT_CONCURRENCY` | worker | – | Fairness across tenants: at most this many of one tenant's jobs run at once per queue (pipeline stages, delivery, Gmail fetch), counted across every worker. Unset: no cap (one company). With several tenants, about half the cluster's slots per LLM queue (replicas × WORKER_LLM_CONCURRENCY). |
 | `WORKER_TENANT_EVAL_CONCURRENCY` | worker | – | The same cap for eval items, so one tenant's eval run can't take every eval slot. |
+| `WORKER_HTTP_PORT` | worker | `9100` | The worker's own HTTP server: /health (its heartbeat loop), /ready (database) and /metrics (Prometheus). Keep it off the public network. |
+| `LOG_LEVEL` | api, worker | `info` | one of `debug`, `info`, `warn`, `error`. Logs are JSON lines (one per request, job and model call), or readable lines on a terminal. |
 | `WORKER_SHUTDOWN_GRACE_MS` | worker | `25000` | On SIGTERM, how long running jobs may finish before their model calls are aborted (they retry on another worker). Keep it under the container's stop grace period. |
 | `RECONCILE_STALL_MINUTES` | worker | `30` | Work unchanged this long is checked against the queue: a run, delivery or eval run with no job left is marked failed (Processing failed, Delivery failures), never silently re-run. At least 15. |
 | `PARSE_TIMEOUT_MS` | worker | `60000` | Files are parsed in a sandboxed thread; one that takes longer fails as parse_timeout. |

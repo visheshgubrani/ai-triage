@@ -32,6 +32,13 @@ Phase 7: production-ready (docs/architecture.md §9).
 - Fairness across tenants: `WORKER_TENANT_CONCURRENCY` caps how many of one tenant's jobs run at once per queue, across every worker. Eval items have their own cap (`WORKER_TENANT_EVAL_CONCURRENCY`).
 - Self-healing: every five minutes a reconciler finds runs, deliveries and eval runs left waiting on a job that no longer exists, and fails them visibly. Runs go to Processing failed as `stalled`, deliveries to Delivery failures. Nothing is silently re-run.
 - **Retry all** on the Processing failed view (admins), optionally for one reason, such as after a provider outage.
+- Observability:
+  - JSON logs with a trace id that follows a document from its request through every job;
+  - Prometheus metrics (worker `:9100/metrics`, api `/api/metrics` behind `METRICS_TOKEN`);
+  - `/api/ready`, and the worker's `/health` and `/ready`;
+  - worker heartbeats with a "No worker is running" banner, and a budget-reached banner;
+  - Settings → System health;
+  - `docs/operations.md` (alerts and runbooks) and `docs/troubleshooting.md`.
 - Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
 ### Fixed

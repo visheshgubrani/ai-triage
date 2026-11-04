@@ -49,6 +49,7 @@ import {
 } from "@ai-triage/db";
 import { readAttemptOutput } from "@ai-triage/llm";
 import { type JsonSchema, validateFields } from "@ai-triage/schemas";
+import { log } from "../observe";
 import type { PipelineDeps } from "./deps";
 import { loadBlobs, loadCategoryOptions, loadSender, parseSource, stageModel } from "./source";
 
@@ -317,6 +318,7 @@ export async function runStage(
     await STAGE_HANDLERS[stage](deps, job, signal);
   } catch (err) {
     if (!(err instanceof PipelineError)) throw err;
+    log.warn("run failed", { stage, reason: err.reason, document: job.documentId, run: job.runId, err });
     await withTenantTx(deps.pool, job.tenantId, (tx) =>
       failRun(tx, {
         runId: job.runId,
@@ -342,7 +344,7 @@ export async function failedStage(
   const status = known
     ? STAGE_INPUT_STATUS[known]
     : await withTenantTx(deps.pool, job.tenantId, (tx) => currentRunStatus(tx, job.runId));
-  if (!known) console.error(`doc.failed: unknown source queue ${source.queue} for run ${job.runId}`);
+  if (!known) log.error("doc.failed: unknown source queue", { queue: source.queue, run: job.runId });
   if (!status) return;
   const output = source.output as { message?: unknown; name?: unknown } | null;
   const message = typeof output?.message === "string" ? output.message : JSON.stringify(source.output ?? null);

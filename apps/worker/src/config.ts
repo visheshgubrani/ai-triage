@@ -40,6 +40,7 @@ export const workerConfig = (env: NodeJS.ProcessEnv = process.env) => ({
   tenantEvalConcurrency: Number(env.WORKER_TENANT_EVAL_CONCURRENCY) || null,
   parseTimeoutMs: Number(env.PARSE_TIMEOUT_MS ?? 60_000),
   reconcileStallMinutes: Number(env.RECONCILE_STALL_MINUTES ?? 30),
+  httpPort: Number(env.WORKER_HTTP_PORT ?? 9100),
   parseMaxMemoryMb: Number(env.PARSE_MAX_MEMORY_MB ?? 512),
   // The api's inbound email limit (postmarkPerTenant, 500 an hour), shared by Gmail sync.
   inboundPerHour: Math.ceil(500 * (Number(env.RATE_LIMIT_SCALE) > 0 ? Number(env.RATE_LIMIT_SCALE) : 1)),

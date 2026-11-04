@@ -1,6 +1,8 @@
 import { LLM_STAGES, PIPELINE_STAGES, QUEUES, STAGE_QUEUES, type StageJob } from "@ai-triage/core";
 import type { PgBoss } from "@ai-triage/db";
+import type { JobWithMetadata } from "pg-boss";
 import { tenantCap } from "../config";
+import { observed } from "../observe";
 import { jobSignal } from "../shutdown";
 import type { PipelineDeps } from "./deps";
 import { failedStage, runStage } from "./stages";
@@ -27,17 +29,15 @@ export async function registerPipeline(
         pollingIntervalSeconds: POLLING_INTERVAL_SECONDS,
         ...tenantCap(options.tenantConcurrency),
       },
-      async ([job]) => {
-        if (job) await runStage(deps, stage, job.data, jobSignal(job));
-      },
+      observed(STAGE_QUEUES[stage], (job) => runStage(deps, stage, job.data, jobSignal(job))),
     );
   }
   // No explicit type argument here: it would stop TypeScript inferring the metadata-bearing job type.
   await boss.work(
     QUEUES.failed,
     { includeMetadata: true, pollingIntervalSeconds: POLLING_INTERVAL_SECONDS },
-    async ([job]) => {
-      if (job) await failedStage(deps, job.data as StageJob, { queue: job.sourceName, output: job.sourceOutput });
-    },
+    observed(QUEUES.failed, (job: JobWithMetadata) =>
+      failedStage(deps, job.data as StageJob, { queue: job.sourceName, output: job.sourceOutput }),
+    ),
   );
 }

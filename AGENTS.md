@@ -5,6 +5,7 @@ Context for coding agents (and humans). Keep it lean: only what every session ne
 - [docs/llm.md](docs/llm.md): model providers, Claude API notes, LLM modes and cassettes.
 - [docs/security.md](docs/security.md): the threat model, controls and the production checklist.
 - [docs/google.md](docs/google.md): the Google OAuth client, Gmail sync and what Google requires.
+- [docs/operations.md](docs/operations.md): health checks, logs, metrics, alerts and runbooks. [docs/configuration.md](docs/configuration.md) (generated) lists every variable; [docs/troubleshooting.md](docs/troubleshooting.md) is by symptom.
 
 **ai-triage** is an open-source, multi-tenant AI triage inbox:
 1. Emails (Postmark inbound, Gmail mailbox sync) and documents (uploads, REST API) come in.
@@ -31,6 +32,7 @@ packages/storage    S3 client, presigned URLs, server-issued storage keys
 packages/ingest     Ingestion paths: store the source, then create document + run + parse job
 packages/evals      Comparators, grading, metrics, threshold sweep, reliability, run diff (pure, web-safe)
 packages/mailbox    Mail providers: Google config, OAuth and Gmail REST over an injected fetch (no SDK)
+packages/telemetry  JSON logger, trace ids (AsyncLocalStorage) and a Prometheus registry; no deps
 packages/contracts  Zod API contracts shared by api and web
 fixtures/           Synthetic labeled docs (generated, committed) + LLM cassettes
 ```
@@ -108,6 +110,7 @@ docker compose up            # the whole demo in containers (pulls the GHCR imag
 | The eval runner (`apps/worker/src/evals/`) | No `createAction`, `enqueue` or delivery imports; a source scan and a type test enforce this |
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |
 | Add a document-derived table | Add it to `purge_document()` (a new migration replacing the function), or purges fail on the FK |
+| Log or measure something | `log` from `apps/{api,worker}/src/{log,observe}.ts` (never `console.*`; lines get the trace id), metrics on their `registry`. Add a new metric to docs/operations.md |
 | Read a new environment variable | Register it in `packages/core/src/env.ts`, then `pnpm config:docs`. `env.test.ts` fails on an unregistered `process.env.X` or a stale `.env.example` |
 | A command the image should run | Add its entry to `apps/worker/tsup.config.ts` (`bin/<name>`); `entrypoint cli <name>` runs it. Anything read from disk at runtime needs a `COPY` in the Dockerfile's runtime stage |
 | A Better Auth table | Keep BA's model and field names, and use `uuid().defaultRandom()` ids |

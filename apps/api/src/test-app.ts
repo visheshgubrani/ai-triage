@@ -47,6 +47,7 @@ export async function createTestApp(
     google?: GoogleConfig;
     /** Where mailbox code sends Google requests (a FakeGoogle's fetch). */
     googleFetch?: typeof fetch;
+    metricsToken?: string;
   } = {},
 ) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
@@ -89,6 +90,7 @@ export async function createTestApp(
     googleSignIn: google !== null,
     googleFetch: options.googleFetch ?? (() => Promise.reject(new Error("no Google in this test"))),
     apiBaseUrl: `${WEB_ORIGIN}/api`,
+    metricsToken: options.metricsToken ?? null,
   });
 
   /**

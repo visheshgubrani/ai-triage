@@ -62,6 +62,23 @@ export interface CooldownPort {
   clear(provider: string, model: string): Promise<void>;
 }
 
+/** One model call as telemetry sees it (the worker logs it and counts it). */
+export interface CallInfo {
+  stage: LlmStage;
+  provider: string;
+  model: string;
+  mode: LlmCallMode;
+  /** A saved attempt was reused: no call was made. */
+  reused: boolean;
+  latencyMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  costUsd: number | null;
+  stopReason: string | null;
+  error: string | null;
+}
+
 export interface GatewayDeps {
   mode: LlmMode;
   transport: Transport;
@@ -69,6 +86,8 @@ export interface GatewayDeps {
   budget: BudgetPort;
   findPrice: FindPrice;
   cooldown?: CooldownPort;
+  /** Called once per call: reused, failed or answered. */
+  onCall?: (info: CallInfo) => void;
   now?: () => Date;
   hooks?: GatewayHooks;
 }
@@ -105,7 +124,21 @@ export function createLlmGateway(deps: GatewayDeps) {
   }): Promise<CallResult> {
     const { tenantId, ctx, request, signal } = input;
     const existing = await deps.store.findReusable(tenantId, ctx, request.stage);
+    const report = (info: Omit<CallInfo, "stage" | "model">) =>
+      deps.onCall?.({ stage: request.stage, model: request.model, ...info });
     if (existing) {
+      report({
+        provider: toWireRequest(request).provider,
+        mode: deps.mode === "replay" ? "replay" : "live",
+        reused: true,
+        latencyMs: null,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        costUsd: 0,
+        stopReason: null,
+        error: null,
+      });
       return {
         attemptId: existing.id,
         output: readOutput(normalizeResponse(request.model, existing.response), request.maxTokens),
@@ -167,6 +200,18 @@ export function createLlmGateway(deps: GatewayDeps) {
           error: describe(err),
         });
       }
+      report({
+        provider,
+        mode: deps.mode === "replay" ? "replay" : "live",
+        reused: false,
+        latencyMs: null,
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        costUsd: 0,
+        stopReason: null,
+        error: describe(err),
+      });
       throw err;
     }
 
@@ -200,6 +245,18 @@ export function createLlmGateway(deps: GatewayDeps) {
       error: outputError ? describe(outputError) : null,
     });
     if (reservation) await deps.budget.settle(tenantId, reservation.day, reservation.usd, costUsd ?? reservation.usd);
+    report({
+      provider,
+      mode: sent.mode,
+      reused: false,
+      latencyMs: sent.latencyMs,
+      inputTokens: usage.input,
+      outputTokens: usage.output,
+      cacheReadTokens: usage.cacheRead,
+      costUsd,
+      stopReason: response.stopReason,
+      error: outputError ? describe(outputError) : null,
+    });
     await deps.hooks?.afterAttemptSaved?.({ stage: request.stage, attemptId: attempt.id });
     if (outputError) throw outputError;
     return { attemptId: attempt.id, output, reused: false };

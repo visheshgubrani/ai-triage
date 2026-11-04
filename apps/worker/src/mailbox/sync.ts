@@ -21,6 +21,7 @@ import {
   MailboxRateLimitError,
   withAccessToken,
 } from "@ai-triage/mailbox";
+import { log } from "../observe";
 import type { MailboxDeps } from "./deps";
 
 // Mailbox sync (docs/architecture.md §5). Every minute the poll enqueues one `mailbox.sync` per due
@@ -127,7 +128,7 @@ export async function syncMailbox(deps: MailboxDeps, job: MailboxSyncJob): Promi
       err instanceof MailboxRateLimitError
         ? new Date(now.getTime() + err.retryAfterSeconds * 1000)
         : new Date(now.getTime() + RETRY_MS);
-    console.warn(`mailbox sync ${connectionId}: ${(err as Error).name}: ${(err as Error).message}`);
+    log.warn("mailbox sync failed", { mailbox: connectionId, err });
     await withTenantTx(deps.pool, tenantId, (tx) =>
       recordSyncProblem(tx, connectionId, "Couldn't reach Gmail; retrying in a few minutes.", now, retryAt),
     );

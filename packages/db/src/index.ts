@@ -14,6 +14,8 @@ export * from "./delivery";
 export * from "./documents";
 export * from "./errors";
 export * from "./evals";
+export * from "./health";
+export * from "./heartbeats";
 export * from "./llm-calls";
 export * from "./mailboxes";
 export * from "./members";

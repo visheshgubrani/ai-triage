@@ -46,4 +46,6 @@ export interface AppDeps {
   googleFetch: typeof fetch;
   /** `<PUBLIC_URL>/api`: where the API's routes are reachable from outside, for OAuth redirect URIs. */
   apiBaseUrl: string;
+  /** Bearer token for /api/metrics (METRICS_TOKEN); null turns the endpoint off. */
+  metricsToken: string | null;
 }

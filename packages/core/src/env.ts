@@ -265,6 +265,15 @@ export const ENV_VARS: readonly EnvVar[] = [
       "How the web server reaches the api, without /api (in compose: http://api:8787). Server components call it directly; `pnpm dev` also proxies the browser's /api through it.",
   },
   {
+    name: "METRICS_TOKEN",
+    group: "API and web",
+    processes: ["api"],
+    kind: "string",
+    secret: true,
+    description:
+      "Turns on /api/metrics (Prometheus) for scrapers sending `Authorization: Bearer <token>`. Unset: the endpoint answers 404.",
+  },
+  {
     name: "NEXT_PUBLIC_API_URL",
     group: "API and web",
     processes: ["api"],
@@ -552,6 +561,24 @@ export const ENV_VARS: readonly EnvVar[] = [
     processes: ["worker"],
     kind: "int",
     description: "The same cap for eval items, so one tenant's eval run can't take every eval slot.",
+  },
+  {
+    name: "WORKER_HTTP_PORT",
+    group: "Worker",
+    processes: ["worker"],
+    kind: "int",
+    default: "9100",
+    description:
+      "The worker's own HTTP server: /health (its heartbeat loop), /ready (database) and /metrics (Prometheus). Keep it off the public network.",
+  },
+  {
+    name: "LOG_LEVEL",
+    group: "Worker",
+    processes: ["api", "worker"],
+    kind: "enum",
+    values: ["debug", "info", "warn", "error"],
+    default: "info",
+    description: "Logs are JSON lines (one per request, job and model call), or readable lines on a terminal.",
   },
   {
     name: "WORKER_SHUTDOWN_GRACE_MS",

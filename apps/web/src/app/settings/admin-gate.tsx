@@ -6,6 +6,7 @@ const PAGES = [
   { href: "/settings", label: "Settings" },
   { href: "/settings/members", label: "Members" },
   { href: "/settings/mailboxes", label: "Mailboxes" },
+  { href: "/settings/health", label: "System health" },
 ] as const;
 
 /**

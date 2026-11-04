@@ -11,20 +11,27 @@ import {
   tripCooldown,
   withTenantTx,
 } from "@ai-triage/db";
-import { createLlmGateway, type GatewayHooks, type LlmMode, type Transport } from "@ai-triage/llm";
+import { type CallInfo, createLlmGateway, type GatewayHooks, type LlmMode, type Transport } from "@ai-triage/llm";
 
 /**
  * The LLM gateway wired to Postgres: attempts in llm_calls (each saved in its own small
  * transaction), the per-tenant daily budget, and model prices. Shared by the pipeline and, in
  * phase 4, the eval runner (with eval run + item contexts).
  */
-export function createDbLlmGateway(input: { pool: Pool; mode: LlmMode; transport: Transport; hooks?: GatewayHooks }) {
+export function createDbLlmGateway(input: {
+  pool: Pool;
+  mode: LlmMode;
+  transport: Transport;
+  hooks?: GatewayHooks;
+  onCall?: (info: CallInfo) => void;
+}) {
   const { pool } = input;
   const db = createDb(pool);
   return createLlmGateway({
     mode: input.mode,
     transport: input.transport,
     hooks: input.hooks,
+    onCall: input.onCall,
     store: {
       findReusable: (tenantId, ctx, stage) => withTenantTx(pool, tenantId, (tx) => findReusableAttempt(tx, ctx, stage)),
       insert: (tenantId, ctx, attempt) => insertAttempt(pool, tenantId, ctx, attempt),

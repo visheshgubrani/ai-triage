@@ -1,4 +1,4 @@
-import { MeResponse } from "@ai-triage/contracts";
+import { MeResponse, type SystemStatusResponse } from "@ai-triage/contracts";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -20,12 +20,24 @@ export async function getSessionState(): Promise<{ me: MeResponse | null; noWork
   }
 }
 
+/** What stops documents from being processed right now (null: couldn't tell). */
+async function getSystemStatus(): Promise<SystemStatusResponse | null> {
+  const cookie = (await cookies()).toString();
+  try {
+    const res = await api.system.status.$get(undefined, { headers: { cookie } });
+    return res.ok ? await res.json() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getMe(): Promise<MeResponse | null> {
   return (await getSessionState()).me;
 }
 
 export async function Header() {
   const { me, noWorkspace } = await getSessionState();
+  const status = me ? await getSystemStatus() : null;
   const links = [
     { href: "/review", label: "Review" },
     { href: "/documents", label: "Documents" },
@@ -65,6 +77,39 @@ export async function Header() {
           )}
         </span>
       </nav>
+      {status && status.workersRunning === 0 && (
+        <Banner>
+          No worker is running, so documents won't be processed. Start one: <code>pnpm dev</code> locally, or check the
+          worker container (docs/troubleshooting.md).
+        </Banner>
+      )}
+      {status?.budgetExhausted && (
+        <Banner>
+          Today's LLM budget is used up
+          {status.budgetWaiting > 0
+            ? `: ${status.budgetWaiting} document${status.budgetWaiting === 1 ? " waits" : "s wait"} for a retry`
+            : ""}
+          .{" "}
+          {me?.role === "admin" ? (
+            <Link href="/settings" className="underline">
+              Raise the budget
+            </Link>
+          ) : (
+            "An admin can raise it."
+          )}
+        </Banner>
+      )}
     </header>
+  );
+}
+
+function Banner({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      role="status"
+      className="border-t border-amber-200 bg-amber-50 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200"
+    >
+      <p className="mx-auto max-w-7xl px-4 py-2">{children}</p>
+    </div>
   );
 }

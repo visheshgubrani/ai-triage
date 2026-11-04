@@ -1,4 +1,4 @@
-import { assertEnv } from "@ai-triage/core";
+import { APP_VERSION, assertEnv } from "@ai-triage/core";
 import { auditDraw, egressPolicyFromEnv } from "@ai-triage/core/pipeline";
 import { checkStartup, createBoss, createPool, exitOnStartupError, keyRingFromEnv } from "@ai-triage/db";
 import { callModeOf, createTransport, getLlmMode } from "@ai-triage/llm";
@@ -11,6 +11,7 @@ import { registerEvals } from "./evals/register";
 import { createDbLlmGateway } from "./llm";
 import { registerMailbox } from "./mailbox/register";
 import { registerMaintenance } from "./maintenance/register";
+import { log, recordLlmCall, startObservability } from "./observe";
 import { registerPipeline } from "./pipeline/register";
 import { abortInFlight } from "./shutdown";
 
@@ -35,11 +36,16 @@ await checkStartup(pool, process.env, "worker").catch(exitOnStartupError);
 
 // Workers need a direct (non-pooled) connection: pg-boss uses LISTEN (docs/configuration.md, DATABASE_URL).
 const boss = createBoss(connectionString);
-boss.on("error", (err) => console.error("pg-boss error", err));
+boss.on("error", (err) => log.error("pg-boss error", { err }));
 await boss.start();
 
 const storage = createStorage(storageConfigFromEnv());
-const llm = createDbLlmGateway({ pool, mode, transport: createTransport(mode, config.cassetteDir) });
+const llm = createDbLlmGateway({
+  pool,
+  mode,
+  transport: createTransport(mode, config.cassetteDir),
+  onCall: recordLlmCall,
+});
 // Files are parsed in a sandboxed thread, bounded in time and memory (src/parse/sandbox.ts).
 const limits = {
   maxPdfPages: config.maxPdfPages,
@@ -101,11 +107,15 @@ await registerMailbox(
   { fetchConcurrency: config.mailboxConcurrency, tenantConcurrency: config.tenantConcurrency },
 );
 
-console.log(
-  `worker started (llm mode: ${mode}${mode === "replay" ? `, cassettes: ${config.cassetteDir}` : ""}; ` +
-    `gmail sync: ${google ? "on" : "off, no GOOGLE_CLIENT_ID"}; ` +
-    `per-tenant cap: ${config.tenantConcurrency ?? "off"})`,
-);
+const stopObservability = await startObservability({ pool, llmMode: mode, port: config.httpPort });
+
+log.info("worker started", {
+  version: APP_VERSION,
+  llmMode: mode,
+  cassettes: mode === "replay" ? config.cassetteDir : undefined,
+  gmailSync: google ? "on" : "off (no GOOGLE_CLIENT_ID)",
+  tenantCap: config.tenantConcurrency ?? "off",
+});
 
 // SIGTERM: stop fetching, let running jobs finish for up to the grace period, then abort their model
 // calls so they retry elsewhere at once. A second signal exits immediately.
@@ -113,12 +123,13 @@ let stopping = false;
 const shutdown = async () => {
   if (stopping) process.exit(1);
   stopping = true;
-  console.log(`worker stopping: finishing running jobs (up to ${config.shutdownGraceMs} ms)`);
+  log.info("worker stopping: finishing running jobs", { graceMs: config.shutdownGraceMs });
   const abortTimer = setTimeout(abortInFlight, config.shutdownGraceMs);
   try {
     await boss.stop({ graceful: true, timeout: config.shutdownGraceMs + 5000 });
   } finally {
     clearTimeout(abortTimer);
+    await stopObservability();
     await pool.end();
   }
   process.exit(0);

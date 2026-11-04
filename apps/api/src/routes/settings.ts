@@ -10,11 +10,13 @@ import {
   type ErrorResponse,
   type InboundSettings,
   RetentionSettings,
+  type SystemHealthResponse,
   WebhookSettingsRequest,
   type WebhookSettingsResponse,
 } from "@ai-triage/contracts";
 import {
   createApiKey,
+  deploymentHealth,
   getBudget,
   getRetentionDays,
   getWebhookSettings,
@@ -28,6 +30,7 @@ import {
   setBudgetCap,
   setRetentionDays,
   setWebhook,
+  tenantHealth,
   withTenantTx,
 } from "@ai-triage/db";
 import { Hono } from "hono";
@@ -160,6 +163,13 @@ export const settingsRoutes = (deps: AppDeps) =>
         });
       });
       const body: RetentionSettings = { retentionDays };
+      return c.json(body, 200);
+    })
+    // Settings → System health: this tenant's pipeline, plus the deployment facts every tenant shares.
+    .get("/health", async (c) => {
+      const now = deps.now();
+      const tenant = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => tenantHealth(tx, now));
+      const body: SystemHealthResponse = { ...tenant, ...(await deploymentHealth(deps.db, now)) };
       return c.json(body, 200);
     })
     .get("/budget", async (c) => {

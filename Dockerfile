@@ -23,6 +23,7 @@ COPY packages/llm/package.json packages/llm/
 COPY packages/mailbox/package.json packages/mailbox/
 COPY packages/schemas/package.json packages/schemas/
 COPY packages/storage/package.json packages/storage/
+COPY packages/telemetry/package.json packages/telemetry/
 COPY fixtures/package.json fixtures/
 RUN pnpm install --frozen-lockfile
 

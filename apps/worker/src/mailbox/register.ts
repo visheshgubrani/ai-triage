@@ -1,6 +1,7 @@
 import { MAILBOX_POLL_CRON, type MailboxFetchJob, type MailboxSyncJob, QUEUES } from "@ai-triage/core";
 import type { PgBoss } from "@ai-triage/db";
 import { tenantCap } from "../config";
+import { observed } from "../observe";
 import type { MailboxDeps } from "./deps";
 import { fetchFailed, fetchMessage } from "./fetch";
 import { pollMailboxes, syncMailbox } from "./sync";
@@ -12,15 +13,16 @@ export async function registerMailbox(
   options: { fetchConcurrency: number; tenantConcurrency?: number | null },
 ) {
   await boss.schedule(QUEUES.mailboxPoll, MAILBOX_POLL_CRON, {}, { tz: "UTC" });
-  await boss.work(QUEUES.mailboxPoll, async () => {
-    await pollMailboxes(deps);
-  });
+  await boss.work(
+    QUEUES.mailboxPoll,
+    observed(QUEUES.mailboxPoll, async () => {
+      await pollMailboxes(deps);
+    }),
+  );
   await boss.work<MailboxSyncJob>(
     QUEUES.mailboxSync,
     { localConcurrency: 2, pollingIntervalSeconds: 1 },
-    async ([job]) => {
-      if (job) await syncMailbox(deps, job.data);
-    },
+    observed(QUEUES.mailboxSync, (job) => syncMailbox(deps, job.data)),
   );
   await boss.work<MailboxFetchJob>(
     QUEUES.mailboxFetch,
@@ -29,12 +31,12 @@ export async function registerMailbox(
       pollingIntervalSeconds: 1,
       ...tenantCap(options.tenantConcurrency ?? null),
     },
-    async ([job]) => {
-      if (job) await fetchMessage(deps, job.data);
-    },
+    observed(QUEUES.mailboxFetch, (job) => fetchMessage(deps, job.data)),
   );
   // No explicit type argument: it would stop TypeScript inferring the metadata-bearing job type.
-  await boss.work(QUEUES.mailboxFailed, { includeMetadata: true, pollingIntervalSeconds: 1 }, async ([job]) => {
-    if (job) await fetchFailed(deps, job.data as MailboxFetchJob);
-  });
+  await boss.work(
+    QUEUES.mailboxFailed,
+    { includeMetadata: true, pollingIntervalSeconds: 1 },
+    observed(QUEUES.mailboxFailed, (job) => fetchFailed(deps, job.data as MailboxFetchJob)),
+  );
 }

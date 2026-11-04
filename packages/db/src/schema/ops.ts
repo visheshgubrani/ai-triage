@@ -20,3 +20,16 @@ export const llmProviderState = pgTable(
   },
   (t) => [primaryKey({ name: "llm_provider_state_pkey", columns: [t.provider, t.model] })],
 );
+
+/**
+ * One row per running worker process, refreshed every 15 seconds. The web warns when none is
+ * recent ("documents won't be processed"), the most common setup mistake.
+ */
+export const workerHeartbeats = pgTable("worker_heartbeats", {
+  workerId: text("worker_id").primaryKey(),
+  hostname: text("hostname").notNull(),
+  version: text("version").notNull(),
+  llmMode: text("llm_mode").notNull(),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+});

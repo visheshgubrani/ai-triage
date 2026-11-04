@@ -8,6 +8,7 @@ import {
   staleWork,
   withTenantTx,
 } from "@ai-triage/db";
+import { log } from "../observe";
 
 // `system.reconcile`, every five minutes (docs/architecture.md §5, self-healing): candidates older
 // than `stallMinutes`, each checked against pg-boss in its tenant's transaction. Only work no job
@@ -34,11 +35,6 @@ export async function reconcile(deps: ReconcileDeps): Promise<Record<StaleKind, 
     if (changed) failed[work.kind]++;
   }
   const total = failed.document + failed.action + failed.eval_run;
-  if (total > 0) {
-    console.warn(
-      `reconcile: ${failed.document} stalled run(s), ${failed.action} stalled action(s), ` +
-        `${failed.eval_run} stalled eval run(s) marked failed`,
-    );
-  }
+  if (total > 0) log.warn("reconcile marked stalled work failed", failed);
   return failed;
 }

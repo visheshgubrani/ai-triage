@@ -8,6 +8,7 @@ import {
   createPool,
   getActiveConfig,
   listTenants,
+  liveWorkers,
   StartupError,
   withTenantTx,
 } from "@ai-triage/db";
@@ -126,6 +127,12 @@ export async function checkDatabase(env: Env, mode: LlmMode, cassetteDir: string
       out.push(fail("Postgres", (err as Error).message, err instanceof StartupError ? undefined : "pnpm infra:up"));
       return out;
     }
+    const workers = await liveWorkers(createDb(pool), new Date());
+    out.push(
+      workers.length > 0
+        ? ok("Workers", `${workers.length} running (${[...new Set(workers.map((w) => w.version))].join(", ")})`)
+        : warn("Workers", "none has checked in for 2 minutes, so documents won't be processed", "pnpm dev"),
+    );
     const tenants = await listTenants(createDb(pool));
     if (tenants.length === 0) {
       out.push(warn("Tenants", "none yet", "pnpm db:seed (demo) or pnpm tenant:create"));

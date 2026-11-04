@@ -77,3 +77,38 @@ describe("GET /auth/providers", () => {
     expect(social.ok).toBe(false);
   });
 });
+
+describe("operations endpoints", () => {
+  it("reports readiness: database, migrations and storage", async () => {
+    const res = await app.request("/ready");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ db: "up", migrations: "current", storage: "up" });
+  });
+
+  it("hides /metrics without its token, and serves Prometheus text with it", async () => {
+    expect((await app.request("/metrics")).status).toBe(404);
+    const t2 = await createTestApp({ metricsToken: "scrape-me" });
+    try {
+      expect((await t2.app.request("/metrics", { headers: { authorization: "Bearer wrong" } })).status).toBe(404);
+      await t2.app.request("/health");
+      const res = await t2.app.request("/metrics", { headers: { authorization: "Bearer scrape-me" } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/^text\/plain; version=0.0.4/);
+      expect(await res.text()).toMatch(
+        /triage_http_requests_total\{method="GET",route="\/api\/health",status="200"\} \d+/,
+      );
+    } finally {
+      await t2.close();
+    }
+  });
+
+  it("tells members what blocks processing", async () => {
+    const { cookie } = await signIn("reviewer@demo.test", DEMO_PASSWORD);
+    const res = await app.request("/system/status", { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      workersRunning: expect.any(Number),
+      budgetExhausted: expect.any(Boolean),
+    });
+  });
+});

@@ -1,6 +1,8 @@
 import { type DeliverJob, QUEUES } from "@ai-triage/core";
 import type { PgBoss } from "@ai-triage/db";
+import type { JobWithMetadata } from "pg-boss";
 import { tenantCap } from "../config";
+import { observed } from "../observe";
 import { deliverAction, deliveryFailed } from "./deliver";
 import type { DeliveryDeps } from "./deps";
 
@@ -13,12 +15,14 @@ export async function registerDelivery(
   await boss.work<DeliverJob>(
     QUEUES.deliver,
     { localConcurrency: 4, pollingIntervalSeconds: 1, ...tenantCap(options.tenantConcurrency) },
-    async ([job]) => {
-      if (job) await deliverAction(deps, job.data);
-    },
+    observed(QUEUES.deliver, (job) => deliverAction(deps, job.data)),
   );
   // No explicit type argument: it would stop TypeScript inferring the metadata-bearing job type.
-  await boss.work(QUEUES.deliveryFailed, { includeMetadata: true, pollingIntervalSeconds: 1 }, async ([job]) => {
-    if (job) await deliveryFailed(deps, job.data as DeliverJob, { output: job.sourceOutput });
-  });
+  await boss.work(
+    QUEUES.deliveryFailed,
+    { includeMetadata: true, pollingIntervalSeconds: 1 },
+    observed(QUEUES.deliveryFailed, (job: JobWithMetadata) =>
+      deliveryFailed(deps, job.data as DeliverJob, { output: job.sourceOutput }),
+    ),
+  );
 }

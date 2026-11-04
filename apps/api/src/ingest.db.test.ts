@@ -184,6 +184,23 @@ describe("Postmark webhook", () => {
   });
 });
 
+describe("trace ids", () => {
+  it("put the request's id into the job it enqueues, so the worker logs under it", async () => {
+    const { key } = await withTenantTx(pool, demoId, (tx) => createApiKey(tx, { name: "trace" }));
+    const form = new FormData();
+    form.set("file", new File([`Trace ${randomUUID()}`], "trace.txt", { type: "text/plain" }));
+    const res = await app.request("/v1/documents", {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}` },
+      body: form,
+    });
+    expect(res.status).toBe(201);
+    const { documentId } = (await res.json()) as { documentId: string };
+    const { job } = await parseJobFor(demoId, documentId);
+    expect((job as { data: { traceId?: string } }).data.traceId).toBe(res.headers.get("x-request-id"));
+  });
+});
+
 describe("REST API", () => {
   const send = (key: string, file: File) => {
     const form = new FormData();

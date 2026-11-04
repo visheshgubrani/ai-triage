@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { assertEnv, callModeOf, getLlmMode, resolvePublicUrls } from "@ai-triage/core";
+import { APP_VERSION, assertEnv, callModeOf, getLlmMode, resolvePublicUrls } from "@ai-triage/core";
 import { egressPolicyFromEnv } from "@ai-triage/core/pipeline";
 import {
   checkStartup,
@@ -15,6 +15,7 @@ import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { parseTrustedProxies } from "./client-ip";
+import { log } from "./log";
 import { rateLimitsFromEnv } from "./rate-limit";
 import { systemResolve } from "./webhook-url";
 
@@ -25,7 +26,7 @@ try {
 } catch (err) {
   exitOnStartupError(err);
 }
-for (const warning of urls.warnings) console.warn(warning);
+for (const warning of urls.warnings) log.warn(warning);
 const port = Number(process.env.API_PORT ?? 8787);
 // The web app and the API share one origin (the API under /api), so cookies, CORS and the Origin
 // check all use it.
@@ -47,13 +48,13 @@ const auth = createAuth({ db, secret, baseURL, webOrigin, trustedProxies, google
 
 // The api only enqueues (inside tenant transactions); the worker supervises and runs jobs.
 const boss = createBoss(databaseUrl, { supervise: false, schedule: false });
-boss.on("error", (err) => console.error("pg-boss error", err));
+boss.on("error", (err) => log.error("pg-boss error", { err }));
 await boss.start();
 
 const storage = createStorage(storageConfigFromEnv());
 // Presigned uploads go straight from the browser to storage, which must allow the web origin.
 await storage.allowBrowserOrigins([webOrigin]).catch((err: Error) => {
-  console.warn(`could not set storage CORS for ${webOrigin}: ${err.message}`);
+  log.warn("could not set storage CORS", { origin: webOrigin, err });
 });
 
 const { POSTMARK_INBOUND_USER: postmarkUser, POSTMARK_INBOUND_PASSWORD: postmarkPassword } = process.env;
@@ -82,10 +83,11 @@ const app = createApp({
   googleSignIn,
   googleFetch: fetch,
   apiBaseUrl: urls.apiBaseUrl,
+  metricsToken: process.env.METRICS_TOKEN || null,
 });
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`api listening on http://localhost:${info.port} (public URL ${urls.origin})`);
+  log.info("api listening", { port: info.port, publicUrl: urls.origin, version: APP_VERSION });
 }) as import("node:http").Server;
 // A slow client can't hold a connection open forever: headers within 30 s, the whole request
 // (Postmark payloads can be ~29 MB) within 2 minutes.

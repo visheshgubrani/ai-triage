@@ -53,6 +53,35 @@ export const HealthResponse = z.object({
 });
 export type HealthResponse = z.infer<typeof HealthResponse>;
 
+export const ReadyResponse = z.object({
+  db: z.enum(["up", "down"]),
+  migrations: z.enum(["current", "pending"]),
+  storage: z.enum(["up", "down"]),
+});
+export type ReadyResponse = z.infer<typeof ReadyResponse>;
+
+/** For the header (any member): what stops documents from being processed right now. */
+export const SystemStatusResponse = z.object({
+  workersRunning: z.number().int(),
+  budgetExhausted: z.boolean(),
+  /** Documents that failed on the budget and wait for a Retry (Retry all, after raising it). */
+  budgetWaiting: z.number().int(),
+});
+export type SystemStatusResponse = z.infer<typeof SystemStatusResponse>;
+
+/** Settings → System health (admins): this tenant's pipeline, and the deployment facts it shares. */
+export const SystemHealthResponse = z.object({
+  documents: z.array(z.object({ status: z.string(), count: z.number(), oldestUpdatedAt: z.string().nullable() })),
+  openFailures: z.array(z.object({ reason: z.string(), count: z.number() })),
+  last24h: z.object({ failedRuns: z.number(), stalledRuns: z.number() }),
+  delivery: z.object({ pending: z.number(), failed: z.number(), oldestPendingAt: z.string().nullable() }),
+  mailboxes: z.array(z.object({ status: z.string(), count: z.number() })),
+  budget: z.object({ day: z.string(), capUsd: z.number(), spentUsd: z.number(), reservedUsd: z.number() }),
+  workers: z.array(z.object({ version: z.string(), llmMode: z.string(), lastSeenAt: z.string() })),
+  cooldowns: z.array(z.object({ provider: z.string(), model: z.string(), until: z.string(), reason: z.string() })),
+});
+export type SystemHealthResponse = z.infer<typeof SystemHealthResponse>;
+
 export const MemberRole = z.enum(MEMBER_ROLES);
 export type MemberRole = z.infer<typeof MemberRole>;
 

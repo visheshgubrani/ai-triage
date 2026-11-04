@@ -1,8 +1,27 @@
-import type { AuthProvidersResponse, ErrorResponse, HealthResponse, Issue, MeResponse } from "@ai-triage/contracts";
+import type {
+  AuthProvidersResponse,
+  ErrorResponse,
+  HealthResponse,
+  Issue,
+  MeResponse,
+  ReadyResponse,
+  SystemStatusResponse,
+} from "@ai-triage/contracts";
 import { APP_VERSION } from "@ai-triage/core";
 import { PipelineError } from "@ai-triage/core/pipeline";
-import { ConfigError, EvalRequestError, getTenant, MemberError, pingDb, ReviewError } from "@ai-triage/db";
+import {
+  blockingProblems,
+  ConfigError,
+  EvalRequestError,
+  getTenant,
+  MemberError,
+  pendingMigrations,
+  pingDb,
+  ReviewError,
+  withTenantTx,
+} from "@ai-triage/db";
 import { IngestRejected } from "@ai-triage/ingest";
+import { METRICS_CONTENT_TYPE } from "@ai-triage/telemetry";
 import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
@@ -11,6 +30,7 @@ import { requestId } from "hono/request-id";
 import { handleAuth } from "./auth-routes";
 import type { AppDeps } from "./deps";
 import { EVAL_ERROR_STATUS } from "./evals";
+import { log, registry } from "./log";
 import { REVIEW_ERROR_STATUS } from "./review";
 import { actionRoutes } from "./routes/actions";
 import { configRoutes } from "./routes/configs";
@@ -22,7 +42,7 @@ import { invitationRoutes, MEMBER_ERROR_STATUS, memberRoutes } from "./routes/me
 import { reviewRoutes } from "./routes/review";
 import { settingsRoutes } from "./routes/settings";
 import { uploadRoutes } from "./routes/uploads";
-import { apiSecureHeaders, limitJsonBodies, requestLog, requireTrustedOrigin } from "./security";
+import { apiSecureHeaders, limitJsonBodies, requestLog, requireTrustedOrigin, sameSecret } from "./security";
 import { requireTenant } from "./tenant";
 
 export type { AppDeps } from "./deps";
@@ -39,7 +59,7 @@ export function createApp(deps: AppDeps) {
   const { webOrigin } = deps;
   const app = new Hono();
   app.use(requestId());
-  if (process.env.NODE_ENV !== "test") app.use(requestLog());
+  app.use(requestLog({ log: process.env.NODE_ENV !== "test" }));
   app.onError(onError);
   app
     .use("*", apiSecureHeaders({ hsts: deps.hsts }))
@@ -69,7 +89,7 @@ function onError(err: Error, c: Context) {
   // A file that can't be read as what it claims to be (for example, a malformed .eml). The
   // parser's own message stays in the log: it can quote library internals.
   if (err instanceof PipelineError) {
-    console.warn(`req=${c.get("requestId")} unreadable file (${err.reason}): ${err.message}`);
+    log.warn("unreadable file", { reason: err.reason, message: err.message });
     const body: ErrorResponse = {
       error: "The file couldn't be read",
       code: "unreadable_file",
@@ -97,7 +117,7 @@ function onError(err: Error, c: Context) {
   }
   if (err instanceof HTTPException) return err.getResponse();
   const id = c.get("requestId");
-  console.error(`req=${id}`, err);
+  log.error("request failed", { path: c.req.path, err });
   const body: ErrorResponse = { error: "Internal error", requestId: id };
   return c.json(body, 500);
 }
@@ -126,6 +146,34 @@ function apiRoutes(deps: AppDeps) {
         return c.json(body, 200);
       })
       .on(["GET", "POST"], "/auth/*", (c) => handleAuth(c, deps))
+      // Readiness for a load balancer: the database, storage and the schema version.
+      .get("/ready", async (c) => {
+        const [dbUp, pending, bucket] = await Promise.all([
+          pingDb(db),
+          pendingMigrations(deps.pool).catch(() => null),
+          deps.storage.inspectBucket().catch(() => null),
+        ]);
+        const body: ReadyResponse = {
+          db: dbUp ? "up" : "down",
+          migrations: pending === 0 ? "current" : "pending",
+          storage: bucket?.exists ? "up" : "down",
+        };
+        const ok = dbUp && pending === 0 && bucket?.exists === true;
+        return c.json(body, ok ? 200 : 503);
+      })
+      // Prometheus, behind a bearer token (off without METRICS_TOKEN): routes and statuses only.
+      .get("/metrics", (c) => {
+        const token = deps.metricsToken;
+        const given = c.req.header("authorization")?.replace(/^Bearer /, "") ?? "";
+        if (!token || !sameSecret(given, token)) return c.json({ error: "Not found" }, 404);
+        return c.body(registry.render(), 200, { "content-type": METRICS_CONTENT_TYPE });
+      })
+      .get("/system/status", requireTenant(deps), async (c) => {
+        const body: SystemStatusResponse = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
+          blockingProblems(tx, db, deps.now()),
+        );
+        return c.json(body, 200);
+      })
       .get("/me", requireTenant(deps), async (c) => {
         const { tenantId, role, user, twoFactorEnabled, twoFactorRequired } = c.var.tenant;
         const tenant = await getTenant(db, tenantId);

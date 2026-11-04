@@ -200,6 +200,13 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 pg-boss keeps finished job ids for 7 days and ignores a re-send, so the reconciler never re-sends; Retry starts a new run with new ids. `doc.failed` itself never returns silently: without its source queue, it fails the run at its current status. **Retry all** (`POST /api/review/retry-failed`, admins) retries every open, unclaimed `processing_failed` task, optionally of one reason, each in its own transaction exactly as a reviewer's Retry (up to 500 at a time, one audit event). A failed reclassify run whose category was since removed is retried as a plain run.
 
+**Observability (phase 7, [operations.md](operations.md)):**
+- **Logs:** JSON lines, one per request, job and model call. Each carries a trace id: the api's request id goes into every job it enqueues (`enqueue` adds the current trace, packages/telemetry), and every job runs under it.
+- **Metrics:** Prometheus at the worker's `:9100/metrics` and the api's `/api/metrics` (behind `METRICS_TOKEN`): jobs, queue depth and oldest age, model calls, tokens, cost, cooldowns, pool, HTTP.
+- **Health:** `/api/ready` checks the database, migrations and storage; the worker's `/health` follows its heartbeat loop.
+- **Heartbeats:** workers upsert `worker_heartbeats` every 15 s, so the web warns everyone when none is running.
+- **System health:** Settings → System health shows a tenant its own pipeline, plus the deployment facts every tenant shares (workers, cooldowns).
+
 **Timeouts (phase 7):** nothing waits forever.
 - **Model calls:** a per-stage timeout (`llmTimeoutMs`: classify 120 s, extract 60 s plus `max_tokens`/40, at most 600 s). The SDK retries nothing; pg-boss owns retries, with capped backoff (`retryDelayMax`). Each stage's `expireInSeconds` outlasts its longest call (a test checks the margin), so an expired job never runs alongside its retry. The handler passes `job.signal` to the SDK, so an expired job also stops paying for its call.
 - **Dead workers:** stage jobs heartbeat every 15 s (`heartbeatSeconds: 30`), so a job whose worker died retries within 30 s, not at its expiry.
