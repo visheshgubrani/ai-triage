@@ -2,16 +2,17 @@
 
 import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/button";
-import { FormMessage } from "@/components/notice";
-import { Section } from "@/components/section";
-import { Input } from "@/components/ui/input";
+import { FormMessage, type Message } from "@/components/notice";
+import { Section, SectionHint } from "@/components/section";
+import { SettingRow, SettingRows } from "@/components/settings-row";
+import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/components/ui/input-group";
 import { browserApi } from "@/lib/api";
 import { readError } from "@/lib/api-error";
 
 /** How long finished documents are kept before the daily purge deletes them. */
 export function RetentionSettingsView() {
   const [days, setDays] = useState("");
-  const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
+  const [message, setMessage] = useState<Message | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -37,28 +38,47 @@ export function RetentionSettingsView() {
   }
 
   return (
-    <Section title="Retention">
-      <p className="text-muted-foreground">
-        Finished documents (decided and delivered) older than this are deleted every night, with their files,
-        extractions and review history. Copies in eval sets are kept. Empty keeps everything.
-      </p>
-      <form onSubmit={save} className="mt-3 flex flex-wrap items-center gap-2">
-        <label htmlFor="retention-days">Keep for (days)</label>
-        <Input
-          id="retention-days"
-          type="number"
-          min="1"
-          step="1"
-          placeholder="forever"
-          value={days}
-          onChange={(e) => setDays(e.target.value)}
-          className="w-32"
-        />
-        <Button type="submit" variant="primary">
-          Save
-        </Button>
-      </form>
-      <FormMessage message={message} />
+    <Section
+      flush
+      title="Retention"
+      footer={
+        <>
+          {message ? (
+            <FormMessage message={message} className="mt-0 mr-auto" />
+          ) : (
+            <SectionHint>Copies in eval sets are kept.</SectionHint>
+          )}
+          <Button type="submit" form="retention-form" variant="primary">
+            Save
+          </Button>
+        </>
+      }
+    >
+      <SettingRows>
+        <SettingRow
+          label="Delete finished documents after"
+          htmlFor="retention-days"
+          hint="Decided and delivered ones, with their files and review history. Empty keeps everything."
+        >
+          <form id="retention-form" onSubmit={save}>
+            <InputGroup className="w-40">
+              <InputGroupInput
+                id="retention-days"
+                type="number"
+                min="1"
+                step="1"
+                placeholder="Forever"
+                value={days}
+                onChange={(e) => setDays(e.target.value)}
+                className="tabular-nums"
+              />
+              <InputGroupAddon align="inline-end">
+                <InputGroupText>days</InputGroupText>
+              </InputGroupAddon>
+            </InputGroup>
+          </form>
+        </SettingRow>
+      </SettingRows>
     </Section>
   );
 }

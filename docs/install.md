@@ -97,7 +97,7 @@ The simplest path works with any mail provider (Gmail, Microsoft 365, Fastmail, 
    ./triage config set INBOUND_DOMAIN=abc123@inbound.postmarkapp.com
    ```
 
-   In **Settings → Inbound email**, choose **Rotate**. Your address becomes `abc123+t-…@inbound.postmarkapp.com`. The random part means nobody can guess it.
+   In **Settings → General**, choose **Replace** next to the forwarding address. Your address becomes `abc123+t-…@inbound.postmarkapp.com`. The random part means nobody can guess it.
 4. **Forward the mailbox to that address.** In Gmail that's Settings → Forwarding; in Microsoft 365, a mail flow rule or the mailbox's forwarding setting. Documents start appearing under Documents.
 
 **Prefer your own domain?** Point an MX record for a subdomain (`inbound.yourcompany.com`) at `inbound.postmarkapp.com`, add it as an inbound domain in Postmark, and set `INBOUND_DOMAIN=inbound.yourcompany.com`.
@@ -112,7 +112,7 @@ The simplest path works with any mail provider (Gmail, Microsoft 365, Fastmail, 
 ## 4. Send the results somewhere
 
 Approved documents are POSTed to your webhook, signed and delivered at least once.
-1. Set its URL in **Settings → Webhook**.
+1. Set its URL in **Settings → Webhooks**.
 2. Press **Send test event**.
 3. Verify signatures as [api.md](api.md) shows.
 

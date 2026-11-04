@@ -7,12 +7,15 @@ import { getMe } from "@/lib/session";
 import { SettingsFrame } from "./settings-frame";
 
 const DESCRIPTIONS: Record<string, string> = {
-  "/settings": "How documents come in, where approvals go, and what this workspace may spend.",
-  "/settings/pipeline": "The models that classify and extract, and the version in use.",
-  "/settings/categories": "The document types the pipeline tells apart, and the fields it extracts from each.",
-  "/settings/members": "Who can see and decide documents in this workspace.",
+  "/settings": "Where mail comes in, and what this workspace may spend and keep.",
+  "/settings/members": "Who can see and decide documents here.",
   "/settings/mailboxes": "Google mailboxes this workspace reads documents from.",
+  "/settings/pipeline": "The models that classify and extract, and how each category is routed.",
+  "/settings/categories": "The document types the pipeline sorts into, and the fields it extracts.",
+  "/settings/webhooks": "Where approved documents go, signed.",
+  "/settings/api-keys": "Keys for the REST API: send documents in, and read them back.",
   "/settings/health": "This workspace's pipeline right now, and the deployment it shares.",
+  "/settings/audit": "Security-relevant changes in this workspace, newest first.",
 };
 
 /**

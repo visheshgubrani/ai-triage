@@ -7,12 +7,14 @@ export default async function SecurityPage() {
   return (
     <SettingsFrame
       title="Account security"
-      description="Your own password, two-factor authentication and sessions."
+      description="How you sign in, and where you are signed in."
       isAdmin={me?.role === "admin"}
     >
       {me && (
         <SecurityView
+          name={me.user.name}
           email={me.user.email}
+          role={me.role}
           twoFactorEnabled={me.twoFactorEnabled}
           twoFactorRequired={me.twoFactorRequired}
         />

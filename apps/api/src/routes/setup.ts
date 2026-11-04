@@ -124,7 +124,7 @@ function steps(f: OnboardingFacts): OnboardingStep[] {
       detail: f.webhookSet
         ? "Send a test event to check that your receiver verifies the signature."
         : "Set a webhook URL: every approved document is POSTed there, signed.",
-      href: "/settings",
+      href: "/settings/webhooks",
     },
     {
       id: "team",

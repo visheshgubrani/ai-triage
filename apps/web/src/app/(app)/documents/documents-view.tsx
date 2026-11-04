@@ -217,8 +217,8 @@ export function DocumentsView({ canUpload }: { canUpload: boolean }) {
       </div>
       {filters.status === "skipped" && (
         <p className="mt-2 text-xs text-muted-foreground">
-          Auto-replies, bounces and (when on) bulk mail end here before any model call. Settings → Intake filters
-          chooses which; Process anyway runs one through the pipeline.
+          Auto-replies, bounces and (when on) bulk mail end here before any model call. Settings → General chooses
+          which; Process anyway runs one through the pipeline.
         </p>
       )}
       {message && <p className="mt-3 text-sm text-muted-foreground">{message}</p>}

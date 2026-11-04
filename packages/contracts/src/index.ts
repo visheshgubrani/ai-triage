@@ -95,7 +95,7 @@ export type OnboardingStep = z.infer<typeof OnboardingStep>;
 export const OnboardingResponse = z.object({ dismissed: z.boolean(), steps: z.array(OnboardingStep) });
 export type OnboardingResponse = z.infer<typeof OnboardingResponse>;
 
-/** A signed `ping` to the tenant's webhook (Settings → Send test event). */
+/** A signed `ping` to the tenant's webhook (Settings → Webhooks → Send test event). */
 export const WebhookTestResponse = z.object({
   ok: z.boolean(),
   status: z.number().nullable(),

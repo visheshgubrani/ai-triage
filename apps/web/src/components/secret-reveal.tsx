@@ -4,12 +4,25 @@ import { Check, Copy } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "@/components/button";
 import { Notice } from "@/components/notice";
+import { cn } from "@/lib/utils";
 
-export function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+export function CopyButton({
+  value,
+  label = "Copy",
+  variant = "secondary",
+  className,
+}: {
+  value: string;
+  label?: string;
+  variant?: "secondary" | "ghost";
+  className?: string;
+}) {
   const [copied, setCopied] = useState(false);
   return (
     <Button
       size="sm"
+      variant={variant}
+      className={className}
       onClick={async () => {
         await navigator.clipboard.writeText(value);
         setCopied(true);
@@ -19,6 +32,23 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
       {copied ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
       {copied ? "Copied" : label}
     </Button>
+  );
+}
+
+/** A value to copy (an address, a setup key): read-only, in a field's frame, with Copy inside it. */
+export function CopyField({ value, className }: { value: string; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "flex h-8 min-w-0 items-center gap-1 rounded-lg border border-input bg-muted/40 pr-0.5 pl-2.5 dark:bg-input/20",
+        className,
+      )}
+    >
+      <code className="min-w-0 flex-1 truncate text-xs" title={value}>
+        {value}
+      </code>
+      <CopyButton value={value} variant="ghost" className="h-6" />
+    </div>
   );
 }
 

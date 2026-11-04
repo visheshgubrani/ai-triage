@@ -79,7 +79,7 @@ Every worker samples the queue gauges, so take `max` across instances, not `sum`
 
 ### The daily budget ran out
 - Documents fail as `budget_exhausted`, and everyone sees a banner.
-- An admin raises the cap in Settings → Daily LLM budget. Today's row takes the new cap at once.
+- An admin raises the cap in Settings → General → Daily LLM budget. Today's row takes the new cap at once.
 - Then **Retry all** with the reason `budget_exhausted`.
 
 ### Documents seem stuck

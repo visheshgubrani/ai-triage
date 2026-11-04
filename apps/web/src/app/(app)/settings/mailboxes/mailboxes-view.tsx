@@ -6,8 +6,11 @@ import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Pill, type Tone } from "@/components/badge";
 import { Button } from "@/components/button";
 import { useConfirm } from "@/components/confirm-dialog";
-import { FormMessage, Notice } from "@/components/notice";
-import { Section } from "@/components/section";
+import { GoogleMark } from "@/components/google-button";
+import { LoadingBlock } from "@/components/loading";
+import { Notice, ResultNotice } from "@/components/notice";
+import { Section, SectionHint } from "@/components/section";
+import { SettingRow, SettingRows } from "@/components/settings-row";
 import { NativeSelect } from "@/components/ui/native-select";
 import { browserApi } from "@/lib/api";
 import { readError } from "@/lib/api-error";
@@ -112,85 +115,108 @@ function MailboxCard({ mailbox, onChange }: { mailbox: MailboxSummary; onChange:
 
   return (
     <Section
-      title={mailbox.email}
+      flush
+      title={
+        <>
+          <GoogleMark />
+          {mailbox.email}
+        </>
+      }
+      description={mailbox.lastSyncedAt ? `Checked ${ago(mailbox.lastSyncedAt)}` : "Not checked yet"}
       actions={
         <Pill dot tone={STATUS_TONE[mailbox.status]}>
           {STATUS_TEXT[mailbox.status]}
         </Pill>
       }
+      footer={
+        <>
+          {message && (
+            <p role="alert" className="mr-auto text-danger">
+              {message}
+            </p>
+          )}
+          {mailbox.status === "active" && <Button onClick={() => void update({ paused: true })}>Pause</Button>}
+          {mailbox.status === "paused" && <Button onClick={() => void update({ paused: false })}>Resume</Button>}
+          <Button variant="ghost" className="text-muted-foreground hover:text-danger" onClick={() => void disconnect()}>
+            Disconnect
+          </Button>
+        </>
+      }
     >
       {mailbox.status === "reauth_required" && (
-        <Notice
-          tone="warning"
-          className="mb-3"
-          action={
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={async () => setMessage(await startConnect({ backfillDays: 0, loginHint: mailbox.email }))}
-            >
-              Reconnect
-            </Button>
-          }
-        >
-          Google stopped accepting this mailbox's access (revoked, or a Testing-mode grant expired). Mail waits in Gmail
-          until you reconnect.
-        </Notice>
-      )}
-      <p className="text-muted-foreground">
-        Intake label <span className="font-medium">{mailbox.labelName}</span>
-        {mailbox.lastSyncedAt ? ` · checked ${ago(mailbox.lastSyncedAt)}` : " · not checked yet"}
-        {mailbox.lastError && mailbox.status === "active" ? ` · last problem: ${mailbox.lastError}` : ""}
-      </p>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {labels ? (
-          <NativeSelect
-            aria-label="Intake label"
-            defaultValue={mailbox.labelId}
-            onChange={(e) => void update({ labelId: e.target.value })}
+        <div className="px-4 pt-4">
+          <Notice
+            tone="warning"
+            action={
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={async () => setMessage(await startConnect({ backfillDays: 0, loginHint: mailbox.email }))}
+              >
+                Reconnect
+              </Button>
+            }
           >
-            {labels.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </NativeSelect>
-        ) : (
-          <Button onClick={() => void loadLabels()} disabled={mailbox.status === "reauth_required"}>
-            Change label
-          </Button>
-        )}
-        {mailbox.status === "active" && <Button onClick={() => void update({ paused: true })}>Pause</Button>}
-        {mailbox.status === "paused" && <Button onClick={() => void update({ paused: false })}>Resume</Button>}
-        <Button variant="danger" onClick={() => void disconnect()}>
-          Disconnect
-        </Button>
-      </div>
-      {message && (
-        <p role="alert" className="mt-2 text-danger">
-          {message}
-        </p>
+            Google stopped accepting this mailbox's access (revoked, or a Testing-mode grant expired). Mail waits in
+            Gmail until you reconnect.
+          </Notice>
+        </div>
       )}
+      <SettingRows>
+        <SettingRow label="Intake label" hint="Mail with this label is triaged.">
+          {labels ? (
+            <NativeSelect
+              aria-label="Intake label"
+              defaultValue={mailbox.labelId}
+              onChange={(e) => void update({ labelId: e.target.value })}
+            >
+              {labels.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </NativeSelect>
+          ) : (
+            <>
+              <span className="font-medium">{mailbox.labelName}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void loadLabels()}
+                disabled={mailbox.status === "reauth_required"}
+              >
+                Change label
+              </Button>
+            </>
+          )}
+        </SettingRow>
+        {mailbox.lastError && mailbox.status === "active" && (
+          <SettingRow label="Last problem" hint={mailbox.lastError} />
+        )}
+      </SettingRows>
       {detail && detail.messages.length > 0 && (
-        <ul className="mt-4 divide-y divide-border text-xs">
-          {detail.messages.map((m) => (
-            <li key={m.id} className="flex items-center justify-between gap-2 py-1.5">
-              <span>
-                {MESSAGE_TEXT[m.status] ?? m.status}
-                {m.reason ? ` (${REASON_TEXT[m.reason] ?? m.reason})` : ""}
-                <span className="text-muted-foreground"> · {ago(m.receivedAt ?? m.createdAt)}</span>
-              </span>
-              {m.documentId && (
-                <Link
-                  href={`/documents/${m.documentId}`}
-                  className="font-medium text-primary underline-offset-2 hover:underline"
-                >
-                  Open document
-                </Link>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          <p className="border-t px-4 pt-3 pb-1 text-xs font-medium text-muted-foreground">Recent messages</p>
+          <ul className="divide-y divide-border pb-1 text-xs">
+            {detail.messages.map((m) => (
+              <li key={m.id} className="flex items-center justify-between gap-2 px-4 py-2">
+                <span>
+                  {MESSAGE_TEXT[m.status] ?? m.status}
+                  {m.reason ? ` (${REASON_TEXT[m.reason] ?? m.reason})` : ""}
+                  <span className="text-muted-foreground"> · {ago(m.receivedAt ?? m.createdAt)}</span>
+                </span>
+                {m.documentId && (
+                  <Link
+                    href={`/documents/${m.documentId}`}
+                    className="font-medium text-primary underline-offset-2 hover:underline"
+                  >
+                    Open document
+                  </Link>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </Section>
   );
@@ -227,33 +253,46 @@ export function MailboxesView() {
     if (problem) setMessage({ error: true, text: problem });
   }
 
-  if (!list) return message ? <p className="mt-6 text-sm text-danger">{message.text}</p> : null;
+  if (!list) return message ? <ResultNotice message={message} /> : <LoadingBlock />;
   return (
     <>
-      <FormMessage message={message} />
-      <Section title="Connect a Gmail mailbox">
-        {list.google ? (
-          <form onSubmit={connect} className="flex flex-wrap items-center gap-2">
-            <NativeSelect name="backfill" defaultValue="0" aria-label="Import recent mail">
-              <option value="0">New mail only</option>
-              <option value="1">Also import the last day</option>
-              <option value="3">Also import the last 3 days</option>
-              <option value="7">Also import the last 7 days</option>
-            </NativeSelect>
-            <Button type="submit" variant="primary">
-              Connect Google mailbox
-            </Button>
-          </form>
-        ) : (
-          <p className="text-muted-foreground">
-            Google isn't set up on this instance. An operator sets GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
-            (docs/google.md).
-          </p>
-        )}
-        <p className="mt-2 text-xs text-muted-foreground">
-          You sign in to Google as the mailbox (for example ap@yourcompany.com) and allow read-only access. The app
-          never changes, labels or deletes mail. Imported mail counts against the daily model budget.
-        </p>
+      <ResultNotice message={message} />
+      <Section
+        flush
+        title="Connect a Gmail mailbox"
+        description="Sign in to Google as the mailbox (say, ap@yourcompany.com) and allow read-only access."
+        footer={
+          <SectionHint>
+            The app never changes, labels or deletes mail. Imported mail counts against the daily budget.
+          </SectionHint>
+        }
+      >
+        <SettingRows>
+          {list.google ? (
+            <SettingRow
+              label="Import recent mail"
+              htmlFor="backfill"
+              hint="New mail always comes in within about a minute."
+            >
+              <form onSubmit={connect} className="flex flex-wrap items-center gap-2 md:justify-end">
+                <NativeSelect id="backfill" name="backfill" defaultValue="0">
+                  <option value="0">New mail only</option>
+                  <option value="1">Also the last day</option>
+                  <option value="3">Also the last 3 days</option>
+                  <option value="7">Also the last 7 days</option>
+                </NativeSelect>
+                <Button type="submit" variant="primary">
+                  Connect Google mailbox
+                </Button>
+              </form>
+            </SettingRow>
+          ) : (
+            <SettingRow
+              label="Google isn't set up"
+              hint="An operator sets GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET on this instance (docs/google.md)."
+            />
+          )}
+        </SettingRows>
       </Section>
       {list.mailboxes.map((m) => (
         <MailboxCard key={m.id} mailbox={m} onChange={load} />
