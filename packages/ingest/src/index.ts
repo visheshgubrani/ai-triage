@@ -157,6 +157,7 @@ export async function ingestEmail(
     source: DocumentSource;
     postmark?: PostmarkInbound;
     eml?: Uint8Array;
+    externalRef?: string | null;
     /**
      * Runs in the transaction that creates the document (or, for a duplicate, in one of its own),
      * so the caller's own record of the ingest commits with it (the mailbox ledger does).
@@ -195,6 +196,7 @@ export async function ingestEmail(
       title: emailTitle(email),
       mime: EMAIL_SOURCE_MIME,
       sizeBytes,
+      externalRef: input.externalRef ?? null,
     });
     await input.within?.(tx, result);
     return result;
@@ -219,7 +221,15 @@ export async function ingestPostmark(
 export async function ingestFile(
   deps: IngestDeps,
   tenantId: string,
-  file: { bytes: Uint8Array; filename: string | null; mime: string | null; source: DocumentSource; sourceKey?: string },
+  file: {
+    bytes: Uint8Array;
+    filename: string | null;
+    mime: string | null;
+    source: DocumentSource;
+    sourceKey?: string;
+    /** The sender's own reference (public API). */
+    externalRef?: string | null;
+  },
   limits: IngestLimits,
 ): Promise<IngestResult> {
   if (file.bytes.byteLength > limits.maxFileBytes) {
@@ -229,7 +239,7 @@ export async function ingestFile(
   if (isEml(file.filename, file.mime)) {
     const email = await normalizeEml(file.bytes);
     checkEmailLimits(email, limits);
-    return ingestEmail(deps, tenantId, email, { source: file.source, eml: file.bytes });
+    return ingestEmail(deps, tenantId, email, { source: file.source, eml: file.bytes, externalRef: file.externalRef });
   }
   const mime = file.mime?.split(";")[0]?.trim().toLowerCase() ?? null;
   if (!isOneOf(ACCEPTED_MIMES, mime)) throw new IngestRejected(415, `unsupported type ${file.mime ?? "(none)"}`);
@@ -247,6 +257,7 @@ export async function ingestFile(
       title: file.filename,
       mime,
       sizeBytes: file.bytes.byteLength,
+      externalRef: file.externalRef ?? null,
     }),
   );
 }

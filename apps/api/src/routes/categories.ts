@@ -45,7 +45,7 @@ import { validate } from "../validate";
 // by a person (classify sees every category's description, so old thresholds no longer hold), and
 // activates it. Auto-approval comes back through the evals flow, as after a model change.
 
-async function categoryInfos(tx: TenantTx, config: PipelineConfig): Promise<CategoryInfo[]> {
+export async function categoryInfos(tx: TenantTx, config: PipelineConfig): Promise<CategoryInfo[]> {
   const versions = await loadSchemaVersions(
     tx,
     config.categories.map((c) => c.schemaVersionId),
@@ -63,6 +63,7 @@ async function categoryInfos(tx: TenantTx, config: PipelineConfig): Promise<Cate
         schemaVersionId: row.id,
         description: schemaDescription(schema),
         fields: Object.keys(schemaProperties(schema)).map((name) => ({ name, required: required.has(name) })),
+        jsonSchema: schema,
         automation: c.automation,
         definition: storedDefinition(row),
       };

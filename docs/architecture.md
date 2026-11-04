@@ -115,10 +115,10 @@ Dockerfile          one image for api, worker, web and the one-shot init
 |---|---|
 | `tenants`, `users`, `sessions`, `accounts`, `verifications`, `memberships`, `invitations` | Better Auth's tables (global, no RLS); `memberships.role` ∈ admin/reviewer/viewer |
 | `tenant_settings` | PK `tenant_id`: `active_config_id`, webhook URL, the signing secret **encrypted** (`webhook_secret_enc`, AES-256-GCM with the tenant id as AAD) and the previous one during a rotation's grace period, `daily_llm_cap_usd` |
-| `api_keys` | `key_hash` unique, `prefix`, `revoked_at` |
+| `api_keys` | `key_hash` unique, `prefix`, `revoked_at`, `scopes` (`ingest`, `read`) |
 | `inbound_addresses` | `address` unique → tenant |
 | `uploads` | server-issued `storage_key`, expected size/mime, `expires_at`, `completed_at` |
-| `documents` | `source`, `external_id` (Message-ID header, else Postmark MessageID, else content hash), unique `(tenant_id, source, external_id)`, `source_key`, **`processing_status`**, **`review_status`**, **`delivery_status`**, `current_run_id`, `current_extraction_id` |
+| `documents` | `source`, `external_id` (Message-ID header, else Postmark MessageID, else content hash), unique `(tenant_id, source, external_id)`, `external_ref` (the sender's own id, public API), `source_key`, **`processing_status`**, **`review_status`**, **`delivery_status`**, `current_run_id`, `current_extraction_id` |
 | `document_parts` | text with offsets, or per-page PDF text, plus `evidence_mode` (`text`/`pdf_text`/`unverifiable`) |
 | `pipeline_configs` | **immutable versions** (triggers): model ref (a `MODEL_CATALOG` key, e.g. `claude-opus-5-5` or `deepseek:deepseek-flash`), effort and prompt version per stage as explicit columns, `policy`, `parent_id`. The only allowed update sets `frozen_at` once, after calibration. `tenant_settings.active_config_id` points at the active one |
 | `pipeline_config_categories` | per config and category: `schema_version_id` (a composite FK that also matches the category), `threshold`, `automation`, `audit_rate`. Insert-only, and closed once the config is frozen |

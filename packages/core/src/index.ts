@@ -45,6 +45,27 @@ export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 export const DELIVERY_STATUSES = ["none", "pending", "delivered", "failed"] as const;
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
+/**
+ * A document's outcome as the public API reports it: one word a sender can act on, derived from
+ * the three statuses. `approved` covers auto-approval; delivery is reported beside it.
+ */
+export const DOCUMENT_STATES = ["processing", "needs_review", "approved", "rejected", "failed", "skipped"] as const;
+export type DocumentState = (typeof DOCUMENT_STATES)[number];
+
+export function documentState(d: { processingStatus: ProcessingStatus; reviewStatus: ReviewStatus }): DocumentState {
+  if (d.processingStatus === "failed") return "failed";
+  if (d.processingStatus === "skipped") return "skipped";
+  if (d.processingStatus !== "done") return "processing";
+  if (d.reviewStatus === "pending") return "needs_review";
+  if (d.reviewStatus === "rejected") return "rejected";
+  // `approved` by a reviewer, or `not_required` because the route stage auto-approved it.
+  return "approved";
+}
+
+/** What a public API key may do: send documents in, and read them back. */
+export const API_KEY_SCOPES = ["ingest", "read"] as const;
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
 /** The channel a document arrived through (not its content type: an .eml upload is `upload`). */
 export const DOCUMENT_SOURCES = ["email", "upload", "api", "gmail"] as const;
 export type DocumentSource = (typeof DOCUMENT_SOURCES)[number];
@@ -477,6 +498,8 @@ export const API_ERROR_CODES = [
   "no_webhook",
   /** Process anyway, on a document an intake filter didn't skip. */
   "not_skipped",
+  /** The API key lacks the scope the call needs (API_KEY_SCOPES). */
+  "missing_scope",
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 

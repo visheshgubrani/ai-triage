@@ -54,6 +54,7 @@ import { idParam } from "./documents";
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 const toKeySummary = (k: Awaited<ReturnType<typeof listApiKeys>>[number]): ApiKeySummary => ({
   ...k,
+  scopes: k.scopes as ApiKeySummary["scopes"],
   createdAt: k.createdAt.toISOString(),
   lastUsedAt: iso(k.lastUsedAt),
   expiresAt: iso(k.expiresAt),
@@ -139,14 +140,19 @@ export const settingsRoutes = (deps: AppDeps) =>
       return c.json(body, 200);
     })
     .post("/api-keys", validate("json", ApiKeyRequest), async (c) => {
-      const { name, expiresInDays } = c.req.valid("json");
+      const { name, expiresInDays, scopes } = c.req.valid("json");
       const expiresAt = expiresInDays ? new Date(deps.now().getTime() + expiresInDays * 86_400_000) : null;
       const body = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx): Promise<ApiKeyCreated> => {
-        const created = await createApiKey(tx, { name, expiresAt, createdBy: c.var.tenant.user.id });
+        const created = await createApiKey(tx, { name, expiresAt, scopes, createdBy: c.var.tenant.user.id });
         await recordAudit(tx, userActor(c, deps), {
           action: "api_key.created",
           target: { type: "api_key", id: created.id },
-          details: { name, prefix: created.prefix, expiresAt: expiresAt?.toISOString() ?? null },
+          details: {
+            name,
+            prefix: created.prefix,
+            expiresAt: expiresAt?.toISOString() ?? null,
+            scopes: created.scopes,
+          },
         });
         const summary = (await listApiKeys(tx)).find((k) => k.id === created.id);
         if (!summary) throw new Error("created key not found");

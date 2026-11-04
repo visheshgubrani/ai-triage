@@ -5,6 +5,7 @@ Context for coding agents (and humans). Keep it lean: only what every session ne
 - [docs/llm.md](docs/llm.md): model providers, Claude API notes, LLM modes and cassettes.
 - [docs/security.md](docs/security.md): the threat model, controls and the production checklist.
 - [docs/google.md](docs/google.md): the Google OAuth client, Gmail sync and what Google requires.
+- [docs/api.md](docs/api.md): the public REST API (scopes, states) and the webhook receiver contract.
 - [docs/operations.md](docs/operations.md): health checks, logs, metrics, alerts and runbooks. [docs/configuration.md](docs/configuration.md) (generated) lists every variable; [docs/troubleshooting.md](docs/troubleshooting.md) is by symptom.
 
 **ai-triage** is an open-source, multi-tenant AI triage inbox:
@@ -114,6 +115,7 @@ docker compose up            # the whole demo in containers (pulls the GHCR imag
 | The eval runner (`apps/worker/src/evals/`) | No `createAction`, `enqueue` or delivery imports; a source scan and a type test enforce this |
 | A built-in category (template) | Built-ins are code with rules; keep `BUILTIN_CATEGORY_NAMES` (schemas), `BUILTIN_CATEGORIES` (core) and `TEMPLATES` equal (`categories.db.test.ts`). Tenants' own types are data: definitions in `packages/schemas/src/definition.ts`, created in Settings → Categories |
 | How a definition compiles (`compileDefinition`) | Stored versions are insert-only, so old versions keep their schema. Keep the output inside `toApiSchema`'s subset (`definition.test.ts` runs every starter) |
+| A public API route (`/api/v1`) | snake_case like the webhook payload, a scope check (`requireScope`), and docs/api.md |
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |
 | Add a document-derived table | Add it to `purge_document()` (a new migration replacing the function), or purges fail on the FK |
 | Log or measure something | `log` from `apps/{api,worker}/src/{log,observe}.ts` (never `console.*`; lines get the trace id), metrics on their `registry`. Add a new metric to docs/operations.md |

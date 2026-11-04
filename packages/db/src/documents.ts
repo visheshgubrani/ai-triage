@@ -23,6 +23,8 @@ export interface NewDocument {
   source: DocumentSource;
   /** Dedup key per tenant and source: Message-ID for email, else the content's SHA-256. */
   externalId: string;
+  /** The sender's own reference (public API), if it gave one. */
+  externalRef?: string | null;
   /** Server-issued storage key of the source object. */
   sourceKey: string;
   title?: string | null;
@@ -85,6 +87,17 @@ export async function findDocument(tx: TenantTx, source: DocumentSource, externa
     .from(documents)
     .where(and(eq(documents.source, source), eq(documents.externalId, externalId)));
   return row?.id ?? null;
+}
+
+/** The tenant's documents a sender tagged with `externalRef`, newest first (normally one). */
+export async function findDocumentsByExternalRef(tx: TenantTx, externalRef: string, limit = 20): Promise<string[]> {
+  const rows = await tx.db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(eq(documents.externalRef, externalRef))
+    .orderBy(desc(documents.createdAt))
+    .limit(limit);
+  return rows.map((r) => r.id);
 }
 
 /** Newest first, for the documents page. `before` pages by creation time. */

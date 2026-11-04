@@ -1,4 +1,4 @@
-import type { IntakeFilters } from "@ai-triage/core";
+import { API_KEY_SCOPES, type IntakeFilters } from "@ai-triage/core";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -83,9 +83,20 @@ export const apiKeys = pgTable(
     /** Optional: the resolver refuses the key after this (0015_api_key_expiry.sql). */
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /**
+     * What the key may do (API_KEY_SCOPES). Keys from before scopes existed only sent documents,
+     * so the column default keeps them at `{ingest}`; createApiKey() sets new keys' scopes.
+     */
+    scopes: text("scopes").array().notNull().default(sql`'{ingest}'::text[]`),
     createdAt: createdAt(),
   },
-  (t) => [tenantKey("api_keys", t)],
+  (t) => [
+    tenantKey("api_keys", t),
+    check(
+      "api_keys_scopes_check",
+      sql`cardinality(${t.scopes}) > 0 and ${t.scopes} <@ array[${sql.raw(API_KEY_SCOPES.map((s) => `'${s}'`).join(", "))}]::text[]`,
+    ),
+  ],
 );
 
 /** Two-step upload: the server issues `storage_key`; clients never choose one. */

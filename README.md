@@ -102,34 +102,9 @@ DEEPSEEK_API_KEY=… LLM_MODE=record pnpm cassettes:record --yes --model deepsee
 
 DeepSeek Flash can't read PDFs, so scanned documents fail as `unsupported_file` and text PDFs go as text: the run diff shows the difference honestly. With `LLM_MODE=live`, eval runs call the model for real (admins confirm the item count first) and draw on the tenant's daily budget.
 
-## Webhook receiver contract
+## Public API and webhooks
 
-Each approved document is POSTed as JSON (the action payload: `document_id`, `extraction_id`, `category`, `fields`, `approved_by`, `approved_at`) with these headers:
-
-- `Idempotency-Key`: the action id. **Delivery is at least once**, and a manual Redeliver sends the same key, so dedupe on it.
-- `X-Triage-Event: document.approved`
-- `X-Triage-Signature: t=<unix seconds>,v2=<hex>`, where `v2` is HMAC-SHA256 of `<t>.<Idempotency-Key>.<raw body>` with the tenant's secret. After a secret rotation the header carries one `v2` per secret (newest first) for 24 hours; accept the delivery if any of them verifies with the secret you hold.
-
-```js
-import { createHmac, timingSafeEqual } from "node:crypto";
-
-function verify(secret, header, idempotencyKey, rawBody, toleranceSeconds = 300) {
-  const pairs = header.split(",").map((kv) => kv.split("=", 2));
-  const t = pairs.find(([k]) => k === "t")?.[1];
-  if (!t || Math.abs(Date.now() / 1000 - Number(t)) > toleranceSeconds) return false;
-  const expected = createHmac("sha256", secret).update(`${t}.${idempotencyKey}.${rawBody}`).digest();
-  return pairs
-    .filter(([k]) => k === "v2")
-    .some(([, hex]) => {
-      const given = Buffer.from(hex ?? "", "hex");
-      return given.length === expected.length && timingSafeEqual(given, expected);
-    });
-}
-```
-
-Webhook URLs must be public `https://` hosts on port 443, 8443 or above 1023: the API refuses private, loopback and metadata addresses when the URL is saved, and the worker checks again at every connection. Receivers on a private network go in the operator's `WEBHOOK_ALLOWED_HOSTS` (hostnames or CIDRs, which may also use http).
-
-Answer 2xx to accept. 5xx, 408, 425, 429, timeouts (10 s) and network errors are retried with exponential backoff (8 retries, starting at 30 s); any other 4xx or a redirect fails the delivery at once, and it waits under Delivery failures for a Redeliver.
+Other systems send documents with `POST /api/v1/documents` (optionally tagged with their own `external_ref`), and look up what happened with `GET /api/v1/documents/:id` or `?external_ref=`. `GET /api/v1/categories` gives each category's JSON Schema. Approved documents are POSTed to your webhook, signed and delivered at least once. The calls, the states, the signature check (Node and Python) and the retry rules are in [docs/api.md](docs/api.md).
 
 ## Checks
 

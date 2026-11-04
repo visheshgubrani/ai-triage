@@ -1,6 +1,7 @@
 import {
   ACTION_STATUSES,
   API_ERROR_CODES,
+  API_KEY_SCOPES,
   AUDIT_ACTIONS,
   AUDIT_ACTOR_TYPES,
   AUTOMATION_MODES,
@@ -8,6 +9,7 @@ import {
   DECISIONS,
   DELIVERY_STATUSES,
   DOCUMENT_SOURCES,
+  type DocumentState,
   EFFORTS,
   EVAL_ERROR_CODES,
   type EVAL_ITEM_ORIGINS,
@@ -555,6 +557,8 @@ export const ApiKeySummary = z.object({
   lastUsedAt: isoDate.nullable(),
   expiresAt: isoDate.nullable(),
   revokedAt: isoDate.nullable(),
+  /** `ingest` sends documents in; `read` reads them back (and the categories). */
+  scopes: z.array(z.enum(API_KEY_SCOPES)),
 });
 export type ApiKeySummary = z.infer<typeof ApiKeySummary>;
 
@@ -565,6 +569,8 @@ export const ApiKeyRequest = z.object({
   name: z.string().trim().min(1).max(100),
   /** Omitted: the key never expires. */
   expiresInDays: z.number().int().min(1).max(3650).optional(),
+  /** Omitted: both. A key that only sends documents (a mail relay, a scanner) can leave out `read`. */
+  scopes: z.array(z.enum(API_KEY_SCOPES)).min(1).optional(),
 });
 export type ApiKeyRequest = z.infer<typeof ApiKeyRequest>;
 
@@ -977,6 +983,8 @@ export interface CategoryInfo {
   description: string;
   /** Field names in authored order, with whether each is required. */
   fields: { name: string; required: boolean }[];
+  /** The version's JSON Schema, with properties in authored order. */
+  jsonSchema: Record<string, unknown>;
   automation: (typeof AUTOMATION_MODES)[number];
   /** A custom category's definition, to edit; null for a built-in. */
   definition: CategoryDefinition | null;
@@ -1010,3 +1018,47 @@ export interface CategorySaved {
 export type { CategoryDefinition, CategoryDefinitionInput };
 
 export const CategoryNameParam = z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{1,39}$/) });
+
+// ── Public API reads (/api/v1) ───────────────────────────────────────────────────────────────
+// snake_case, like the webhook payload: these are for other systems, not this UI.
+
+/** POST /v1/documents: the file, and optionally the sender's own reference. */
+export const PublicIngestForm = z.object({
+  file: z.instanceof(File),
+  external_ref: z.string().trim().min(1).max(200).optional(),
+});
+
+/** One document as a sender sees it: its outcome, and the fields once extracted. */
+export interface PublicDocument {
+  id: string;
+  external_ref: string | null;
+  created_at: string;
+  /** The one word to act on (DOCUMENT_STATES); the three statuses below are the detail. */
+  state: DocumentState;
+  processing_status: (typeof PROCESSING_STATUSES)[number];
+  review_status: (typeof REVIEW_STATUSES)[number];
+  delivery_status: (typeof DELIVERY_STATUSES)[number];
+  category: string | null;
+  /** The current extraction's fields (a reviewer's edit, once there is one). */
+  fields: Record<string, unknown> | null;
+  /** Why it went to review, or failed: gate reasons, or the failure reason. */
+  reasons: string[];
+  delivered_at: string | null;
+}
+
+export interface PublicDocumentList {
+  documents: PublicDocument[];
+}
+
+export const PublicDocumentQuery = z.object({ external_ref: z.string().trim().min(1).max(200) });
+
+/** GET /v1/categories: what the pipeline sorts into, with the schema of each category's fields. */
+export interface PublicCategoryList {
+  categories: {
+    name: string;
+    origin: (typeof CATEGORY_ORIGINS)[number];
+    version: number;
+    description: string;
+    json_schema: Record<string, unknown>;
+  }[];
+}

@@ -1,5 +1,21 @@
-import type { IgnoredResponse, IngestResponse } from "@ai-triage/contracts";
+import {
+  type IgnoredResponse,
+  type IngestResponse,
+  type PublicCategoryList,
+  type PublicDocument,
+  type PublicDocumentList,
+  PublicDocumentQuery,
+  PublicIngestForm,
+} from "@ai-triage/contracts";
+import { documentState } from "@ai-triage/core";
 import { normalizePostmark, type PostmarkInbound } from "@ai-triage/core/pipeline";
+import {
+  findDocumentsByExternalRef,
+  getActiveConfig,
+  getDocumentDetail,
+  type TenantTx,
+  withTenantTx,
+} from "@ai-triage/db";
 import {
   checkEmailLimits,
   findEmailDuplicate,
@@ -12,12 +28,14 @@ import { Hono } from "hono";
 import { basicAuth } from "hono/basic-auth";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
-import { type ApiKeyEnv, requireApiKey } from "../apikey";
+import { type ApiKeyEnv, requireApiKey, requireScope } from "../apikey";
 import type { AppDeps } from "../deps";
 import { log } from "../log";
 import { overLimit } from "../rate-limit";
 import { sameSecret } from "../security";
 import { validate } from "../validate";
+import { categoryInfos } from "./categories";
+import { idParam } from "./documents";
 
 /** Room for base64 (Postmark) or multipart framing around a maximum-size file. */
 const limit = (deps: AppDeps) =>
@@ -78,7 +96,36 @@ export const webhookRoutes = (deps: AppDeps) =>
     },
   );
 
-/** Public REST API, authenticated with a tenant API key. */
+/** A document as the public API reports it, or null if it isn't the tenant's. */
+async function publicDocument(tx: TenantTx, documentId: string): Promise<PublicDocument | null> {
+  const detail = await getDocumentDetail(tx, documentId);
+  if (!detail) return null;
+  const { document: d, extraction, run, task } = detail;
+  const failure = d.processingStatus === "failed" ? (run?.error?.split(":")[0] ?? "failed") : null;
+  return {
+    id: d.id,
+    external_ref: d.externalRef,
+    created_at: d.createdAt.toISOString(),
+    state: documentState(d),
+    processing_status: d.processingStatus,
+    review_status: d.reviewStatus,
+    delivery_status: d.deliveryStatus,
+    category: extraction?.category ?? null,
+    fields: (extraction?.fields as Record<string, unknown> | undefined) ?? null,
+    reasons: failure
+      ? [failure]
+      : run?.skipReason
+        ? [run.skipReason]
+        : (task?.reasons ?? extraction?.decisionReasons ?? []),
+    delivered_at: detail.actions.findLast((x) => x.deliveredAt)?.deliveredAt?.toISOString() ?? null,
+  };
+}
+
+/**
+ * Public REST API, authenticated with a tenant API key (docs/api.md). `ingest` sends documents in;
+ * `read` looks them up, so a sender can see what happened to one without waiting for a webhook
+ * (which only fires on approval).
+ */
 export const publicApiRoutes = (deps: AppDeps) =>
   new Hono<ApiKeyEnv>()
     .use(requireApiKey(deps.db, deps.pool))
@@ -87,8 +134,8 @@ export const publicApiRoutes = (deps: AppDeps) =>
       if (limited) return limited;
       await next();
     })
-    .post("/documents", limit(deps), validate("form", z.object({ file: z.instanceof(File) })), async (c) => {
-      const { file } = c.req.valid("form");
+    .post("/documents", requireScope("ingest"), limit(deps), validate("form", PublicIngestForm), async (c) => {
+      const { file, external_ref } = c.req.valid("form");
       const result: IngestResponse = await ingestFile(
         deps,
         c.var.apiKey.tenantId,
@@ -97,8 +144,46 @@ export const publicApiRoutes = (deps: AppDeps) =>
           filename: file.name || null,
           mime: file.type || null,
           source: "api",
+          externalRef: external_ref ?? null,
         },
         deps.limits,
       );
       return c.json(result, result.duplicate ? 200 : 201);
+    })
+    .get("/documents/:id", requireScope("read"), idParam, async (c) => {
+      const body = await withTenantTx(deps.pool, c.var.apiKey.tenantId, (tx) =>
+        publicDocument(tx, c.req.valid("param").id),
+      );
+      if (!body) return c.json({ error: "Not found" }, 404);
+      return c.json(body, 200);
+    })
+    // Lookup by the sender's own reference: newest first, normally one.
+    .get("/documents", requireScope("read"), validate("query", PublicDocumentQuery), async (c) => {
+      const { external_ref } = c.req.valid("query");
+      const body = await withTenantTx(deps.pool, c.var.apiKey.tenantId, async (tx): Promise<PublicDocumentList> => {
+        const documents: PublicDocument[] = [];
+        for (const id of await findDocumentsByExternalRef(tx, external_ref)) {
+          const doc = await publicDocument(tx, id);
+          if (doc) documents.push(doc);
+        }
+        return { documents };
+      });
+      return c.json(body, 200);
+    })
+    .get("/categories", requireScope("read"), async (c) => {
+      const body = await withTenantTx(deps.pool, c.var.apiKey.tenantId, async (tx): Promise<PublicCategoryList> => {
+        const config = await getActiveConfig(tx);
+        if (!config) return { categories: [] };
+        const infos = await categoryInfos(tx, config);
+        return {
+          categories: infos.map((i) => ({
+            name: i.category,
+            origin: i.origin,
+            version: i.version,
+            description: i.description,
+            json_schema: i.jsonSchema,
+          })),
+        };
+      });
+      return c.json(body, 200);
     });

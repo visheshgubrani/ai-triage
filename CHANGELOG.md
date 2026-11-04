@@ -50,6 +50,8 @@ Phase 7: production-ready (docs/architecture.md §9).
 - **Intake filters:** auto-replies and bounces (and bulk mail, when turned on in Settings) end as `skipped` before any model call, with no review task. Documents → Skipped has Process anyway.
 - **Documents list:** filters by status, source and category, a title search, and paging.
 - **Custom categories (Settings → Categories):** define your own document types with typed fields (text, numbers, amounts, dates, emails, one-of lists, yes/no, lists, and tables of rows), quote requirements and eval comparators, from scratch or from eight starters (purchase order, receipt, credit note, shipping notice, refund request, job application, insurance claim, order confirmation). Saving activates a version that reviews every category. Built-ins keep their rules; custom categories get every gate but no code rules. They need a live model or the simulator: replay can't serve them.
+- **Public API reads:** `GET /api/v1/documents/:id`, a lookup by your own `external_ref` (sent with `POST /api/v1/documents`), and `GET /api/v1/categories` with each category's JSON Schema. A document reports one `state`: `processing`, `needs_review`, `approved`, `rejected`, `failed` or `skipped`. See `docs/api.md`, which now holds the webhook receiver contract, with a Python signature check beside the Node one.
+- **API key scopes:** `ingest` and `read`, chosen when a key is created (Settings, or `pnpm api-key:create --scopes`). Existing keys keep `ingest` only, so none gains read access by upgrading.
 - Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
 ### Fixed

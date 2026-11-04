@@ -181,6 +181,8 @@ export const documents = pgTable(
     tenantId: tenantId(),
     source: text("source", { enum: DOCUMENT_SOURCES }).notNull(),
     externalId: text("external_id").notNull(),
+    /** The sender's own reference (public API), to look the document up by later. */
+    externalRef: text("external_ref"),
     sourceKey: text("source_key").notNull(),
     title: text("title"),
     mime: text("mime"),
@@ -197,6 +199,8 @@ export const documents = pgTable(
     tenantKey("documents", t),
     unique("documents_source_external_id_key").on(t.tenantId, t.source, t.externalId),
     index("documents_tenant_id_created_at_idx").on(t.tenantId, t.createdAt),
+    index("documents_external_ref_idx").on(t.tenantId, t.externalRef).where(sql`${t.externalRef} is not null`),
+    check("documents_external_ref_check", sql`char_length(${t.externalRef}) <= 200`),
     // The reconciler's scan (stale_work(), 0028): only documents still on their way through the pipeline.
     index("documents_in_flight_idx")
       .on(t.updatedAt)

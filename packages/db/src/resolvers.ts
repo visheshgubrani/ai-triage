@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { API_KEY_SCOPES, type ApiKeyScope } from "@ai-triage/core";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { apiKeys } from "./schema";
@@ -33,7 +34,10 @@ export async function resolveApiKey(db: Db, key: string): Promise<{ tenantId: st
  * Creates an API key for the tenant in `tx`. Only its SHA-256 is stored, so the plaintext is
  * returned once. Format: `tri_<8 hex>_<32 base64url>`; the first part is the display prefix.
  */
-export async function createApiKey(tx: TenantTx, input: { name: string; createdBy?: string; expiresAt?: Date | null }) {
+export async function createApiKey(
+  tx: TenantTx,
+  input: { name: string; createdBy?: string; expiresAt?: Date | null; scopes?: readonly ApiKeyScope[] },
+) {
   const prefix = `tri_${randomBytes(4).toString("hex")}`;
   const key = `${prefix}_${randomBytes(24).toString("base64url")}`;
   const [row] = await tx.db
@@ -45,10 +49,11 @@ export async function createApiKey(tx: TenantTx, input: { name: string; createdB
       keyHash: hashApiKey(key),
       createdBy: input.createdBy,
       expiresAt: input.expiresAt ?? null,
+      scopes: [...new Set(input.scopes ?? API_KEY_SCOPES)],
     })
-    .returning({ id: apiKeys.id });
+    .returning({ id: apiKeys.id, scopes: apiKeys.scopes });
   if (!row) throw new Error("api key insert returned no row");
-  return { id: row.id, key, prefix };
+  return { id: row.id, key, prefix, scopes: row.scopes as ApiKeyScope[] };
 }
 
 export async function revokeApiKey(tx: TenantTx, keyId: string): Promise<boolean> {
@@ -60,8 +65,14 @@ export async function revokeApiKey(tx: TenantTx, keyId: string): Promise<boolean
   return rows.length > 0;
 }
 
-export async function touchApiKey(tx: TenantTx, keyId: string): Promise<void> {
-  await tx.db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, keyId));
+/** Marks the key used and returns its scopes (read here, in the tenant's context, not by the resolver). */
+export async function touchApiKey(tx: TenantTx, keyId: string): Promise<ApiKeyScope[]> {
+  const [row] = await tx.db
+    .update(apiKeys)
+    .set({ lastUsedAt: new Date() })
+    .where(eq(apiKeys.id, keyId))
+    .returning({ scopes: apiKeys.scopes });
+  return (row?.scopes ?? []) as ApiKeyScope[];
 }
 
 /** The tenant's keys, newest first (never the key or its hash). */
@@ -75,6 +86,7 @@ export async function listApiKeys(tx: TenantTx) {
       lastUsedAt: apiKeys.lastUsedAt,
       expiresAt: apiKeys.expiresAt,
       revokedAt: apiKeys.revokedAt,
+      scopes: apiKeys.scopes,
     })
     .from(apiKeys)
     .orderBy(desc(apiKeys.createdAt));
