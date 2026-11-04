@@ -1,17 +1,25 @@
 import { DOCUMENT_MIMES, type Effort, EMAIL_SOURCE_MIME, type LlmStage, type ModelRef } from "@ai-triage/core";
 import {
+  applyOcr,
   type CategoryOption,
   type EmailSender,
   isContentAttachment,
+  type MailSignals,
+  needsOcr,
+  type OcrConfig,
   type ParsedPart,
   type ParseLimits,
   parseEmail,
   parseFile,
+  pdfPageImages,
+  recognizeText,
   type StoredEmail,
 } from "@ai-triage/core/pipeline";
 import { loadSchemaVersions, type PipelineConfig, stagePolicy, type TenantTx } from "@ai-triage/db";
 import { type JsonSchema, schemaDescription } from "@ai-triage/schemas";
 import type { Storage } from "@ai-triage/storage";
+import { log, recordOcrPage } from "../observe";
+import { pageImagesInSandbox, parseInSandbox, type SandboxOptions } from "../parse/sandbox";
 
 // What a model request is built from, shared by the pipeline stages and the eval runner, so an eval
 // of a document sends exactly the bytes production would (and replays from the same cassettes).
@@ -24,18 +32,67 @@ export interface SourceRef {
   title: string | null;
 }
 
-/** Parses a stored source: the normalized email and its attachments, or the file. */
-export async function parseSource(storage: Storage, source: SourceRef, limits: ParseLimits): Promise<ParsedPart[]> {
+/**
+ * Parse limits, plus the sandbox the worker parses in (tests without one parse inline), and the
+ * optional OCR (OCR_URL) with the fetch it uses.
+ */
+export type SourceParseLimits = ParseLimits & {
+  sandbox?: SandboxOptions;
+  ocr?: (OcrConfig & { fetch?: typeof fetch }) | null;
+};
+
+/**
+ * Parses a stored source: the normalized email and its attachments, or the file. With OCR on,
+ * scans and photos then get their text (`ocr_text`); a page OCR can't read stays unverifiable.
+ */
+export async function parseSource(
+  storage: Storage,
+  source: SourceRef,
+  { ocr, ...limits }: SourceParseLimits,
+): Promise<ParsedPart[]> {
+  const parts = await parseOnly(storage, source, limits);
+  if (!ocr || !parts.some(needsOcr)) return parts;
+  const blobs = await loadBlobs(storage, parts.filter(needsOcr));
+  const started = performance.now();
+  const outcome = await applyOcr(ocr, parts, blobs, {
+    pageImages: (bytes, pages) =>
+      limits.sandbox ? pageImagesInSandbox({ bytes, pages: [...pages] }, limits.sandbox) : pdfPageImages(bytes, pages),
+    recognize: async (image) => {
+      const t = performance.now();
+      try {
+        const text = await recognizeText(ocr, image, { fetch: ocr.fetch });
+        recordOcrPage(true, performance.now() - t);
+        return text;
+      } catch (err) {
+        recordOcrPage(false, performance.now() - t);
+        throw err;
+      }
+    },
+  });
+  const fields = { source: source.sourceKey, pages: outcome.read, ms: Math.round(performance.now() - started) };
+  if (outcome.failed.length > 0) log.warn("OCR left pages unread", { ...fields, failed: outcome.failed });
+  else log.info("OCR read the document", fields);
+  return outcome.parts;
+}
+
+async function parseOnly(
+  storage: Storage,
+  source: SourceRef,
+  { sandbox, ...limits }: Omit<SourceParseLimits, "ocr">,
+): Promise<ParsedPart[]> {
   if (source.mime === EMAIL_SOURCE_MIME) {
     const email = JSON.parse(new TextDecoder().decode(await storage.get(source.sourceKey))) as StoredEmail;
     const attachments = email.attachments.filter(isContentAttachment);
     const blobs = new Map(
       await Promise.all(attachments.map(async (a) => [a.storageKey, await storage.get(a.storageKey)] as const)),
     );
+    if (sandbox) return parseInSandbox({ kind: "email", email, blobs, limits }, sandbox);
     return parseEmail(email, blobs, limits);
   }
   const bytes = await storage.get(source.sourceKey);
-  return parseFile({ label: source.title, bytes, declaredMime: source.mime, storageKey: source.sourceKey }, limits);
+  const file = { label: source.title, bytes, declaredMime: source.mime, storageKey: source.sourceKey };
+  if (sandbox) return parseInSandbox({ kind: "file", file, limits }, sandbox);
+  return parseFile(file, limits);
 }
 
 /**
@@ -47,6 +104,13 @@ export async function loadSender(storage: Storage, source: SourceRef): Promise<E
   if (source.mime !== EMAIL_SOURCE_MIME) return null;
   const email = JSON.parse(new TextDecoder().decode(await storage.get(source.sourceKey))) as StoredEmail;
   return { authResults: email.authResults ?? [], ...(email.receivedBy ? { receivedBy: email.receivedBy } : {}) };
+}
+
+/** What the intake filters read: an email source's header signals (none for files). */
+export async function loadSignals(storage: Storage, source: SourceRef): Promise<MailSignals | undefined> {
+  if (source.mime !== EMAIL_SOURCE_MIME) return undefined;
+  const email = JSON.parse(new TextDecoder().decode(await storage.get(source.sourceKey))) as StoredEmail;
+  return email.signals;
 }
 
 const BINARY = new Set<string>([DOCUMENT_MIMES.pdf, DOCUMENT_MIMES.png, DOCUMENT_MIMES.jpeg]);
@@ -82,8 +146,13 @@ export async function loadCategoryOptions(tx: TenantTx, config: PipelineConfig):
     tx,
     config.categories.map((c) => c.schemaVersionId),
   );
-  return config.categories.map((c) => ({
-    name: c.category,
-    description: schemaDescription((versions.find((v) => v.id === c.schemaVersionId)?.jsonSchema ?? {}) as JsonSchema),
-  }));
+  return config.categories.map((c) => {
+    const version = versions.find((v) => v.id === c.schemaVersionId);
+    const examples = (version?.definition as { examples?: string[] } | null)?.examples;
+    return {
+      name: c.category,
+      description: schemaDescription((version?.jsonSchema ?? {}) as JsonSchema),
+      ...(examples?.length ? { examples } : {}),
+    };
+  });
 }

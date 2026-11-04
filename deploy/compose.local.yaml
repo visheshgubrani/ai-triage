@@ -1,0 +1,7 @@
+# A local install (install.sh without --host): only this machine reaches it. APP_PORT and
+# FILES_PORT come from .env (`install.sh --port`), matching PUBLIC_URL and S3_PUBLIC_ENDPOINT.
+services:
+  caddy:
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:${APP_PORT:-3000}"
+      - "127.0.0.1:${FILES_PORT:-3001}:${FILES_PORT:-3001}"

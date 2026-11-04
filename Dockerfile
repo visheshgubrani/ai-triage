@@ -1,6 +1,7 @@
-# One image for the app: `init` (migrations + demo seed), `api`, `worker` and `web` run it with
-# different commands (compose.yaml). Workspace packages ship TypeScript source and the seeds run with
-# tsx, so the image keeps the workspace and its dependencies rather than only the bundles.
+# One image for every process (docs/deploy.md): `api`, `worker`, `web`, `migrate`, `seed-demo` and
+# the CLIs, chosen by the first argument (infra/docker/entrypoint.sh). The api, worker and CLIs are
+# bundled with their dependencies (tsup) and web is Next's standalone output, so the runtime stage
+# holds node and those files, not the workspace or its node_modules.
 
 # Base images are pinned by digest (Dependabot proposes updates), so a rebuild gets the same bytes.
 FROM node:24-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS build
@@ -22,25 +23,38 @@ COPY packages/llm/package.json packages/llm/
 COPY packages/mailbox/package.json packages/mailbox/
 COPY packages/schemas/package.json packages/schemas/
 COPY packages/storage/package.json packages/storage/
+COPY packages/telemetry/package.json packages/telemetry/
+COPY packages/webhooks/package.json packages/webhooks/
 COPY fixtures/package.json fixtures/
 RUN pnpm install --frozen-lockfile
 
 COPY . .
-# The browser calls the API at this URL; Next inlines it at build time.
-ARG NEXT_PUBLIC_API_URL=http://localhost:8787
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL NEXT_TELEMETRY_DISABLED=1
+# No URL is baked in: the browser calls /api on whatever origin serves the app.
+ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
+# sharp serves only next/image's optimizer, which is off (next.config.ts). It's the one native
+# module, built for glibc, and the runtime is musl.
+RUN rm -rf apps/web/.next/standalone/node_modules/.pnpm/sharp@* apps/web/.next/standalone/node_modules/.pnpm/@img+*
 
-FROM node:24-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c
-ENV CI=true NODE_ENV=production NEXT_TELEMETRY_DISABLED=1
-# The image is installed once, at build time. pnpm would otherwise re-run an install before each
-# script, which under NODE_ENV=production prunes devDependencies the seeds need (tsx).
-ENV pnpm_config_verify_deps_before_run=false
-RUN npm install -g pnpm@12.11.2
+# The runtime holds plain JavaScript (no native modules), so it runs on the smaller Alpine image.
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 MIGRATIONS_DIR=/app/packages/db/migrations
 WORKDIR /app
+# pnpm-workspace.yaml marks the root that relative paths (fixtures, cassettes) resolve from.
+COPY --from=build /app/pnpm-workspace.yaml /app/package.json ./
+COPY --from=build /app/apps/web/.next/standalone ./
+COPY --from=build /app/apps/web/.next/static apps/web/.next/static
+COPY --from=build /app/apps/api/dist apps/api/dist
+COPY --from=build /app/apps/worker/dist apps/worker/dist
+COPY --from=build /app/packages/db/migrations packages/db/migrations
+# The demo seed's documents and the recorded responses that replay mode serves.
+COPY --from=build /app/fixtures/manifest.json fixtures/
+COPY --from=build /app/fixtures/docs fixtures/docs
+COPY --from=build /app/fixtures/cassettes fixtures/cassettes
+COPY --chmod=755 infra/docker/entrypoint.sh /usr/local/bin/entrypoint
 # The app's files stay owned by root: the `node` user runs them but can't change them. Only Next's
 # cache is writable.
-COPY --from=build /app /app
-RUN mkdir -p apps/web/.next/cache && chown -R node:node apps/web/.next/cache
+RUN mkdir -p apps/web/.next/cache && chown node:node apps/web/.next/cache
 USER node
-CMD ["pnpm", "--filter", "@ai-triage/api", "start"]
+ENTRYPOINT ["entrypoint"]
+CMD ["api"]

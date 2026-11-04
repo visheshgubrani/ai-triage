@@ -1,8 +1,17 @@
 import { randomUUID } from "node:crypto";
 import { QUEUES } from "@ai-triage/core";
-import { createApiKey, getDocumentDetail, insertUpload, revokeApiKey, stageJobId, withTenantTx } from "@ai-triage/db";
+import {
+  buildPipelineConfig,
+  createApiKey,
+  generateInboundAddress,
+  getDocumentDetail,
+  insertUpload,
+  revokeApiKey,
+  stageJobId,
+  withTenantTx,
+} from "@ai-triage/db";
 import { DEMO_TENANT } from "@ai-triage/db/seed";
-import { newTenant } from "@ai-triage/db/testing";
+import { newTenant, tenantQuery } from "@ai-triage/db/testing";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createTestApp, POSTMARK, WEB_ORIGIN } from "./test-app";
 
@@ -154,10 +163,72 @@ describe("Postmark webhook", () => {
     expect(await count()).toBe(jobsBefore);
   });
 
+  it("takes a large payload with no Origin header at /api and at the older root path", async () => {
+    // Over the 1 MiB JSON limit of the UI routes; Postmark sends no Origin.
+    const big = (messageId: string) => ({
+      ...payload(messageId),
+      TextBody: `Please pay invoice 42.${" ".repeat(2 ** 21)}`,
+    });
+    const init = (body: unknown) => ({
+      method: "POST",
+      headers: { authorization: auth, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const atApi = await t.server.request("/api/webhooks/postmark", init(big(randomUUID())));
+    expect(atApi.status).toBe(200);
+    expect(atApi.headers.get("deprecation")).toBeNull();
+    const atRoot = await t.server.request("/webhooks/postmark", init(big(randomUUID())));
+    expect(atRoot.status).toBe(200);
+    expect(atRoot.headers.get("deprecation")).toBe("true");
+    expect(atRoot.headers.get("link")).toBe('</api/webhooks/postmark>; rel="successor-version"');
+    // The root path keeps the edge stack: request ids and secure headers.
+    expect(atRoot.headers.get("x-request-id")).toBeTruthy();
+    expect(atRoot.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("routes mail forwarded to a Postmark server's own address by its plus part (no DNS needed)", async () => {
+    const address = generateInboundAddress("abc123@inbound.postmarkapp.com");
+    expect(address).toMatch(/^abc123\+t-[0-9a-f]{20}@inbound\.postmarkapp\.com$/);
+    const tenantId = await newTenant(pool);
+    await withTenantTx(pool, tenantId, (tx) => buildPipelineConfig(tx));
+    await tenantQuery(pool, tenantId, "insert into inbound_addresses (tenant_id, address) values ($1, $2)", [
+      tenantId,
+      address,
+    ]);
+    // A forwarding rule keeps the original To (the company's own mailbox); the envelope recipient,
+    // which Postmark reports as OriginalRecipient, is the plus-address.
+    const forwarded = {
+      ...payload(randomUUID()),
+      OriginalRecipient: address,
+      ToFull: [{ Email: "invoices@acme.test" }],
+    };
+    const res = await post(forwarded);
+    expect(res.status).toBe(200);
+    const { documentId } = (await res.json()) as { documentId: string };
+    expect((await parseJobFor(tenantId, documentId)).doc).toMatchObject({ source: "email" });
+  });
+
   it("ignores mail for an unknown address", async () => {
     const res = await post(payload(randomUUID(), "nobody@inbound.localhost"));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ignored: "unknown_recipient" });
+  });
+});
+
+describe("trace ids", () => {
+  it("put the request's id into the job it enqueues, so the worker logs under it", async () => {
+    const { key } = await withTenantTx(pool, demoId, (tx) => createApiKey(tx, { name: "trace" }));
+    const form = new FormData();
+    form.set("file", new File([`Trace ${randomUUID()}`], "trace.txt", { type: "text/plain" }));
+    const res = await app.request("/v1/documents", {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}` },
+      body: form,
+    });
+    expect(res.status).toBe(201);
+    const { documentId } = (await res.json()) as { documentId: string };
+    const { job } = await parseJobFor(demoId, documentId);
+    expect((job as { data: { traceId?: string } }).data.traceId).toBe(res.headers.get("x-request-id"));
   });
 });
 
@@ -205,5 +276,46 @@ describe("documents", () => {
     const outsider = await t.memberCookie(await newTenant(pool), "viewer");
     expect((await app.request(`/documents/${id}`, { headers: { cookie: outsider } })).status).toBe(404);
     expect((await app.request("/documents/nope", { headers: { cookie: admin } })).status).toBe(404);
+  });
+});
+
+describe("intake filters and the documents list", () => {
+  it("lets admins change intake filters, audited", async () => {
+    const tenant = await newTenant(pool);
+    const admin = await t.memberCookie(tenant, "admin");
+    const reviewer = await t.memberCookie(tenant, "reviewer");
+    const get = await app.request("/settings/intake", { headers: { cookie: admin } });
+    expect(await get.json()).toEqual({ auto_replies: true, bounces: true, bulk: false });
+    const put = (cookie: string) =>
+      app.request("/settings/intake", {
+        method: "PUT",
+        headers: { cookie, origin: WEB_ORIGIN, "content-type": "application/json" },
+        body: JSON.stringify({ auto_replies: true, bounces: true, bulk: true }),
+      });
+    expect((await put(reviewer)).status).toBe(403);
+    expect((await put(admin)).status).toBe(200);
+    const audit = await withTenantTx(pool, tenant, (tx) =>
+      tx.db.execute("select details from audit_events where action = 'intake_filters.updated'"),
+    );
+    expect(audit.rows[0]?.details).toMatchObject({ after: { bulk: true }, before: { bulk: false } });
+  });
+
+  it("filters the list by status, and refuses Process anyway for a document that wasn't skipped", async () => {
+    const admin = await t.memberCookie(demoId, "admin");
+    const { uploadId } = await upload(admin, new TextEncoder().encode(`List ${randomUUID()}`));
+    const done = await app.request(`/uploads/${uploadId}/complete`, json(admin, {}));
+    const { documentId } = (await done.json()) as { documentId: string };
+    const received = await app.request("/documents?status=received", { headers: { cookie: admin } });
+    const list = (await received.json()) as {
+      documents: { id: string; processingStatus: string }[];
+      nextBefore: string | null;
+    };
+    expect(list.documents.every((d) => d.processingStatus === "received")).toBe(true);
+    expect(list.documents.map((d) => d.id)).toContain(documentId);
+    const process = await app.request(`/documents/${documentId}/process`, {
+      method: "POST",
+      headers: { cookie: admin, origin: WEB_ORIGIN },
+    });
+    expect(process.status).toBe(409);
   });
 });

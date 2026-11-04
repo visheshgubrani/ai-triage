@@ -229,7 +229,11 @@ export function RunsView({ isAdmin }: { isAdmin: boolean }) {
                     <td>{r.summary ? <RateText rate={r.summary.accuracy} /> : "-"}</td>
                     <td>{r.summary ? <RateText rate={r.summary.autoPrecision} /> : "-"}</td>
                     <td className="tabular-nums">
-                      {r.summary ? usd(r.summary.totalUsd) : "-"} <ReplayBadge replay={r.llmMode === "replay"} />
+                      {r.summary ? usd(r.summary.totalUsd) : "-"}{" "}
+                      <ReplayBadge
+                        replay={r.llmMode === "replay"}
+                        models={[r.config.classifyModel, r.config.extractModel]}
+                      />
                     </td>
                   </tr>
                 ))}

@@ -1,4 +1,4 @@
-import { lt, sql } from "drizzle-orm";
+import { and, eq, lt, sql } from "drizzle-orm";
 import type { Db } from "./index";
 import { rateLimitHits } from "./schema";
 
@@ -25,6 +25,16 @@ export async function hitRateLimit(db: Db, bucket: string, windowSeconds: number
     })
     .returning({ count: rateLimitHits.count });
   return { count: row?.count ?? 1, resetAt: new Date(start.getTime() + windowMs) };
+}
+
+/** Takes back one count from the window containing `now` (an attempt that was refused and requeued). */
+export async function releaseRateLimitHit(db: Db, bucket: string, windowSeconds: number, now: Date): Promise<void> {
+  const windowMs = windowSeconds * 1000;
+  const start = new Date(Math.floor(now.getTime() / windowMs) * windowMs);
+  await db
+    .update(rateLimitHits)
+    .set({ count: sql`greatest(${rateLimitHits.count} - 1, 0)` })
+    .where(and(eq(rateLimitHits.bucket, bucket), eq(rateLimitHits.windowStart, start)));
 }
 
 /** Deletes windows that ended before `before` (worker cron). */

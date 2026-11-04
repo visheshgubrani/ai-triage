@@ -19,9 +19,27 @@ export interface NewTenant {
 /**
  * An inbound address nobody can guess (80 random bits): anyone who knows a tenant's address can
  * put mail into its pipeline and spend its budget, so it shouldn't be derivable from the tenant.
+ *
+ * `inbound` (INBOUND_DOMAIN) is either a domain whose MX points at Postmark (`t-…@inbound.acme.com`)
+ * or a Postmark server's own inbound address, which needs no DNS: Postmark delivers
+ * `<hash>+anything@inbound.postmarkapp.com` to that server, with the full address as the recipient.
  */
-export const generateInboundAddress = (domain: string) =>
-  `t-${randomBytes(10).toString("hex")}@${domain.toLowerCase()}`;
+export function generateInboundAddress(inbound: string): string {
+  const token = `t-${randomBytes(10).toString("hex")}`;
+  const at = inbound.lastIndexOf("@");
+  if (at < 0) return `${token}@${inbound.toLowerCase()}`;
+  const local = inbound.slice(0, at).split("+")[0];
+  return `${local}+${token}@${inbound.slice(at + 1)}`.toLowerCase();
+}
+
+/** What an existing address was generated from: its domain, or its Postmark server address. */
+export function inboundBase(address: string): string | undefined {
+  const at = address.lastIndexOf("@");
+  if (at < 0) return undefined;
+  const local = address.slice(0, at);
+  const plus = local.indexOf("+");
+  return plus < 0 ? address.slice(at + 1) : `${local.slice(0, plus)}@${address.slice(at + 1)}`;
+}
 
 /**
  * Creates a tenant with its settings (and optional inbound address) in one transaction.
@@ -64,6 +82,11 @@ export async function getTenant(db: NodePgDatabase<typeof schema>, tenantId: str
   return row ?? null;
 }
 
+/** Every tenant, for operator tooling (preflight). Tenants are a global table. */
+export async function listTenants(db: NodePgDatabase<typeof schema>) {
+  return db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug }).from(tenants).orderBy(tenants.slug);
+}
+
 export async function findTenantBySlug(db: NodePgDatabase<typeof schema>, slug: string) {
   const [row] = await db
     .select({ id: tenants.id, name: tenants.name })
@@ -85,7 +108,7 @@ export async function listInboundAddresses(tx: TenantTx): Promise<string[]> {
  */
 export async function rotateInboundAddress(tx: TenantTx, domain?: string): Promise<{ from: string[]; to: string }> {
   const from = await listInboundAddresses(tx);
-  const at = domain ?? from[0]?.split("@")[1];
+  const at = domain ?? (from[0] ? inboundBase(from[0]) : undefined);
   if (!at) throw new Error("no inbound domain: set INBOUND_DOMAIN");
   const to = generateInboundAddress(at);
   await tx.db.delete(inboundAddresses);

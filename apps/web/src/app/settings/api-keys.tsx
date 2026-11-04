@@ -10,7 +10,10 @@ import { ago } from "@/lib/format";
 
 const input = "rounded-md border border-neutral-300 bg-transparent px-3 py-1.5 text-sm dark:border-neutral-700";
 
-/** Keys for the REST API (`POST /v1/documents`). A new key is shown once; only its prefix is kept. */
+/**
+ * Keys for the REST API (docs/api.md). A new key is shown once; only its prefix is kept. A key that
+ * only sends documents in (a scanner, a mail relay) can leave out reading them back.
+ */
 export function ApiKeysView() {
   const [keys, setKeys] = useState<ApiKeySummary[]>([]);
   const [created, setCreated] = useState<string | null>(null);
@@ -30,8 +33,9 @@ export function ApiKeysView() {
     const form = event.currentTarget;
     const data = new FormData(form);
     const days = Number(data.get("days"));
+    const scopes: ApiKeySummary["scopes"] = data.get("read") ? ["ingest", "read"] : ["ingest"];
     const res = await browserApi.settings["api-keys"].$post({
-      json: { name: String(data.get("name")), ...(days > 0 ? { expiresInDays: days } : {}) },
+      json: { name: String(data.get("name")), scopes, ...(days > 0 ? { expiresInDays: days } : {}) },
     });
     if (!res.ok) return setMessage((await readError(res)).error);
     setCreated((await res.json()).key);
@@ -59,6 +63,10 @@ export function ApiKeysView() {
           <option value="365">Expires in a year</option>
           <option value="0">Never expires</option>
         </select>
+        <label className="flex items-center gap-1.5">
+          <input type="checkbox" name="read" defaultChecked />
+          Can read documents
+        </label>
         <Button type="submit" variant="primary">
           Create
         </Button>
@@ -84,6 +92,7 @@ export function ApiKeysView() {
           <tr>
             <th className="py-1 pr-2 font-medium">Name</th>
             <th className="py-1 pr-2 font-medium">Key</th>
+            <th className="py-1 pr-2 font-medium">Can</th>
             <th className="py-1 pr-2 font-medium">Last used</th>
             <th className="py-1 pr-2 font-medium">Expires</th>
             <th className="py-1 font-medium" />
@@ -94,6 +103,7 @@ export function ApiKeysView() {
             <tr key={k.id} className="border-t border-neutral-100 dark:border-neutral-900">
               <td className="py-1 pr-2">{k.name}</td>
               <td className="py-1 pr-2 font-mono">{k.prefix}…</td>
+              <td className="py-1 pr-2">{k.scopes.includes("read") ? "send, read" : "send"}</td>
               <td className="py-1 pr-2">{k.lastUsedAt ? ago(k.lastUsedAt) : "never"}</td>
               <td className="py-1 pr-2">{k.expiresAt ? new Date(k.expiresAt).toLocaleDateString() : "never"}</td>
               <td className="py-1 text-right">

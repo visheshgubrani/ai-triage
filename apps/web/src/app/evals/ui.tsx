@@ -26,7 +26,18 @@ export function RateText({ rate, empty = "-" }: { rate: Rate; empty?: string }) 
   );
 }
 
-export function ReplayBadge({ replay }: { replay: boolean }) {
+/** "Simulated" for a run on `sim:` models (no real model answered), else "Replay" for cassettes. */
+export function ReplayBadge({ replay, models = [] }: { replay: boolean; models?: string[] }) {
+  if (models.some((m) => m.startsWith("sim:"))) {
+    return (
+      <span
+        title="Answered by the simulator: fake, schema-valid outputs at no cost. The numbers measure the system, not a model."
+        className="rounded bg-violet-100 px-1.5 py-0.5 text-xs font-medium text-violet-800 dark:bg-violet-950 dark:text-violet-300"
+      >
+        Simulated
+      </span>
+    );
+  }
   if (!replay) return null;
   return (
     <span

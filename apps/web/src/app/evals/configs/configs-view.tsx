@@ -189,11 +189,14 @@ export function ConfigsView({ isAdmin }: { isAdmin: boolean }) {
                           Derive
                         </Button>
                       )}
-                      {isAdmin && c.frozenAt && !c.active && (
-                        <Button variant="primary" onClick={() => void activate(c)}>
-                          Activate
-                        </Button>
-                      )}
+                      {/* Frozen versions, and versions that review every category (nothing to calibrate). */}
+                      {isAdmin &&
+                        !c.active &&
+                        (c.frozenAt || c.categories.every((cat) => cat.automation === "review_all")) && (
+                          <Button variant="primary" onClick={() => void activate(c)}>
+                            Activate
+                          </Button>
+                        )}
                     </td>
                   </tr>
                 ))}

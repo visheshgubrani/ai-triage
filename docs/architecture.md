@@ -39,16 +39,17 @@ Stack: **TypeScript monorepo, Hono API + Next.js UI, Postgres (RLS) + pg-boss, S
  Postmark inbound ─┐                                     ┌─> Next.js: inbox · review · evals · settings
  Upload (2-step)   ├─> Hono API ─tx─> Postgres (RLS) <───┤   (Hono RPC typed client)
  REST API / CLI   ─┘    insert doc + enqueue (same tx)    │
+ Gmail (sync) ─────> worker: poll → history → fetch ──────┤   (per-mailbox OAuth, read-only)
                         │                                 │
                   RustFS/S3 (server-issued keys)          │
                         ^                                 │
  pg-boss ──> worker: parse → classify → extract → route ──┼─> auto (+not sampled) ─> actions outbox ─> signed webhook
                          │ LLM response saved immediately └─> review / audit ─> human ─> actions outbox
                          v
-                   Claude API      (eval runner: same core, results → eval_results only)
+                   model API       (eval runner: same core, results → eval_results only)
 ```
 
-Three processes from one image (`web`, `api`, `worker`), plus Postgres and RustFS in docker-compose.
+Three processes from one image (`web`, `api`, `worker`), plus Postgres and RustFS in docker-compose. The model API is Claude or any OpenAI-compatible provider (§5); the demo replays GPT-6.1 Terra.
 
 **Why pg-boss over QStash:** jobs are enqueued in the same transaction as the data that triggers them, and only when the transaction's client is passed to `boss.send(…, { db })`; sharing a database isn't enough on its own. It also means no public worker endpoints, no HTTP timeouts on slow LLM or PDF work, built-in retries, cron and dead-lettering, and stuck jobs you can find with SQL. The queue sits behind a small `Queue` interface.
 
@@ -59,22 +60,26 @@ Three processes from one image (`web`, `api`, `worker`), plus Postgres and RustF
 ```
 apps/web        Next.js App Router (UI only)
 apps/api        Hono on Node: UI REST, public API (tenant API keys), Postmark webhook, upload flow
-apps/worker     pg-boss handlers: pipeline stages, webhook delivery and their dead letters
+apps/worker     pg-boss handlers: pipeline stages, webhook delivery, mailbox sync, evals, maintenance
 packages/db         Drizzle schema, RLS + composite-FK migrations, withTenantTx(), seeds
-packages/core       pure pipeline: parse, classify, extract, verifyEvidence, gates, route → {decision, proposedAction}
+packages/core       closed sets, and the pure pipeline (./pipeline): parse, classify, extract, verifyEvidence, gates, route
 packages/llm        model gateway (Claude + OpenAI-compatible adapters): call → llm_calls (tokens, cost, latency); live | record | replay modes
 packages/schemas    category templates (Zod) → JSON Schema; toApiSchema(); Ajv validators
+packages/storage    S3 client, presigned URLs, server-issued storage keys
+packages/ingest     ingestion paths: store the source, then create document + run + parse job
 packages/evals      comparators, metrics, Wilson interval, threshold sweep, run diff
+packages/mailbox    mail providers: Google OAuth and Gmail REST over an injected fetch, plus a fake Google
 packages/contracts  Zod API types shared by api + web
 fixtures/           synthetic emails/PDFs/scans per category (+ ambiguous, injection); LLM cassettes
-infra/              webhook-catcher (local receiver that verifies signatures), later the Dockerfile
+infra/              webhook-catcher (a local receiver that verifies signatures)
+Dockerfile          one image for api, worker, web and the one-shot init
 ```
 
 **OSS ergonomics:**
-- **The quickstart is `docker compose up --build`.** A one-shot `init` service runs migrations, creates the storage bucket and seeds the demo tenant (around 60 synthetic documents and a labeled dataset with splits), and it is idempotent. `api`, `worker` and `web` wait for it with `depends_on: condition: service_completed_successfully`. The demo runs in **replay mode**, so the evals page is populated and no API key is needed.
+- **The quickstart is `docker compose up`** (it pulls the prebuilt image, or builds it). A one-shot `init` service runs migrations, creates the storage bucket and seeds the demo tenant (around 60 synthetic documents and a labeled dataset with splits), and it is idempotent. `api`, `worker` and `web` wait for it with `depends_on: condition: service_completed_successfully`. The demo runs in **replay mode**, so the evals page is populated and no API key is needed.
 - **`LLM_MODE` is explicit.** `replay` (the default) serves cassettes from `fixtures/cassettes`, keyed by request hash. **A missing cassette is a hard error** (`CassetteMissError`, naming the hash and the record command), never a silent fallback to a paid call. `record` calls the live API and writes cassettes. `live` has to be set on purpose.
-- The contributor dev loop is `docker compose up -d postgres storage` followed by `pnpm dev`. `pnpm ingest <file>` pushes an .eml, PDF or JSON file through the real ingestion path.
-- **Web in Docker:** server components call the API at `API_INTERNAL_URL` (compose: `http://api:8787`); the browser uses `NEXT_PUBLIC_API_URL`, inlined at build time.
+- The contributor dev loop is `pnpm infra:up`, `pnpm db:migrate`, `pnpm db:seed`, then `pnpm dev`. `pnpm ingest <file>` pushes an .eml, PDF or JSON file through the real ingestion path.
+- **One origin:** the API is served under `/api` on the web app's origin (`PUBLIC_URL`). In containers Caddy routes `/api/*` to the api and the rest to web; `pnpm dev` uses a Next rewrite instead (never in containers: Next's proxy caps bodies at 10 MB, times out at 30 s and can't vouch for X-Forwarded-For). Server components call the API directly at `API_INTERNAL_URL` (compose: `http://api:8787`). So no URL is baked into the image, and session cookies work on any hostname. `/health` and the machine routes (`/webhooks`, `/v1`) also answer at the root, for probes and older integrations.
 - **Fixtures** are generated once and committed, and cassettes are keyed by the exact request bytes, so fixtures don't change casually. Providers, modes and recording are in [llm.md](llm.md).
 - The README carries the architecture diagram, an evals screenshot, a "design decisions" section and a "known limits" section (repeat model calls, what evidence matching proves, injection).
 
@@ -98,6 +103,8 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
   - **2FA:** a Google sign-in asks for TOTP like a password sign-in (`auth-oauth-2fa.ts`). A Google-only user changes 2FA with a sign-in from the last 10 minutes instead of a password.
   - **Invitations** (`members.ts`) are copyable links `/invite#<token>`: only the token's SHA-256 is stored, and each works once within 7 days and can be revoked. Accepted with Google (the verified email must match), or with a password when the admin allows it (that user stays unverified, so Google can't take the account over). `pnpm tenant:create` makes a tenant with a default config and its first admin's link.
   - **Members:** role changes and removal keep at least one admin, under a lock on the tenant's admin memberships.
+  - **First run (phase 7):** while no tenant exists, the api keeps a one-time setup token (its SHA-256 in the global `installation` table, valid 24 h) and logs `<PUBLIC_URL>/setup#<token>`; `pnpm setup-link` prints a fresh one. The setup page posts it to `POST /api/setup`, which claims it once (and refuses if any tenant exists by then), then calls `createWorkspace()`: the same as `tenant:create`, with the tenant, a default config and an admin invitation. The page continues at the invite link, so no new sign-up path exists.
+  - **Getting started:** `GET /api/onboarding` derives a checklist from the tenant's own data: whether a running worker can run the active config (heartbeats report each worker's keys, simulator and recordings), intake, a first document, a verified webhook (Send test event: a signed `ping`), the team, an eval set, and calibrated automation. Only its dismissal is stored.
   - **Workspace domain:** claimed by signing in to a Workspace account in it (`hd=*`; the domain is the ID token's `hd`), with one tenant per domain. New users from it join as viewer or reviewer at creation only.
 
 ---
@@ -108,14 +115,14 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 |---|---|
 | `tenants`, `users`, `sessions`, `accounts`, `verifications`, `memberships`, `invitations` | Better Auth's tables (global, no RLS); `memberships.role` ∈ admin/reviewer/viewer |
 | `tenant_settings` | PK `tenant_id`: `active_config_id`, webhook URL, the signing secret **encrypted** (`webhook_secret_enc`, AES-256-GCM with the tenant id as AAD) and the previous one during a rotation's grace period, `daily_llm_cap_usd` |
-| `api_keys` | `key_hash` unique, `prefix`, `revoked_at` |
+| `api_keys` | `key_hash` unique, `prefix`, `revoked_at`, `scopes` (`ingest`, `read`) |
 | `inbound_addresses` | `address` unique → tenant |
 | `uploads` | server-issued `storage_key`, expected size/mime, `expires_at`, `completed_at` |
-| `documents` | `source`, `external_id` (Message-ID header, else Postmark MessageID, else content hash), unique `(tenant_id, source, external_id)`, `source_key`, **`processing_status`**, **`review_status`**, **`delivery_status`**, `current_run_id`, `current_extraction_id` |
-| `document_parts` | text with offsets, or per-page PDF text, plus `evidence_mode` (`text`/`pdf_text`/`unverifiable`) |
+| `documents` | `source`, `external_id` (Message-ID header, else Postmark MessageID, else content hash), unique `(tenant_id, source, external_id)`, `external_ref` (the sender's own id, public API), `source_key`, **`processing_status`**, **`review_status`**, **`delivery_status`**, `current_run_id`, `current_extraction_id` |
+| `document_parts` | text with offsets, or per-page PDF text, plus `evidence_mode` (`text`/`pdf_text`/`unverifiable`/`ocr_text`). `ocr_text` is a scan's page or a photo read by the optional OCR (`packages/core/src/pipeline/ocr.ts`). The gate checks its quotes like `pdf_text` (pages) or `text` (photos), and a page-less quote may match any OCR'd page |
 | `pipeline_configs` | **immutable versions** (triggers): model ref (a `MODEL_CATALOG` key, e.g. `claude-opus-5-5` or `deepseek:deepseek-flash`), effort and prompt version per stage as explicit columns, `policy`, `parent_id`. The only allowed update sets `frozen_at` once, after calibration. `tenant_settings.active_config_id` points at the active one |
 | `pipeline_config_categories` | per config and category: `schema_version_id` (a composite FK that also matches the category), `threshold`, `automation`, `audit_rate`. Insert-only, and closed once the config is frozen |
-| `category_schema_versions`, `prompt_versions` | immutable |
+| `category_schema_versions`, `prompt_versions` | immutable. A schema version is `builtin` (compiled from a template in code) or `custom` (compiled from a tenant's `definition`, which it stores in field order). CHECKs keep a definition off the built-in names and `other` |
 | `processing_runs` | document, `config_id`, trigger (`ingest`/`retry`/`reclassify`), `forced_category`, status, `superseded_by` |
 | `llm_calls` | **one row per attempt**. Execution context is **either** `processing_run_id` **or** `eval_run_id` + `eval_item_id`, with a CHECK that exactly one is set. stage, attempt, **`canonical`** (partial unique index: one canonical success per context and stage), **`mode` (`live`/`replay`)**, model, effort, `input_tokens`, `output_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `cost_usd`, `price_id`, `latency_ms`, `stop_reason`, `served_by_fallback`, `request_id`, **`response` jsonb**, error |
 | `classifications` | run, category, `self_confidence`, rationale |
@@ -134,6 +141,8 @@ infra/              webhook-catcher (local receiver that verifies signatures), l
 | `eval_datasets`, `eval_items` | immutable source snapshot (`source_key`, `source_mime`, `source_title`, stored exactly as a document's source), `content_key` (derived like `external_id`; unique per dataset among active items), `expected_category`, `expected_fields`, **`split` (`dev`/`calib`/`test`)**, origin and `origin_ref`, tags, `retired_at` (set once; items are otherwise immutable). No link to `documents` |
 | `eval_runs`, `eval_results` | run: `config_id`, split, `llm_mode`, status, `item_count`, aggregates, error; only progress changes while active, and a **test-split run requires a frozen config** (trigger). Result (insert-only): predicted category and fields, score, decision, reasons, gate results, field scores and the three grades (`category_correct`, `required_correct`, `fully_correct`), **`proposed_action`** (stored, never sent), cost, latency, canonical llm_call ids, error and `error_reason` |
 
+**Custom categories.** A tenant defines its own document types in Settings → Categories: a name, a one-line description (which classify reads), up to three examples, and an ordered list of typed fields (`packages/schemas/src/definition.ts`). `compileDefinition()` builds the same Zod schema a built-in template is written as, so the stored JSON Schema has the built-ins' shape (descriptions, `x-evidence`, `required`, plus `x-comparator` for eval grading), and every consumer (request builders, `toApiSchema`, Ajv, the gates, the review form, eval grading) treats both alike. What custom categories don't get is code rules (the invoice arithmetic, the contract dates). Saving one creates a category version, then a config version that includes it with **every** category on `review_all` (classify sees every description, so thresholds calibrated for the old set don't carry over), and activates it. A config with any custom category classifies with prompt v2 (`createConfigVersion` enforces it): v1's examples name only the built-ins. Built-in-only configs stay on v1, so their requests, and the committed cassettes, never change. Replay can't serve a custom category; use live or the simulator.
+
 Enum-like columns are `text` with a CHECK built from the `as const` arrays in `packages/core` (no `pgEnum`, because drizzle's migrator runs pending migrations in one transaction). Pointers to rows of the same document (`current_run_id`, `current_extraction_id`, and `extraction_id` on tasks and actions) use three-column FKs `(tenant_id, document_id, x_id)`, so a document can't adopt another document's run or extraction.
 
 ---
@@ -150,6 +159,12 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
   - **Dead grant:** an `invalid_grant` marks the mailbox `reauth_required` (audited), and polling stops.
   - **Fetch:** downloads the raw message. Drafts, sent mail, spam, trash, deleted and oversized mail are skipped with a reason. Over the tenant's inbound limit (shared with Postmark) a message is deferred. Otherwise it's ingested like an `.eml` (`source = gmail`, raw kept as `source.eml`), with the ledger row committing with the document (`ingestEmail`'s `within`).
 - In every case, inserting the document, creating `processing_run` #1 and enqueueing `doc.parse` happen in one transaction. A duplicate `external_id` returns 200 and does nothing.
+
+**Intake filters (phase 7):** some mail is noise by its headers alone: auto-replies (RFC 3834 `Auto-Submitted`, `X-Autoreply`, `Precedence: auto_reply`), bounces and read receipts (`multipart/report`), and bulk mail (`List-Id`, `List-Unsubscribe`, `Precedence: bulk`).
+- Normalization records these signals with the stored email, only when present; the model never sees them.
+- On a document's first run, the parse stage checks them against the tenant's filters (`tenant_settings.intake_filters`): auto-replies and bounces on by default, bulk off. A match ends the run before any model call: `processing_status = skipped`, `processing_runs.skip_reason`, no review task.
+- **Process anyway** (`POST /api/documents/:id/process`) is a retry, which the filters never apply to.
+- Headers, never content, so a sender can't talk a message past them; and eval items, which don't run the parse stage's filter, are unaffected.
 
 **Each stage handler (parse → classify → extract → route) follows the same three steps:**
 1. **Read.** In a short transaction, load the run and its inputs. Stop if the run is superseded or the stage is already done.
@@ -183,6 +198,33 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 **Failure classes:** a `PipelineError` (bad file, refusal, `max_tokens`, missing cassette, budget, …) fails the run at once. Anything else is retried by pg-boss per `QUEUE_OPTIONS`, then dead-lettered to `doc.failed`. `failRun` is guarded on the failing stage's input status, so a stale job can't fail a newer run.
 
+**Fairness and backpressure (phase 7):**
+- **Fairness:** every tenant job is sent with its tenant as its pg-boss group (`enqueue`, `enqueueMany`, `sendTenantJob` in `boss.ts`, the only send path; a source scan checks). With `WORKER_TENANT_CONCURRENCY` set, the stage, delivery and Gmail fetch queues run at most that many of one tenant's jobs at once across the cluster (`groupConcurrency`, enforced in pg-boss's fetch query), so a quiet tenant's document starts while a noisy one's backlog waits. Eval items have their own cap. It's a cap, not a fair scheduler, and off for one company.
+- **Backpressure:** a 429, 529 or 503 from a provider records a cooldown for that model in `llm_provider_state` (global): the provider's Retry-After, or a backoff that doubles per busy answer up to 5 minutes. Before reserving budget, a live call checks it. If the cooldown ends within 20 s, it waits (watching the job's signal). Otherwise it throws `ProviderCoolingDownError` without calling or saving an attempt, and pg-boss retries the job. Classify and extract retry 10 times with backoff capped at 5 minutes, about an hour, before failing as `provider_unavailable`. The first answer after a cooldown clears it.
+- **Inbound limits:** a Postmark redelivery is answered before the rate limit counts it. A Gmail message over the tenant's inbound limit is deferred in one transaction (ledger row and the next job, with a deterministic id), wakes with jitter, and gives back the count its refused attempt took.
+
+**Self-healing (phase 7):** every five minutes, `system.reconcile` asks the `stale_work()` resolver for in-flight work unchanged for `RECONCILE_STALL_MINUTES` (default 30): documents mid-pipeline, pending actions, running eval runs. It returns ids only. Each one is then checked against `pgboss.job` in its tenant's transaction:
+- A **document** is stalled when neither its stage job (`stageJobId`) nor that job's dead-letter copy (`source_id`) is `created`, `retry` or `active`. `failRun(…, "stalled")` sends it to Processing failed, guarded on status, so a stage committing at the same moment wins.
+- An **action** with no delivery or dead-letter job fails with `delivery_stalled`, and shows under Delivery failures with Redeliver.
+- An **eval run** with no item jobs left fails.
+
+pg-boss keeps finished job ids for 7 days and ignores a re-send, so the reconciler never re-sends; Retry starts a new run with new ids. `doc.failed` itself never returns silently: without its source queue, it fails the run at its current status. **Retry all** (`POST /api/review/retry-failed`, admins) retries every open, unclaimed `processing_failed` task, optionally of one reason, each in its own transaction exactly as a reviewer's Retry (up to 500 at a time, one audit event). A failed reclassify run whose category was since removed is retried as a plain run.
+
+**Observability (phase 7, [operations.md](operations.md)):**
+- **Logs:** JSON lines, one per request, job and model call. Each carries a trace id: the api's request id goes into every job it enqueues (`enqueue` adds the current trace, packages/telemetry), and every job runs under it.
+- **Metrics:** Prometheus at the worker's `:9100/metrics` and the api's `/api/metrics` (behind `METRICS_TOKEN`): jobs, queue depth and oldest age, model calls, tokens, cost, cooldowns, pool, HTTP.
+- **Health:** `/api/ready` checks the database, migrations and storage; the worker's `/health` follows its heartbeat loop.
+- **Heartbeats:** workers upsert `worker_heartbeats` every 15 s, so the web warns everyone when none is running.
+- **System health:** Settings → System health shows a tenant its own pipeline, plus the deployment facts every tenant shares (workers, cooldowns).
+
+**Timeouts (phase 7):** nothing waits forever.
+- **Model calls:** a per-stage timeout (`llmTimeoutMs`: classify 120 s, extract 60 s plus `max_tokens`/40, at most 600 s). The SDK retries nothing; pg-boss owns retries, with capped backoff (`retryDelayMax`). Each stage's `expireInSeconds` outlasts its longest call (a test checks the margin), so an expired job never runs alongside its retry. The handler passes `job.signal` to the SDK, so an expired job also stops paying for its call.
+- **Dead workers:** stage jobs heartbeat every 15 s (`heartbeatSeconds: 30`), so a job whose worker died retries within 30 s, not at its expiry.
+- **Parsing:** files are parsed in a `worker_threads` sandbox bounded by `PARSE_TIMEOUT_MS` and `PARSE_MAX_MEMORY_MB`; an overrun fails the run as `parse_timeout`. The thread runs core's parsers unchanged, so requests are byte-identical.
+- **Database:** the app role has `statement_timeout = 60s`, `lock_timeout = 15s` and `idle_in_transaction_session_timeout = 30s`; a pool waits at most 10 s for a connection.
+- **Storage and HTTP:** S3 requests time out (5 s connect, 60 s request, 3 attempts); the api times out slow clients (30 s headers, 120 s request).
+- **Shutdown:** on SIGTERM the worker stops fetching, lets running jobs finish for `WORKER_SHUTDOWN_GRACE_MS`, then aborts their model calls so they retry elsewhere; the api drains for up to 10 s.
+
 **Actions by task kind** (enforced by the API, not only the UI):
 | Task kind | Available actions |
 |---|---|
@@ -201,7 +243,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 **Claude calls (`@anthropic-ai/sdk`):**
 - `messages.create` with `output_config.format` json_schema, sent the stripped schema. Ajv then validates the **full** schema.
-- Model and effort come from the config. The default is `claude-opus-5-5` at `effort: "low"` for classify and `"low"`/`"medium"` for extract, and the evals page compares alternatives such as `claude-sonnet-5-5` and `claude-haiku-5-5`.
+- Model and effort come from the config. The default is `claude-opus-5-5` at `effort: "low"` for both stages, and the evals page compares alternatives such as `claude-sonnet-5-5` and `claude-haiku-5-5`.
 - `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`), with a `stop_reason` check before reading content.
 - The system prompt (instructions, category definitions, few-shot examples) is cached; the document comes after it.
 - **Budget:** a daily cap per tenant (admins edit it in Settings; today's row takes the new cap at once), reserved atomically before each live call:
@@ -251,7 +293,7 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 ## 8. Evals
 
-- **Datasets** have dev, calib and test splits. Items can be imported from JSONL, promoted from reviews, or labeled in the review UI's label mode. The demo seed ships a labeled set.
+- **Datasets** have dev, calib and test splits. Items can be imported from JSONL, or promoted from reviews ("Add to eval set"). The demo seed ships a labeled set.
 - **Workflow the UI enforces:**
   1. Iterate prompts, models and effort on **dev**.
   2. Run the candidate config on **calib**, open the per-category **threshold sweep** (threshold vs auto rate vs precision, each with n and a Wilson lower bound) and the **reliability table** (score bucket vs accuracy and n), pick thresholds, then **Freeze** to create an immutable config version.
@@ -267,7 +309,8 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 - **Freeze and activation:**
   - `createEvalRun` refuses a test run on an unfrozen config (`config_not_frozen`), and the `eval_runs_test_split` trigger backs it up.
   - Freeze creates a child version with `createCandidateConfig` + `freezeConfig`. It never uses `buildPipelineConfig`, which activates.
-  - Activation requires a frozen config.
+  - Activation requires a frozen config **when any category auto-approves** (phase 7). A version that sends every category to a person can't approve anything wrong, so it activates unfrozen. That's how Settings → Pipeline (and `tenant:create`, and custom categories) change models or categories without an eval set. Any change to a model, effort, prompt or category yields a version with every category on `review_all`, because classify sees every category's description; Freeze's routing-only changes don't.
+  - Freeze turns on automation for a category only with at least `MIN_CALIB_ITEMS` (3) calib items of it and at least one required field. Otherwise "correct" would mean the category alone (§6).
 - **Seeds:** `pnpm db:seed` ends with `seed:evals`, which builds the Main dataset from the fixtures and runs dev, calib and test (plus a DeepSeek candidate when its cassettes are recorded). `pnpm eval:import` adds labeled files from JSONL.
 - **Metrics** (grades are stored on each result when it's written, so old runs keep the grades they were given):
   - Classification: accuracy, per-category precision, recall and F1, and a confusion matrix.
@@ -309,7 +352,24 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
    - M5: Workspace domain auto-join.
    - M6: sender authentication for synced mail, source display, eval parity.
    - M7: a fake Google for the demo and e2e, and the security docs.
-7. **Reliability (planned):** real mail volume and variety (hundreds of email types), per-tenant fairness, observability, backpressure.
+7. **Production-ready (in progress):** reliability under real mail volume, a fast path from clone to a real deployment, and tenant-defined categories. Milestones:
+   - M0: docs and closed sets.
+   - M1: a config registry, `pnpm preflight` and one-command dev setup.
+   - M2: a single origin, with the API under `/api`, and one `PUBLIC_URL`.
+   - M3: slim prebuilt images on GHCR, releases and a CHANGELOG.
+   - M4: timeouts, pools, graceful shutdown and sandboxed parsing.
+   - M5: per-tenant fairness (pg-boss groups) and provider backpressure.
+   - M6: self-healing (a reconciler for stalled work) and Retry all.
+   - M7: observability: JSON logs, metrics, health, worker heartbeats, a System health page.
+   - M8: a simulated model, a mail variety generator, load and chaos tests.
+   - M9: intake filters for auto-replies, bounces and bulk mail.
+   - M10: a first-run setup page, a getting-started checklist and UI polish.
+   - M11: pipeline settings (activating `review_all` configs without freezing).
+   - M12: custom categories.
+   - M13: the public API's reads (a document's state by id or `external_ref`, category schemas) and key scopes.
+   - M14: install anywhere with one command (`install.sh`, `deploy/`, `./triage`), and email in through Postmark with no DNS.
+   - M15: optional OCR with PaddleOCR-VL 1.6 on llama.cpp (CPU, Vulkan, CUDA).
+   - M16: README, CONTRIBUTING, e2e in CI and release 0.7.0.
 
 **Later:** a DB- or admin-managed model catalog with per-tenant provider keys, a Batch API eval mode (50% cost), OCR for scans, a custom category schema editor, Microsoft 365 / Outlook sync, Gmail push (Pub/Sub) and Workspace domain-wide delegation, outbound invitation email, erasing eval items, SSE, OpenTelemetry, and dual-run agreement.
 

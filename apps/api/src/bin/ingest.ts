@@ -3,7 +3,7 @@ import { basename, extname, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
 // `pnpm ingest <file> [--to <inbound address>]`: pushes a file through the real ingestion path of a
-// running API. A .json file is treated as a Postmark inbound payload (POST /webhooks/postmark, with
+// running API. A .json file is treated as a Postmark inbound payload (POST /api/webhooks/postmark, with
 // the basic-auth credentials from .env); anything else goes to the REST API with TRIAGE_API_KEY.
 
 const MIMES: Record<string, string> = {
@@ -33,7 +33,7 @@ if (extname(path).toLowerCase() === ".json") {
   if (values.to) Object.assign(payload, { OriginalRecipient: values.to, ToFull: [{ Email: values.to }] });
   const { POSTMARK_INBOUND_USER: user, POSTMARK_INBOUND_PASSWORD: password } = process.env;
   if (!user || !password) throw new Error("POSTMARK_INBOUND_USER and POSTMARK_INBOUND_PASSWORD must be set");
-  res = await fetch(`${api}/webhooks/postmark`, {
+  res = await fetch(`${api}/api/webhooks/postmark`, {
     method: "POST",
     headers: {
       authorization: `Basic ${Buffer.from(`${user}:${password}`).toString("base64")}`,
@@ -47,7 +47,11 @@ if (extname(path).toLowerCase() === ".json") {
   const mime = MIMES[extname(path).toLowerCase()] ?? "application/octet-stream";
   const form = new FormData();
   form.set("file", new File([bytes], basename(path), { type: mime }));
-  res = await fetch(`${api}/v1/documents`, { method: "POST", headers: { authorization: `Bearer ${key}` }, body: form });
+  res = await fetch(`${api}/api/v1/documents`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key}` },
+    body: form,
+  });
 }
 
 const body = await res.text();

@@ -28,6 +28,13 @@ export async function withTenantTx<T>(pool: pg.Pool, tenantId: string, fn: (tx: 
   if (!UUID.test(tenantId)) throw new TypeError(`Invalid tenant id: ${JSON.stringify(tenantId)}`);
   const client = await pool.connect();
   let broken: Error | undefined;
+  // The pool listens for errors only on idle clients. A connection that dies while this one is
+  // checked out (a Postgres restart between two queries) emits `error`, which would otherwise crash
+  // the process; the failed query rejects anyway, and release(broken) discards the client.
+  const onError = (err: Error) => {
+    broken = err;
+  };
+  client.on("error", onError);
   try {
     await client.query("BEGIN");
     // set_config(…, true) is SET LOCAL with a bind parameter: it ends with the transaction.
@@ -46,6 +53,7 @@ export async function withTenantTx<T>(pool: pg.Pool, tenantId: string, fn: (tx: 
     throw err;
   } finally {
     // A client whose rollback failed is in an unknown state: destroy it instead of pooling it.
+    client.off("error", onError);
     client.release(broken);
   }
 }

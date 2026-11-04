@@ -1,11 +1,15 @@
 import {
   AUTOMATION_MODES,
+  BUILTIN_CATEGORIES,
+  CATEGORY_ORIGINS,
   DECISIONS,
   DELIVERY_STATUSES,
   DOCUMENT_SOURCES,
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
+  INTAKE_FILTERS,
   LLM_STAGES,
+  OTHER_CATEGORY,
   PART_KINDS,
   PROCESSING_STATUSES,
   REVIEW_STATUSES,
@@ -44,10 +48,27 @@ export const categorySchemaVersions = pgTable(
     category: text("category").notNull(),
     version: integer("version").notNull(),
     jsonSchema: jsonb("json_schema").notNull(),
+    /**
+     * A custom category's definition (packages/schemas definition.ts), in field order, which the
+     * jsonb schema doesn't keep. Null for built-ins, whose templates are code.
+     */
+    definition: jsonb("definition"),
+    origin: text("origin", { enum: CATEGORY_ORIGINS }).notNull().default("builtin"),
+    createdBy: uuid("created_by"),
     createdAt: createdAt(),
   },
   (t) => [
     tenantKey("category_schema_versions", t),
+    oneOf("category_schema_versions_origin_check", t.origin, CATEGORY_ORIGINS),
+    // A custom category never takes a built-in's name: its rules, comparators and form order come
+    // from the template looked up by name.
+    check(
+      "category_schema_versions_custom_name_check",
+      sql`${t.definition} is null or ${t.category} not in (${sql.raw(
+        [...BUILTIN_CATEGORIES, OTHER_CATEGORY].map((c) => `'${c}'`).join(", "),
+      )})`,
+    ),
+    check("category_schema_versions_definition_check", sql`(${t.definition} is null) = (${t.origin} = 'builtin')`),
     unique("category_schema_versions_category_version_key").on(t.tenantId, t.category, t.version),
     // Lets pipeline_config_categories prove its category matches the schema version's category.
     unique("category_schema_versions_tenant_id_id_category_key").on(t.tenantId, t.id, t.category),
@@ -160,6 +181,8 @@ export const documents = pgTable(
     tenantId: tenantId(),
     source: text("source", { enum: DOCUMENT_SOURCES }).notNull(),
     externalId: text("external_id").notNull(),
+    /** The sender's own reference (public API), to look the document up by later. */
+    externalRef: text("external_ref"),
     sourceKey: text("source_key").notNull(),
     title: text("title"),
     mime: text("mime"),
@@ -176,6 +199,12 @@ export const documents = pgTable(
     tenantKey("documents", t),
     unique("documents_source_external_id_key").on(t.tenantId, t.source, t.externalId),
     index("documents_tenant_id_created_at_idx").on(t.tenantId, t.createdAt),
+    index("documents_external_ref_idx").on(t.tenantId, t.externalRef).where(sql`${t.externalRef} is not null`),
+    check("documents_external_ref_check", sql`char_length(${t.externalRef}) <= 200`),
+    // The reconciler's scan (stale_work(), 0028): only documents still on their way through the pipeline.
+    index("documents_in_flight_idx")
+      .on(t.updatedAt)
+      .where(sql`processing_status in ('received', 'parsed', 'classified', 'extracted')`),
     oneOf("documents_source_check", t.source, DOCUMENT_SOURCES),
     oneOf("documents_processing_status_check", t.processingStatus, PROCESSING_STATUSES),
     oneOf("documents_review_status_check", t.reviewStatus, REVIEW_STATUSES),
@@ -239,11 +268,14 @@ export const processingRuns = pgTable(
     status: text("status", { enum: RUN_STATUSES }).notNull().default("running"),
     supersededBy: uuid("superseded_by"),
     error: text("error"),
+    /** The intake filter that ended the run before any model call (the document is `skipped`). */
+    skipReason: text("skip_reason", { enum: INTAKE_FILTERS }),
     createdAt: createdAt(),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
   },
   (t): PgTableExtraConfigValue[] => [
     tenantKey("processing_runs", t),
+    oneOf("processing_runs_skip_reason_check", t.skipReason, INTAKE_FILTERS),
     unique("processing_runs_tenant_id_document_id_id_key").on(t.tenantId, t.documentId, t.id),
     oneOf("processing_runs_trigger_check", t.trigger, RUN_TRIGGERS),
     oneOf("processing_runs_status_check", t.status, RUN_STATUSES),

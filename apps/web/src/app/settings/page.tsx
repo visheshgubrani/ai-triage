@@ -3,6 +3,7 @@ import { ApiKeysView } from "./api-keys";
 import { AuditLogView } from "./audit-log";
 import { BudgetSettingsView } from "./budget-settings";
 import { InboundSettingsView } from "./inbound-settings";
+import { IntakeSettingsView } from "./intake-settings";
 import { RetentionSettingsView } from "./retention-settings";
 import { WebhookSettingsView } from "./webhook-settings";
 
@@ -12,6 +13,7 @@ export default async function SettingsPage() {
   return (
     <AdminSettings title="Settings" current="/settings">
       <InboundSettingsView />
+      <IntakeSettingsView />
       <WebhookSettingsView />
       <ApiKeysView />
       <BudgetSettingsView />

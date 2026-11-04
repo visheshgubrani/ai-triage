@@ -72,6 +72,24 @@ describe("comparatorsFor", () => {
     });
   });
 
+  it("takes a custom category's declared comparator before the type's", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        ref: { type: "string", "x-comparator": "exact" },
+        notes: { type: "string", "x-comparator": "free_text" },
+        name: { type: "string" },
+        bogus: { type: "string", "x-comparator": "fuzzy" },
+      },
+    };
+    expect(comparatorsFor("purchase_order", { version: 1, jsonSchema: schema })).toEqual({
+      ref: "exact",
+      notes: "free_text",
+      name: "normalized",
+      bogus: "normalized",
+    });
+  });
+
   it("derives comparators from types for other categories", () => {
     const schema = {
       type: "object",

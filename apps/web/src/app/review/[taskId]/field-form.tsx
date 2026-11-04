@@ -75,6 +75,28 @@ function ScalarInput({
       />
     );
   }
+  // A list of plain values (tags, parties' names): one per line, so an edit saves a real list.
+  if (type === "array") {
+    const itemType = typeOf(field.items ?? {});
+    const lines = Array.isArray(value) ? value.map((v) => String(v)) : [];
+    return (
+      <textarea
+        id={id}
+        aria-label={`${label}, one per line`}
+        rows={Math.max(2, lines.length + 1)}
+        className={INPUT}
+        disabled={readOnly}
+        value={lines.join("\n")}
+        onChange={(e) => {
+          const items = e.target.value
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean);
+          onChange(itemType === "number" || itemType === "integer" ? items.map(Number) : items);
+        }}
+      />
+    );
+  }
   // Dates stay text inputs, so a malformed date the model wrote is shown (and fixed), not dropped.
   return (
     <input

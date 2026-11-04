@@ -3,6 +3,8 @@
 .env.*
 !.env.example
 .git
+.github
+.claude
 **/node_modules
 **/.next
 **/dist
@@ -10,4 +12,7 @@
 **/*.tsbuildinfo
 test-results
 playwright-report
-.claude
+# Not needed to build: screenshots, the e2e specs, deploy files.
+docs/media
+e2e
+deploy

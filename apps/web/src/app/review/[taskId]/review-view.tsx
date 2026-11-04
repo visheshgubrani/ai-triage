@@ -47,8 +47,7 @@ const SHORTCUTS: [string, string][] = [
 
 /** Release a claim when the page goes away. Best effort: an unreleased claim simply lapses. */
 function releaseOnLeave(taskId: string, claimToken: string) {
-  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8787";
-  void fetch(`${base}/review/tasks/${taskId}/release`, {
+  void fetch(`/api/review/tasks/${taskId}/release`, {
     method: "POST",
     credentials: "include",
     keepalive: true,

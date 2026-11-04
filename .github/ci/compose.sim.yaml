@@ -1,0 +1,10 @@
+# CI only (scripts/install-smoke.sh): the simulator, so an installed stack processes documents
+# without a provider key. Added to COMPOSE_FILE by the smoke test; never part of an installation.
+services:
+  llm-sim:
+    image: ${TRIAGE_IMAGE:-ghcr.io/visheshgubrani/ai-triage}:${TRIAGE_VERSION:-latest}
+    init: true
+    command: ["cli", "llm-sim"]
+  worker:
+    environment:
+      LLM_SIMULATOR_URL: http://llm-sim:9050/v1

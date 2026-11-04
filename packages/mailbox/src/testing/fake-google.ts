@@ -3,7 +3,7 @@ import { GMAIL_READONLY_SCOPE } from "../google/oauth";
 
 // A fake Google for tests and the local demo: the OAuth consent, token and revoke endpoints, and
 // the Gmail calls mailbox sync makes, over in-memory mailboxes. `fake.fetch` drops in wherever a
-// GoogleDeps `fetch` goes; the demo serves `fake.handle` over HTTP (infra/fake-google). It checks
+// GoogleDeps `fetch` goes; the demo serves `fake.handle` over HTTP (`pnpm fake-google`). It checks
 // what Google checks that matters here: the client, the redirect URI, PKCE, single-use codes,
 // revoked grants, and history older than what Gmail keeps.
 

@@ -1,13 +1,14 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LlmCallContext } from "@ai-triage/core";
+import { type LlmCallContext, llmTimeoutMs } from "@ai-triage/core";
 import type { LlmRequest } from "@ai-triage/core/pipeline";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   type AttemptRecord,
   CassetteMissError,
   type ChatCompletion,
+  type CooldownPort,
   computeCostUsd,
   createLlmGateway,
   estimateWorstCaseUsd,
@@ -16,10 +17,13 @@ import {
   normalizeChatCompletion,
   normalizeMessage,
   type Price,
+  ProviderBusyError,
+  ProviderCoolingDownError,
   readOutput,
   recordTransport,
   replayTransport,
   requestHash,
+  retryAfterMs,
   toChatParams,
   toSdkParams,
   toWireRequest,
@@ -317,12 +321,14 @@ describe("normalizeChatCompletion", () => {
 function harness(
   mode: "live" | "replay" | "record",
   transport: ReturnType<typeof fakeTransport> = fakeTransport(() => message()),
+  cooldown?: CooldownPort,
 ) {
   const attempts: (AttemptRecord & { id: string })[] = [];
   const budget = { reserved: [] as number[], settled: [] as [number, number][], allow: true };
   const gateway = createLlmGateway({
     mode,
     transport,
+    cooldown,
     findPrice: async (model) => PRICES[model] ?? null,
     store: {
       findReusable: async (_t, _c, stage) =>
@@ -367,6 +373,78 @@ describe("gateway", () => {
     const again = await h.gateway.call({ tenantId: "t", ctx, request: request() });
     expect(again).toEqual({ attemptId: "att-1", output: { category: "invoice" }, reused: true });
     expect(h.transport.calls).toHaveLength(1);
+  });
+
+  it("hands the transport the job's signal and the stage's timeout", async () => {
+    const h = harness("live");
+    const signal = new AbortController().signal;
+    await h.gateway.call({ tenantId: "t", ctx, request: request(), signal });
+    expect(h.transport.calls[0]?.meta).toMatchObject({
+      signal,
+      timeoutMs: llmTimeoutMs("classify", request().maxTokens),
+    });
+  });
+
+  it("reads Retry-After in milliseconds, seconds or as a date", () => {
+    expect(retryAfterMs(new Headers({ "retry-after-ms": "1500" }))).toBe(1500);
+    expect(retryAfterMs(new Headers({ "retry-after": "30" }))).toBe(30_000);
+    const now = Date.parse("2026-11-04T10:00:00Z");
+    expect(retryAfterMs(new Headers({ "retry-after": "Wed, 04 Nov 2026 10:01:00 GMT" }), now)).toBe(60_000);
+    expect(retryAfterMs(new Headers())).toBeNull();
+  });
+
+  describe("provider backpressure", () => {
+    /** An in-memory cooldown store. */
+    const cooldowns = (until: Date | null = null) => {
+      const log: string[] = [];
+      let state = until ? { cooldownUntil: until, consecutiveFailures: 1 } : null;
+      const port: CooldownPort = {
+        state: async () => state,
+        trip: async (_p, _m, retryAfterMs, reason) => {
+          log.push(`trip ${reason} ${retryAfterMs}`);
+          state = { cooldownUntil: new Date(Date.now() + 60_000), consecutiveFailures: 1 };
+        },
+        clear: async () => {
+          log.push("clear");
+          state = null;
+        },
+      };
+      return { port, log };
+    };
+
+    it("cools the model down on a busy answer, then gives jobs back without calling or spending", async () => {
+      const c = cooldowns();
+      const busy = fakeTransport(() => Promise.reject(new ProviderBusyError(429, 30_000, "rate limited")));
+      const h = harness("live", busy, c.port);
+      await expect(h.gateway.call({ tenantId: "t", ctx, request: request() })).rejects.toBeInstanceOf(
+        ProviderBusyError,
+      );
+      expect(c.log).toEqual(["trip 429 30000"]);
+      expect(h.attempts).toHaveLength(1);
+
+      await expect(h.gateway.call({ tenantId: "t", ctx, request: request() })).rejects.toBeInstanceOf(
+        ProviderCoolingDownError,
+      );
+      expect(busy.calls).toHaveLength(1);
+      expect(h.attempts).toHaveLength(1);
+      expect(h.budget.reserved).toHaveLength(1);
+    });
+
+    it("waits out a cooldown about to end, and clears it once the provider answers", async () => {
+      const c = cooldowns(new Date(Date.now() + 50));
+      const h = harness("live", undefined, c.port);
+      await h.gateway.call({ tenantId: "t", ctx, request: request() });
+      expect(c.log).toEqual(["clear"]);
+    });
+
+    it("never applies in replay, which calls no provider", async () => {
+      const c = cooldowns(new Date(Date.now() + 60_000));
+      const dir = await mkdtemp(join(tmpdir(), "cassettes-"));
+      const h = harness("replay", replayTransport(dir) as ReturnType<typeof fakeTransport>, c.port);
+      await expect(h.gateway.call({ tenantId: "t", ctx, request: request() })).rejects.toBeInstanceOf(
+        CassetteMissError,
+      );
+    });
   });
 
   it("fails on a missing cassette in replay, without touching the network or the budget", async () => {

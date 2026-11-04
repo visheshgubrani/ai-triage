@@ -1,12 +1,15 @@
 import {
   ACTION_STATUSES,
   API_ERROR_CODES,
+  API_KEY_SCOPES,
   AUDIT_ACTIONS,
   AUDIT_ACTOR_TYPES,
   AUTOMATION_MODES,
+  type CATEGORY_ORIGINS,
   DECISIONS,
   DELIVERY_STATUSES,
   DOCUMENT_SOURCES,
+  type DocumentState,
   EFFORTS,
   EVAL_ERROR_CODES,
   type EVAL_ITEM_ORIGINS,
@@ -14,8 +17,12 @@ import {
   EVAL_SPLITS,
   EVIDENCE_MODES,
   EXTRACTION_AUTHORS,
+  FAILURE_REASONS,
+  INTAKE_FILTERS,
   INVITATION_ACCEPT_METHODS,
+  type IntakeFilter,
   JOIN_ROLES,
+  type LlmCallMode,
   MAILBOX_BACKFILL_MAX_DAYS,
   MAILBOX_MESSAGE_REASONS,
   MAILBOX_MESSAGE_STATUSES,
@@ -42,14 +49,89 @@ import type {
   RunSummary,
   ThresholdSweep,
 } from "@ai-triage/evals";
+import type {
+  CategoryDefinition,
+  CategoryDefinitionInput,
+  Comparator,
+  DEFINITION_LIMITS,
+  FieldType,
+} from "@ai-triage/schemas";
 import { z } from "zod";
 
 export const HealthResponse = z.object({
   status: z.enum(["ok", "degraded"]),
   db: z.enum(["up", "down"]),
   time: z.string(),
+  version: z.string(),
 });
 export type HealthResponse = z.infer<typeof HealthResponse>;
+
+/** First-run setup (no workspace exists yet): whether it's open, and how an admin can accept. */
+export const SetupStatusResponse = z.object({ needed: z.boolean(), googleSignIn: z.boolean() });
+export type SetupStatusResponse = z.infer<typeof SetupStatusResponse>;
+
+export const SetupRequest = z.object({
+  token: z.string().min(20).max(100),
+  workspaceName: z.string().trim().min(1).max(100),
+  slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/, "3 to 40 lowercase letters, digits and dashes"),
+  adminEmail: z.email().max(254),
+  acceptWith: z.enum(INVITATION_ACCEPT_METHODS),
+});
+export type SetupRequest = z.infer<typeof SetupRequest>;
+
+/** The first admin continues at this invite link (a password or Google), as any invited member. */
+export const SetupResponse = z.object({ inviteUrl: z.string() });
+export type SetupResponse = z.infer<typeof SetupResponse>;
+
+export const OnboardingStep = z.object({
+  id: z.string(),
+  title: z.string(),
+  done: z.boolean(),
+  detail: z.string(),
+  href: z.string(),
+});
+export type OnboardingStep = z.infer<typeof OnboardingStep>;
+
+export const OnboardingResponse = z.object({ dismissed: z.boolean(), steps: z.array(OnboardingStep) });
+export type OnboardingResponse = z.infer<typeof OnboardingResponse>;
+
+/** A signed `ping` to the tenant's webhook (Settings → Send test event). */
+export const WebhookTestResponse = z.object({
+  ok: z.boolean(),
+  status: z.number().nullable(),
+  error: z.string().nullable(),
+  ms: z.number(),
+});
+export type WebhookTestResponse = z.infer<typeof WebhookTestResponse>;
+
+export const ReadyResponse = z.object({
+  db: z.enum(["up", "down"]),
+  migrations: z.enum(["current", "pending"]),
+  storage: z.enum(["up", "down"]),
+});
+export type ReadyResponse = z.infer<typeof ReadyResponse>;
+
+/** For the header (any member): what stops documents from being processed right now. */
+export const SystemStatusResponse = z.object({
+  workersRunning: z.number().int(),
+  budgetExhausted: z.boolean(),
+  /** Documents that failed on the budget and wait for a Retry (Retry all, after raising it). */
+  budgetWaiting: z.number().int(),
+});
+export type SystemStatusResponse = z.infer<typeof SystemStatusResponse>;
+
+/** Settings → System health (admins): this tenant's pipeline, and the deployment facts it shares. */
+export const SystemHealthResponse = z.object({
+  documents: z.array(z.object({ status: z.string(), count: z.number(), oldestUpdatedAt: z.string().nullable() })),
+  openFailures: z.array(z.object({ reason: z.string(), count: z.number() })),
+  last24h: z.object({ failedRuns: z.number(), stalledRuns: z.number() }),
+  delivery: z.object({ pending: z.number(), failed: z.number(), oldestPendingAt: z.string().nullable() }),
+  mailboxes: z.array(z.object({ status: z.string(), count: z.number() })),
+  budget: z.object({ day: z.string(), capUsd: z.number(), spentUsd: z.number(), reservedUsd: z.number() }),
+  workers: z.array(z.object({ version: z.string(), llmMode: z.string(), lastSeenAt: z.string() })),
+  cooldowns: z.array(z.object({ provider: z.string(), model: z.string(), until: z.string(), reason: z.string() })),
+});
+export type SystemHealthResponse = z.infer<typeof SystemHealthResponse>;
 
 export const MemberRole = z.enum(MEMBER_ROLES);
 export type MemberRole = z.infer<typeof MemberRole>;
@@ -131,12 +213,35 @@ export const DocumentSummary = z.object({
 });
 export type DocumentSummary = z.infer<typeof DocumentSummary>;
 
-export const DocumentList = z.object({ documents: z.array(DocumentSummary) });
+export const DocumentListQuery = z.object({
+  status: z.enum(PROCESSING_STATUSES).optional(),
+  source: z.enum(DOCUMENT_SOURCES).optional(),
+  category: z.string().min(1).max(100).optional(),
+  /** Matches the title (subject or file name). */
+  q: z.string().min(1).max(200).optional(),
+  /** The previous page's `nextBefore`. */
+  before: z.iso.datetime().optional(),
+});
+export type DocumentListQuery = z.infer<typeof DocumentListQuery>;
+
+export const DocumentList = z.object({
+  documents: z.array(DocumentSummary),
+  /** Pass as `before` for the next page; null on the last one. */
+  nextBefore: z.string().nullable(),
+});
 export type DocumentList = z.infer<typeof DocumentList>;
 
 /** A live claim on a review task. A claim whose lease ran out is reported as none. */
 export const ClaimInfo = z.object({ userId: z.string(), email: z.string().nullable(), leaseExpiresAt: isoDate });
 export type ClaimInfo = z.infer<typeof ClaimInfo>;
+
+export const IntakeSettings = z.object(
+  Object.fromEntries(INTAKE_FILTERS.map((f) => [f, z.boolean()])) as Record<IntakeFilter, z.ZodBoolean>,
+);
+export type IntakeSettings = z.infer<typeof IntakeSettings>;
+
+export const ProcessResponse = z.object({ runId: z.string() });
+export type ProcessResponse = z.infer<typeof ProcessResponse>;
 
 export const DocumentDetail = z.object({
   document: DocumentSummary.extend({ sizeBytes: z.number().nullable() }),
@@ -147,6 +252,8 @@ export const DocumentDetail = z.object({
       forcedCategory: z.string().nullable(),
       status: z.enum(RUN_STATUSES),
       error: z.string().nullable(),
+      /** The intake filter that skipped it (the document is `skipped`). */
+      skipReason: z.enum(INTAKE_FILTERS).nullable(),
       createdAt: isoDate,
       finishedAt: isoDate.nullable(),
     })
@@ -307,6 +414,21 @@ export const InboxQuery = z.object({
 });
 export type InboxQuery = z.infer<typeof InboxQuery>;
 
+/** Retry all (admins): every open, unclaimed processing_failed task, optionally of one reason. */
+export const RetryFailedRequest = z.object({
+  reason: z.enum(FAILURE_REASONS).optional(),
+  /** Only failures from before this time (the start of an outage, say). */
+  before: z.iso.datetime().optional(),
+});
+export type RetryFailedRequest = z.infer<typeof RetryFailedRequest>;
+
+export const RetryFailedResponse = z.object({
+  retried: z.number().int(),
+  /** Tasks that moved on before their turn (claimed, already retried). */
+  skipped: z.number().int(),
+});
+export type RetryFailedResponse = z.infer<typeof RetryFailedResponse>;
+
 export const ClaimNextRequest = z.object({
   kind: z.enum(REVIEW_TASK_KINDS).optional(),
   category: z.string().min(1).max(100).optional(),
@@ -435,6 +557,8 @@ export const ApiKeySummary = z.object({
   lastUsedAt: isoDate.nullable(),
   expiresAt: isoDate.nullable(),
   revokedAt: isoDate.nullable(),
+  /** `ingest` sends documents in; `read` reads them back (and the categories). */
+  scopes: z.array(z.enum(API_KEY_SCOPES)),
 });
 export type ApiKeySummary = z.infer<typeof ApiKeySummary>;
 
@@ -445,6 +569,8 @@ export const ApiKeyRequest = z.object({
   name: z.string().trim().min(1).max(100),
   /** Omitted: the key never expires. */
   expiresInDays: z.number().int().min(1).max(3650).optional(),
+  /** Omitted: both. A key that only sends documents (a mail relay, a scanner) can leave out `read`. */
+  scopes: z.array(z.enum(API_KEY_SCOPES)).min(1).optional(),
 });
 export type ApiKeyRequest = z.infer<typeof ApiKeyRequest>;
 
@@ -594,6 +720,39 @@ export interface ConfigResponse {
   config: ConfigSummary;
 }
 
+/** A catalog model and whether a running worker can call it now (worker heartbeats). */
+export interface ModelOption {
+  ref: string;
+  provider: string;
+  efforts: string[];
+  /** Replay serves this model only at its recorded effort. */
+  recordedEffort: string | null;
+  available: boolean;
+  /** Why not, when it isn't: no key on the worker, no recording in replay, no worker running. */
+  reason: string | null;
+}
+export interface ModelList {
+  models: ModelOption[];
+}
+
+/** Settings → Pipeline: the active version, with what the sender policy says. */
+export interface PipelineSettings {
+  config: ConfigSummary;
+  /** Forwarded mail (Postmark) must be authenticated to auto-approve. Synced mail always is. */
+  senderRequire: boolean;
+}
+
+/**
+ * Settings → Pipeline → Save: a new version of the active one with these models, every category
+ * reviewed by a person (a model change makes the old thresholds meaningless), activated at once.
+ */
+export const PipelineChangeRequest = z.object({
+  classify: z.object({ model: z.string().min(1).max(200), effort: z.enum(EFFORTS) }),
+  extract: z.object({ model: z.string().min(1).max(200), effort: z.enum(EFFORTS) }),
+  senderRequire: z.boolean(),
+});
+export type PipelineChangeRequest = z.infer<typeof PipelineChangeRequest>;
+
 export const EvalRunsQuery = z.object({ datasetId: z.uuid().optional() });
 export type EvalRunsQuery = z.infer<typeof EvalRunsQuery>;
 
@@ -603,8 +762,11 @@ export interface EvalRun {
   datasetName: string;
   split: EvalSplit;
   status: (typeof EVAL_RUN_STATUSES)[number];
-  /** `replay`: served from cassettes, so costs are recorded figures and latencies recorded live latencies. */
-  llmMode: "live" | "replay";
+  /**
+   * `replay`: served from cassettes, so costs are recorded figures and latencies recorded live
+   * latencies. `simulated`: the simulator answered (`sim:` models), so nothing measures a real model.
+   */
+  llmMode: LlmCallMode;
   itemCount: number;
   /** Results stored so far. */
   done: number;
@@ -619,7 +781,7 @@ export interface EvalRun {
 export interface EvalRunList {
   runs: EvalRun[];
   /** How a run started now would call models (the deployment's LLM_MODE). */
-  newRunMode: "live" | "replay";
+  newRunMode: LlmCallMode;
 }
 
 /** POST /evals/runs. Test-split runs need a frozen config (422 config_not_frozen). */
@@ -809,3 +971,94 @@ export const UpdateMailboxRequest = z
   .object({ labelId: z.string().trim().min(1).max(200).optional(), paused: z.boolean().optional() })
   .refine((v) => v.labelId !== undefined || v.paused !== undefined, { message: "Nothing to change" });
 export type UpdateMailboxRequest = z.infer<typeof UpdateMailboxRequest>;
+
+// ── Categories ───────────────────────────────────────────────────────────────────────────────
+
+/** One category of the active version, built in (code, with rules) or custom (a tenant definition). */
+export interface CategoryInfo {
+  category: string;
+  origin: (typeof CATEGORY_ORIGINS)[number];
+  version: number;
+  schemaVersionId: string;
+  description: string;
+  /** Field names in authored order, with whether each is required. */
+  fields: { name: string; required: boolean }[];
+  /** The version's JSON Schema, with properties in authored order. */
+  jsonSchema: Record<string, unknown>;
+  automation: (typeof AUTOMATION_MODES)[number];
+  /** A custom category's definition, to edit; null for a built-in. */
+  definition: CategoryDefinition | null;
+}
+
+export interface CategoryList {
+  configId: string;
+  categories: CategoryInfo[];
+  starters: { id: string; title: string; definition: CategoryDefinitionInput }[];
+  limits: typeof DEFINITION_LIMITS;
+  fieldTypes: FieldType[];
+  comparators: Comparator[];
+  /** What saving a change would do that an admin should know first (replay mode, automation off). */
+  warnings: string[];
+}
+
+/** POST /categories/preview: the compiled schema, or the definition's problems. */
+export interface CategoryPreview {
+  jsonSchema: Record<string, unknown> | null;
+  issues: { path: string; message: string }[];
+  warnings: string[];
+}
+
+/** POST /categories: a custom category added, or a new version of one; the new config is active. */
+export interface CategorySaved {
+  category: string;
+  version: number;
+  config: ConfigSummary;
+}
+
+export type { CategoryDefinition, CategoryDefinitionInput };
+
+export const CategoryNameParam = z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{1,39}$/) });
+
+// ── Public API reads (/api/v1) ───────────────────────────────────────────────────────────────
+// snake_case, like the webhook payload: these are for other systems, not this UI.
+
+/** POST /v1/documents: the file, and optionally the sender's own reference. */
+export const PublicIngestForm = z.object({
+  file: z.instanceof(File),
+  external_ref: z.string().trim().min(1).max(200).optional(),
+});
+
+/** One document as a sender sees it: its outcome, and the fields once extracted. */
+export interface PublicDocument {
+  id: string;
+  external_ref: string | null;
+  created_at: string;
+  /** The one word to act on (DOCUMENT_STATES); the three statuses below are the detail. */
+  state: DocumentState;
+  processing_status: (typeof PROCESSING_STATUSES)[number];
+  review_status: (typeof REVIEW_STATUSES)[number];
+  delivery_status: (typeof DELIVERY_STATUSES)[number];
+  category: string | null;
+  /** The current extraction's fields (a reviewer's edit, once there is one). */
+  fields: Record<string, unknown> | null;
+  /** Why it went to review, or failed: gate reasons, or the failure reason. */
+  reasons: string[];
+  delivered_at: string | null;
+}
+
+export interface PublicDocumentList {
+  documents: PublicDocument[];
+}
+
+export const PublicDocumentQuery = z.object({ external_ref: z.string().trim().min(1).max(200) });
+
+/** GET /v1/categories: what the pipeline sorts into, with the schema of each category's fields. */
+export interface PublicCategoryList {
+  categories: {
+    name: string;
+    origin: (typeof CATEGORY_ORIGINS)[number];
+    version: number;
+    description: string;
+    json_schema: Record<string, unknown>;
+  }[];
+}

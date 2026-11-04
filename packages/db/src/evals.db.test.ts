@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { QUEUES } from "@ai-triage/core";
+import { MIN_CALIB_ITEMS, QUEUES } from "@ai-triage/core";
 import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createBoss, type PgBoss } from "./boss";
-import { getConfig } from "./configs";
+import { createCandidateConfig, getConfig } from "./configs";
 import {
   activateConfig,
   commitEvalResult,
@@ -241,6 +241,23 @@ describe("freeze and activate", () => {
       "run_not_done",
     );
     await s.inTenant((tx) => commitEvalResult(tx, result(runId, s.itemIds[0] ?? "")));
+    // One calib invoice is too few to set a threshold on.
+    await refused(
+      s.inTenant((tx) => freezeCalibratedConfig(tx, { runId, name: "Frozen", categories: [change] })),
+      "too_few_calib_items",
+    );
+    await s.inTenant(async (tx) => {
+      for (let i = 0; i < MIN_CALIB_ITEMS - 1; i++) {
+        await insertEvalItem(tx, {
+          datasetId: s.datasetId,
+          source: { sourceKey: `more${i}`, sourceMime: "application/pdf", sourceTitle: null, contentKey: randomUUID() },
+          expectedCategory: "invoice",
+          expectedFields: {},
+          split: "calib",
+          origin: "seed",
+        });
+      }
+    });
 
     const frozen = await s.inTenant((tx) =>
       freezeCalibratedConfig(tx, { runId, name: "Frozen", categories: [change] }),
@@ -260,10 +277,15 @@ describe("freeze and activate", () => {
       auditRate: 0.2,
     });
 
+    // An unfrozen version that auto-approves can't be activated; one that reviews everything can.
+    const unfrozen = await s.inTenant((tx) =>
+      createCandidateConfig(tx, { parentId: s.configId, name: "Uncalibrated", categories: [change] }),
+    );
     await refused(
-      s.inTenant((tx) => activateConfig(tx, s.configId)),
+      s.inTenant((tx) => activateConfig(tx, unfrozen.id)),
       "config_not_frozen",
     );
+    await s.inTenant((tx) => activateConfig(tx, s.configId));
     await s.inTenant((tx) => activateConfig(tx, frozen.id));
   });
 

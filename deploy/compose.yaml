@@ -1,0 +1,229 @@
+name: ai-triage-install
+
+# A real installation (docs/install.md), made by install.sh: a local one on this machine, or a
+# server with HTTPS. Every setting comes from .env next to this file, which `cli configure` writes
+# (secrets generated, mode 0600). COMPOSE_FILE in .env adds compose.local.yaml or
+# compose.server.yaml (the published ports), and an OCR file when OCR is on. Run it through ./triage.
+#
+# Differences from the repository's demo compose.yaml: no demo data, catcher, fake Google or
+# simulator; production checks on (dev defaults refused); only Caddy is published.
+
+x-image: &image
+  image: ${TRIAGE_IMAGE:-ghcr.io/visheshgubrani/ai-triage}:${TRIAGE_VERSION:-latest}
+  init: true
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options: { max-size: 20m, max-file: "5" }
+
+# What the api and worker share. The owner URL goes to migrate alone.
+x-app-env: &app-env
+  DATABASE_URL: ${DATABASE_URL}
+  S3_ENDPOINT: ${S3_ENDPOINT}
+  S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+  ENCRYPTION_KEYS: ${ENCRYPTION_KEYS}
+  PUBLIC_URL: ${PUBLIC_URL}
+  LLM_MODE: ${LLM_MODE:-live}
+  MAX_FILE_MB: ${MAX_FILE_MB:-20}
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  RATE_LIMIT_SCALE: ${RATE_LIMIT_SCALE:-1}
+  WEBHOOK_ALLOWED_HOSTS: ${WEBHOOK_ALLOWED_HOSTS:-}
+  GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+  OCR_URL: ${OCR_URL:-}
+  DB_POOL_MAX: ${DB_POOL_MAX:-}
+  REQUIRE_ADMIN_2FA: ${REQUIRE_ADMIN_2FA:-}
+
+services:
+  # ── Bundled data services (COMPOSE_PROFILES=bundled; remove it to use your own) ──
+  postgres:
+    profiles: [bundled]
+    image: postgres:17-alpine@sha256:266d3c257594e195b309ae9d1805e54c788f1d7b375f56bf6c367aac6c917e7b
+    environment:
+      POSTGRES_USER: triage
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: triage
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U triage -d triage"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    restart: unless-stopped
+    logging: *logging
+
+  storage:
+    profiles: [bundled]
+    image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY_ID}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_ACCESS_KEY}
+    volumes:
+      - storage-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/health >/dev/null"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
+    restart: unless-stopped
+    logging: *logging
+
+  # One-shot: create the bucket (409 = it exists).
+  storage-init:
+    profiles: [bundled]
+    image: rustfs/rustfs:1.0.4@sha256:ed9210d6411d77ffceb70d94b964a3cb7d225983368bc25bebe01e995293dcc2
+    depends_on:
+      storage:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        code=$$(curl -s -o /dev/null -w "%{http_code}" -X PUT
+        --aws-sigv4 "aws:amz:${S3_REGION:-us-east-1}:s3" --user "$${S3_ACCESS_KEY_ID}:$${S3_SECRET_ACCESS_KEY}"
+        http://storage:9000/${S3_BUCKET});
+        echo "create bucket: HTTP $$code";
+        [ "$$code" = 200 ] || [ "$$code" = 409 ]
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+    restart: "no"
+
+  # ── The app ──
+  # One-shot, first on every start: migrations, the app role (its password from DATABASE_URL), queues.
+  migrate:
+    <<: *image
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      DATABASE_OWNER_URL: ${DATABASE_OWNER_URL}
+      DATABASE_URL: ${DATABASE_URL}
+      # Migrations that move or re-encrypt secrets need the key ring.
+      ENCRYPTION_KEYS: ${ENCRYPTION_KEYS}
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: false
+      storage-init:
+        condition: service_completed_successfully
+        required: false
+
+  api:
+    <<: *image
+    command: ["api"]
+    environment:
+      <<: *app-env
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET}
+      POSTMARK_INBOUND_USER: ${POSTMARK_INBOUND_USER}
+      POSTMARK_INBOUND_PASSWORD: ${POSTMARK_INBOUND_PASSWORD}
+      INBOUND_DOMAIN: ${INBOUND_DOMAIN:-}
+      DEFAULT_MODEL: ${DEFAULT_MODEL:-}
+      METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Only Caddy reaches the api, over the compose network, so its X-Forwarded-For is believed.
+      TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:8787/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *image
+    command: ["worker"]
+    # Drains its jobs on SIGTERM before exiting.
+    stop_grace_period: 40s
+    environment:
+      <<: *app-env
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      OPENAI_COMPAT_BASE_URL: ${OPENAI_COMPAT_BASE_URL:-}
+      OPENAI_COMPAT_API_KEY: ${OPENAI_COMPAT_API_KEY:-}
+      WORKER_LLM_CONCURRENCY: ${WORKER_LLM_CONCURRENCY:-4}
+      WORKER_EVAL_CONCURRENCY: ${WORKER_EVAL_CONCURRENCY:-}
+      WORKER_MAILBOX_CONCURRENCY: ${WORKER_MAILBOX_CONCURRENCY:-}
+      WORKER_TENANT_CONCURRENCY: ${WORKER_TENANT_CONCURRENCY:-}
+      WORKER_TENANT_EVAL_CONCURRENCY: ${WORKER_TENANT_EVAL_CONCURRENCY:-}
+      MAX_PDF_PAGES: ${MAX_PDF_PAGES:-}
+      PARSE_TIMEOUT_MS: ${PARSE_TIMEOUT_MS:-}
+      RECONCILE_STALL_MINUTES: ${RECONCILE_STALL_MINUTES:-}
+      OCR_TIMEOUT_MS: ${OCR_TIMEOUT_MS:-}
+      OCR_MAX_PAGES: ${OCR_MAX_PAGES:-}
+      WEBHOOK_TIMEOUT_MS: ${WEBHOOK_TIMEOUT_MS:-}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:9100/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    <<: *image
+    command: ["web"]
+    environment:
+      API_INTERNAL_URL: http://api:8787
+      # The CSP allows the files origin (presigned downloads and uploads).
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://localhost:3000/sign-in').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # The front door: the app at APP_SITE (/api straight to the api), stored files at FILES_SITE.
+  caddy:
+    image: caddy:2-alpine@sha256:e70b164da81ef698b3ad19af799ea6086ce6d9e48ed4079eb9fe26f6fbf14ee5
+    environment:
+      APP_SITE: ${APP_SITE}
+      FILES_SITE: ${FILES_SITE}
+      ACME_EMAIL: ${ACME_EMAIL}
+      FILES_UPSTREAM: ${FILES_UPSTREAM:-storage:9000}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *logging
+
+volumes:
+  postgres-data:
+  storage-data:
+  caddy-data:
+  caddy-config:

@@ -1,0 +1,13 @@
+{
+  "name": "@ai-triage/telemetry",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Structured logs, trace ids and Prometheus metrics, with no dependencies",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

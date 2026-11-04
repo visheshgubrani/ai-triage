@@ -346,7 +346,7 @@ export function RunView({ runId, isAdmin }: { runId: string; isAdmin: boolean })
     <>
       <h1 className="mt-2 flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
         {run.split} run · v{config.version} {config.name} <FrozenBadge frozen={!!config.frozenAt} />
-        <ReplayBadge replay={replay} />
+        <ReplayBadge replay={replay} models={[config.classify.model, config.extract.model]} />
       </h1>
       <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
         {run.datasetName} · {config.classify.model} ({config.classify.effort}) classifies, {config.extract.model} (

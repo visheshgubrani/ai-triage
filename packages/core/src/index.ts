@@ -4,6 +4,22 @@
 // The `as const` arrays are the single source of truth: packages/db builds its
 // CHECK constraints from them.
 
+/**
+ * Intake filters (docs/architecture.md §5): mail that is noise by its headers alone ends `skipped`,
+ * with no model call and no review task. Per tenant; auto-replies and bounces are on by default,
+ * bulk mail off, because some vendors send invoices through bulk mailers.
+ */
+export const INTAKE_FILTERS = ["auto_replies", "bounces", "bulk"] as const;
+export type IntakeFilter = (typeof INTAKE_FILTERS)[number];
+export type IntakeFilters = Record<IntakeFilter, boolean>;
+export const DEFAULT_INTAKE_FILTERS: IntakeFilters = { auto_replies: true, bounces: true, bulk: false };
+
+/** Freeze turns on automation for a category only with at least this many calib items of it. */
+export const MIN_CALIB_ITEMS = 3;
+
+/** This release (Keep a Changelog, CHANGELOG.md). A test keeps it equal to the root package.json. */
+export const APP_VERSION = "0.7.0";
+
 export const PIPELINE_STAGES = ["parse", "classify", "extract", "route"] as const;
 export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 
@@ -11,7 +27,16 @@ export type PipelineStage = (typeof PIPELINE_STAGES)[number];
 export const LLM_STAGES = ["classify", "extract"] as const;
 export type LlmStage = (typeof LLM_STAGES)[number];
 
-export const PROCESSING_STATUSES = ["received", "parsed", "classified", "extracted", "done", "failed"] as const;
+/** `skipped`: an intake filter (auto-reply, bounce, bulk mail) ended it before any model call. */
+export const PROCESSING_STATUSES = [
+  "received",
+  "parsed",
+  "classified",
+  "extracted",
+  "done",
+  "failed",
+  "skipped",
+] as const;
 export type ProcessingStatus = (typeof PROCESSING_STATUSES)[number];
 
 export const REVIEW_STATUSES = ["not_required", "pending", "approved", "rejected"] as const;
@@ -20,11 +45,36 @@ export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 export const DELIVERY_STATUSES = ["none", "pending", "delivered", "failed"] as const;
 export type DeliveryStatus = (typeof DELIVERY_STATUSES)[number];
 
+/**
+ * A document's outcome as the public API reports it: one word a sender can act on, derived from
+ * the three statuses. `approved` covers auto-approval; delivery is reported beside it.
+ */
+export const DOCUMENT_STATES = ["processing", "needs_review", "approved", "rejected", "failed", "skipped"] as const;
+export type DocumentState = (typeof DOCUMENT_STATES)[number];
+
+export function documentState(d: { processingStatus: ProcessingStatus; reviewStatus: ReviewStatus }): DocumentState {
+  if (d.processingStatus === "failed") return "failed";
+  if (d.processingStatus === "skipped") return "skipped";
+  if (d.processingStatus !== "done") return "processing";
+  if (d.reviewStatus === "pending") return "needs_review";
+  if (d.reviewStatus === "rejected") return "rejected";
+  // `approved` by a reviewer, or `not_required` because the route stage auto-approved it.
+  return "approved";
+}
+
+/** What a public API key may do: send documents in, and read them back. */
+export const API_KEY_SCOPES = ["ingest", "read"] as const;
+export type ApiKeyScope = (typeof API_KEY_SCOPES)[number];
+
 /** The channel a document arrived through (not its content type: an .eml upload is `upload`). */
 export const DOCUMENT_SOURCES = ["email", "upload", "api", "gmail"] as const;
 export type DocumentSource = (typeof DOCUMENT_SOURCES)[number];
 
-export const EVIDENCE_MODES = ["text", "pdf_text", "unverifiable"] as const;
+/**
+ * How a part's quotes are verified: `text` and `pdf_text` against the source's own text;
+ * `ocr_text` against text OCR read from a scan or photo (optional OCR); `unverifiable` not at all.
+ */
+export const EVIDENCE_MODES = ["text", "pdf_text", "unverifiable", "ocr_text"] as const;
 export type EvidenceMode = (typeof EVIDENCE_MODES)[number];
 
 /** What a document part is: an email's rendered body, one of its attachments, or an uploaded file. */
@@ -99,8 +149,11 @@ export type EvalRunStatus = (typeof EVAL_RUN_STATUSES)[number];
 /** Execution context of an llm_calls row: a processing run, or an eval run + item (never both). */
 export type LlmCallContext = { runId: string } | { evalRunId: string; evalItemId: string };
 
-/** How an llm_calls row was produced. `record` mode calls the live API, so it stores `live`. */
-export const LLM_CALL_MODES = ["live", "replay"] as const;
+/**
+ * How an llm_calls row was produced. `record` mode calls the live API, so it stores `live`.
+ * `simulated`: the simulator answered (a `sim:` model), never money and never a real model.
+ */
+export const LLM_CALL_MODES = ["live", "replay", "simulated"] as const;
 export type LlmCallMode = (typeof LLM_CALL_MODES)[number];
 
 /** How the deployment calls models: `replay` (cassettes, the default), `record` (live, saved) or `live`. */
@@ -153,6 +206,8 @@ export const QUEUES = {
   mailboxFetch: "mailbox.fetch",
   /** Dead-letter queue of `mailbox.fetch`: marks the message failed once retries are exhausted. */
   mailboxFailed: "mailbox.failed",
+  /** Every five minutes (cron): fails runs, actions and eval runs left waiting on a job that is gone. */
+  reconcile: "system.reconcile",
 } as const;
 export type QueueName = (typeof QUEUES)[keyof typeof QUEUES];
 
@@ -179,6 +234,13 @@ export interface QueueSettings {
   /** How long a job may stay active before pg-boss retries it. LLM stages get room for slow calls. */
   expireInSeconds: number;
   deadLetter?: QueueName;
+  /** Seconds: the longest a retry waits, however far backoff has doubled. */
+  retryDelayMax?: number;
+  /**
+   * Seconds. A handler's worker refreshes the job this often (pg-boss does it); a job whose worker
+   * died stops being refreshed and is retried after this long, instead of after `expireInSeconds`.
+   */
+  heartbeatSeconds?: number;
   /**
    * pg-boss queue policy (default `standard`). `exclusive` allows one queued or active job per
    * `singletonKey`, so a mailbox never syncs twice at once. A queue's policy is fixed when it's created.
@@ -190,43 +252,84 @@ const stage = (retryLimit: number, expireInSeconds: number): QueueSettings => ({
   retryLimit,
   retryDelay: 5,
   retryBackoff: true,
+  retryDelayMax: 300,
   expireInSeconds,
+  heartbeatSeconds: 30,
   deadLetter: QUEUES.failed,
 });
+
+/**
+ * How long one model call may take before the SDK aborts it. Classify answers briefly; extract may
+ * write up to its max_tokens, at about 40 tokens a second at worst. pg-boss owns retries (the SDK
+ * makes none), so a stage's job expiry only has to outlast one call (a test checks the margin).
+ */
+export function llmTimeoutMs(stage: LlmStage, maxTokens: number): number {
+  if (stage === "classify") return 120_000;
+  return Math.min(600_000, 60_000 + Math.ceil(maxTokens / 40) * 1000);
+}
+
+/** The parse sandbox's default time limit (PARSE_TIMEOUT_MS). */
+export const PARSE_TIMEOUT_DEFAULT_MS = 60_000;
+/**
+ * The most time optional OCR spends on one document, across its pages (each also bounded by
+ * OCR_TIMEOUT_MS). Pages it doesn't reach stay unverifiable. The parse stage's expiry covers it.
+ */
+export const OCR_BUDGET_MS = 600_000;
 
 /** Retry policy per queue, applied by `db:migrate` (create, or update an existing queue). */
 export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
   [QUEUES.ping]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 60 },
-  [QUEUES.parse]: stage(3, 300),
-  [QUEUES.classify]: stage(4, 900),
-  [QUEUES.extract]: stage(4, 900),
+  // Parsing runs in a sandbox bounded by PARSE_TIMEOUT_MS (60 s by default), then optional OCR,
+  // bounded by OCR_BUDGET_MS.
+  [QUEUES.parse]: stage(3, 720),
+  // One model call each: classify's 120 s timeout, extract's at most 600 s, plus a margin. Ten
+  // retries with backoff capped at 5 minutes ride out about an hour of a busy provider.
+  [QUEUES.classify]: stage(10, 300),
+  [QUEUES.extract]: stage(10, 660),
   [QUEUES.route]: stage(3, 120),
-  [QUEUES.failed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
+  [QUEUES.failed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 120 },
   [QUEUES.deliver]: {
     retryLimit: 8,
     retryDelay: 30,
     retryBackoff: true,
+    retryDelayMax: 1800,
     expireInSeconds: 60,
     deadLetter: QUEUES.deliveryFailed,
   },
-  [QUEUES.deliveryFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
-  // An item makes up to two LLM calls in one job, so it gets the stages' expiry for both.
+  [QUEUES.deliveryFailed]: {
+    retryLimit: 5,
+    retryDelay: 5,
+    retryBackoff: true,
+    retryDelayMax: 300,
+    expireInSeconds: 60,
+  },
+  // An item parses (with optional OCR) and makes up to two model calls in one job, so its expiry
+  // covers all of them.
   [QUEUES.evalItem]: {
     retryLimit: 3,
     retryDelay: 5,
     retryBackoff: true,
-    expireInSeconds: 1800,
+    retryDelayMax: 300,
+    expireInSeconds: 1500,
+    heartbeatSeconds: 30,
     deadLetter: QUEUES.evalFailed,
   },
-  [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
-  [QUEUES.maintenance]: { retryLimit: 3, retryDelay: 60, retryBackoff: true, expireInSeconds: 900 },
-  [QUEUES.storageDelete]: { retryLimit: 10, retryDelay: 30, retryBackoff: true, expireInSeconds: 300 },
+  [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 120 },
+  [QUEUES.maintenance]: { retryLimit: 3, retryDelay: 60, retryBackoff: true, retryDelayMax: 900, expireInSeconds: 900 },
+  [QUEUES.storageDelete]: {
+    retryLimit: 10,
+    retryDelay: 30,
+    retryBackoff: true,
+    retryDelayMax: 1800,
+    expireInSeconds: 300,
+  },
   // A missed minute is caught by the next one, so the poll never retries.
   [QUEUES.mailboxPoll]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 60 },
   [QUEUES.mailboxSync]: {
     retryLimit: 2,
     retryDelay: 30,
     retryBackoff: true,
+    retryDelayMax: 300,
     expireInSeconds: 300,
     policy: "exclusive",
   },
@@ -234,10 +337,13 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
     retryLimit: 5,
     retryDelay: 30,
     retryBackoff: true,
+    retryDelayMax: 900,
     expireInSeconds: 300,
     deadLetter: QUEUES.mailboxFailed,
   },
-  [QUEUES.mailboxFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
+  [QUEUES.mailboxFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 60 },
+  // A missed pass is caught by the next one.
+  [QUEUES.reconcile]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 240 },
 };
 
 /** When the maintenance job runs (cron, UTC). */
@@ -245,6 +351,9 @@ export const MAINTENANCE_CRON = "15 3 * * *";
 
 /** When the mailbox poll runs: every minute, pg-boss's finest cron granularity. */
 export const MAILBOX_POLL_CRON = "* * * * *";
+
+/** When the reconciler runs: every five minutes. */
+export const RECONCILE_CRON = "*/5 * * * *";
 
 /** Payload of `storage.delete`: objects and key prefixes, all inside `t/{tenantId}/`. */
 export interface StorageDeleteJob {
@@ -381,6 +490,10 @@ export const EVAL_ERROR_CODES = [
   "run_not_done",
   "runs_not_comparable",
   "invalid_config",
+  /** Freeze with automation for a category whose calib split is too thin to set a threshold on. */
+  "too_few_calib_items",
+  /** Automation for a category with no required field: "correct" would mean the category alone. */
+  "no_required_fields",
 ] as const;
 export type EvalErrorCode = (typeof EVAL_ERROR_CODES)[number];
 
@@ -392,6 +505,15 @@ export const API_ERROR_CODES = [
   "two_factor_required",
   /** A sensitive account change by a user without a password needs a sign-in from the last few minutes. */
   "recent_sign_in_required",
+  /** The setup link was used, expired or replaced (first-run setup). */
+  "setup_closed",
+  "slug_taken",
+  /** Send test event, with no webhook set. */
+  "no_webhook",
+  /** Process anyway, on a document an intake filter didn't skip. */
+  "not_skipped",
+  /** The API key lacks the scope the call needs (API_KEY_SCOPES). */
+  "missing_scope",
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
@@ -456,6 +578,10 @@ export const AUDIT_ACTIONS = [
   "mailbox.updated",
   "mailbox.disconnected",
   "mailbox.reauth_required",
+  "setup.completed",
+  "category.version_created",
+  "runs.bulk_retried",
+  "intake_filters.updated",
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -467,6 +593,8 @@ export const WEBHOOK_HEADERS = {
   signature: "X-Triage-Signature",
 } as const;
 export const WEBHOOK_EVENT = "document.approved";
+/** Settings → Send test event: a signed delivery with a throwaway Idempotency-Key and no document. */
+export const WEBHOOK_PING_EVENT = "ping";
 /** How far a receiver should let the signed timestamp drift before rejecting a delivery. */
 export const WEBHOOK_TOLERANCE_SECONDS = 300;
 
@@ -494,6 +622,9 @@ export const EMAIL_SOURCE_MIME = "application/vnd.ai-triage.email+json";
 export const BUILTIN_CATEGORIES = ["invoice", "support_request", "contract"] as const;
 export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
 export const OTHER_CATEGORY = "other";
+/** Where a category schema version came from: a built-in template (code) or a tenant's definition (data). */
+export const CATEGORY_ORIGINS = ["builtin", "custom"] as const;
+export type CategoryOrigin = (typeof CATEGORY_ORIGINS)[number];
 
 /**
  * Gate reason codes. A failed gate is recorded as `code` or `code:field` (for example
@@ -539,6 +670,12 @@ export const FAILURE_REASONS = [
   "cassette_missing",
   "budget_exhausted",
   "retries_exhausted",
+  /** Parsing a file ran past PARSE_TIMEOUT_MS (or its memory limit) in the parse sandbox. */
+  "parse_timeout",
+  /** The model provider kept answering 429/529/503 until the stage's retries ran out. */
+  "provider_unavailable",
+  /** The reconciler found the run waiting on a job that no longer exists (docs/architecture.md §5). */
+  "stalled",
 ] as const;
 export type FailureReason = (typeof FAILURE_REASONS)[number];
 
@@ -546,4 +683,5 @@ export function isOneOf<T extends string>(values: readonly T[], value: unknown):
   return typeof value === "string" && (values as readonly string[]).includes(value);
 }
 
+export * from "./env";
 export * from "./models";

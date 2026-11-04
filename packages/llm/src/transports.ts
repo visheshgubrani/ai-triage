@@ -4,7 +4,7 @@ import type { LlmCallMode, LlmStage, Provider } from "@ai-triage/core";
 import { PipelineError } from "@ai-triage/core/pipeline";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
-import { CassetteMissError } from "./errors";
+import { CassetteMissError, ProviderBusyError } from "./errors";
 import { CASSETTE_FORMAT } from "./hash";
 import type { OpenAiCompatibleProvider, WireRequest } from "./providers";
 
@@ -20,6 +20,10 @@ export interface SendResult {
 export interface RequestMeta {
   hash: string;
   stage: LlmStage;
+  /** Aborts the call: the job expired, or the worker is shutting down. */
+  signal?: AbortSignal;
+  /** How long the provider may take (llmTimeoutMs). */
+  timeoutMs?: number;
 }
 
 /** Sends one request. live and record call the provider; replay reads cassettes; fake is for tests. */
@@ -47,6 +51,7 @@ export const OPENAI_COMPATIBLE_ENDPOINTS: Record<
   },
   // Local servers usually ignore the key.
   compat: { keyEnv: "OPENAI_COMPAT_API_KEY", baseUrlEnv: "OPENAI_COMPAT_BASE_URL", baseUrl: null, keyRequired: false },
+  sim: { keyEnv: "LLM_SIMULATOR_KEY", baseUrlEnv: "LLM_SIMULATOR_URL", baseUrl: null, keyRequired: false },
 };
 
 /** The env var holding a provider's API key (for preflight checks such as the cassette recorder). */
@@ -60,12 +65,36 @@ function openAiClient(provider: OpenAiCompatibleProvider, env: NodeJS.ProcessEnv
   const apiKey = env[endpoint.keyEnv] || (endpoint.keyRequired ? undefined : "unused");
   if (!apiKey) throw missing(endpoint.keyEnv);
   const baseURL = env[endpoint.baseUrlEnv] || endpoint.baseUrl;
-  if (provider === "compat" && !baseURL) throw missing(endpoint.baseUrlEnv);
-  return new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  if ((provider === "compat" || provider === "sim") && !baseURL) throw missing(endpoint.baseUrlEnv);
+  // pg-boss owns retries (with backoff and a dead letter), so the SDK makes none of its own.
+  return new OpenAI({ apiKey, maxRetries: 0, ...(baseURL ? { baseURL } : {}) });
 }
 
-/** Errors retrying can't fix become PipelineErrors, so the run fails at once. */
+/** Statuses that mean "too busy, come back later": rate limited, overloaded (Claude's 529), unavailable. */
+const BUSY_STATUSES = new Set([429, 503, 529]);
+
+/** The provider's Retry-After in milliseconds (`retry-after-ms`, or `retry-after` in seconds or as a date). */
+export function retryAfterMs(headers: Headers | Record<string, string> | undefined, now = Date.now()): number | null {
+  const get = (name: string) =>
+    headers instanceof Headers ? headers.get(name) : (headers?.[name] ?? headers?.[name.toLowerCase()] ?? null);
+  const ms = Number(get("retry-after-ms"));
+  if (Number.isFinite(ms) && ms > 0) return ms;
+  const value = get("retry-after");
+  if (!value) return null;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(value);
+  return Number.isNaN(date) ? null : Math.max(0, date - now);
+}
+
+/**
+ * Errors retrying can't fix become PipelineErrors, so the run fails at once. A busy provider
+ * becomes a ProviderBusyError, which the gateway turns into a shared cooldown.
+ */
 function classify(err: unknown, sdk: typeof Anthropic | typeof OpenAI): unknown {
+  if (err instanceof sdk.APIError && err.status !== undefined && BUSY_STATUSES.has(err.status)) {
+    return new ProviderBusyError(err.status, retryAfterMs(err.headers as Headers | undefined), err.message);
+  }
   if (err instanceof sdk.APIError && err.status === 413) return new PipelineError("request_too_large", err.message);
   if (
     err instanceof sdk.BadRequestError ||
@@ -81,28 +110,30 @@ function classify(err: unknown, sdk: typeof Anthropic | typeof OpenAI): unknown 
  * Calls the provider's API: the Messages API for Claude, Chat Completions for the rest. Clients are
  * built on first use, so a missing key only matters for a provider a config actually uses. Errors
  * retrying can't fix (400, 404, 413, 422, a missing key) become PipelineErrors so the run fails at
- * once; rate limits, server errors and connection errors propagate for a retry (after the SDK's own).
+ * once; rate limits, server errors, timeouts and connection errors propagate, and pg-boss retries the
+ * job (the SDK retries nothing itself).
  */
 export function liveTransport(options: { anthropic?: Anthropic; env?: NodeJS.ProcessEnv } = {}): Transport {
   const env = options.env ?? process.env;
   let anthropic = options.anthropic;
   const openai = new Map<OpenAiCompatibleProvider, OpenAI>();
   return {
-    async send(request) {
+    async send(request, meta) {
+      const options = { signal: meta.signal, timeout: meta.timeoutMs, maxRetries: 0 };
       const started = performance.now();
       const done = (response: unknown, requestId: string | null): SendResult => ({
         response,
         latencyMs: Math.round(performance.now() - started),
         requestId,
-        mode: "live",
+        mode: request.provider === "sim" ? "simulated" : "live",
       });
       if (request.provider === "anthropic") {
         if (!anthropic) {
           if (!env.ANTHROPIC_API_KEY) throw missing("ANTHROPIC_API_KEY");
-          anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+          anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 0 });
         }
         try {
-          const { data, request_id } = await anthropic.beta.messages.create(request.params).withResponse();
+          const { data, request_id } = await anthropic.beta.messages.create(request.params, options).withResponse();
           return done(data, request_id ?? null);
         } catch (err) {
           throw classify(err, Anthropic);
@@ -114,7 +145,7 @@ export function liveTransport(options: { anthropic?: Anthropic; env?: NodeJS.Pro
         openai.set(request.provider, client);
       }
       try {
-        const { data, request_id } = await client.chat.completions.create(request.params).withResponse();
+        const { data, request_id } = await client.chat.completions.create(request.params, options).withResponse();
         return done(data, request_id ?? data.id ?? null);
       } catch (err) {
         throw classify(err, OpenAI);

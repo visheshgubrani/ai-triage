@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
   DeleteObjectCommand,
+  GetBucketCorsCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
   NotFound,
@@ -69,6 +71,8 @@ export interface Storage {
   deletePrefix(prefix: string): Promise<number>;
   /** Lets `origins` PUT and GET objects from the browser (presigned uploads and downloads). */
   allowBrowserOrigins(origins: string[]): Promise<void>;
+  /** For preflight: whether the bucket exists and which browser origins its CORS rules allow. */
+  inspectBucket(): Promise<{ exists: boolean; corsOrigins: string[] }>;
 }
 
 function client(config: StorageConfig, endpoint: string) {
@@ -80,6 +84,9 @@ function client(config: StorageConfig, endpoint: string) {
     // Default CRC checksums would leak into presigned URLs and aren't supported everywhere.
     requestChecksumCalculation: "WHEN_REQUIRED",
     responseChecksumValidation: "WHEN_REQUIRED",
+    // A stalled store fails a request instead of hanging the job or the upload; pg-boss retries.
+    requestHandler: { connectionTimeout: 5_000, requestTimeout: 60_000 },
+    maxAttempts: 3,
   });
 }
 
@@ -182,6 +189,23 @@ export function createStorage(config: StorageConfig): Storage {
           },
         }),
       );
+    },
+    async inspectBucket() {
+      try {
+        await s3.send(new HeadBucketCommand({ Bucket }));
+      } catch (err) {
+        if (err instanceof NotFound || (err as { name?: string }).name === "NoSuchBucket") {
+          return { exists: false, corsOrigins: [] };
+        }
+        throw err;
+      }
+      try {
+        const cors = await s3.send(new GetBucketCorsCommand({ Bucket }));
+        return { exists: true, corsOrigins: (cors.CORSRules ?? []).flatMap((r) => r.AllowedOrigins ?? []) };
+      } catch {
+        // NoSuchCORSConfiguration: no browser origin is allowed yet (the api sets it at startup).
+        return { exists: true, corsOrigins: [] };
+      }
     },
   };
 }

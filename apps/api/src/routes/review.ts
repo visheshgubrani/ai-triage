@@ -10,6 +10,8 @@ import {
   type InboxResponse,
   type InboxTask,
   type ReleaseResponse,
+  RetryFailedRequest,
+  type RetryFailedResponse,
 } from "@ai-triage/contracts";
 import {
   type Claim,
@@ -22,9 +24,10 @@ import {
   withTenantTx,
 } from "@ai-triage/db";
 import { Hono } from "hono";
+import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
 import { limitUserWrites } from "../rate-limit";
-import { decide } from "../review";
+import { decide, retryFailed } from "../review";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
 import { idParam } from "./documents";
@@ -118,5 +121,13 @@ export const reviewRoutes = (deps: AppDeps) => {
       const result = await decide(deps, c.var.tenant, c.req.valid("param").id, c.req.valid("json"));
       if (!result) return c.json({ error: "Not found" }, 404);
       return c.json(result, 200);
+    })
+    .post("/retry-failed", requireRole("admin"), validate("json", RetryFailedRequest), async (c) => {
+      const { reason, before } = c.req.valid("json");
+      const body: RetryFailedResponse = await retryFailed(deps, c.var.tenant, userActor(c, deps), {
+        reason,
+        before: before ? new Date(before) : undefined,
+      });
+      return c.json(body, 200);
     });
 };

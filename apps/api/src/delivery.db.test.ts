@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import type { DeliveryFailureList, WebhookSettingsResponse } from "@ai-triage/contracts";
 import { QUEUES } from "@ai-triage/core";
 import { buildPipelineConfig, createAction, markDeliveryFailed, withTenantTx } from "@ai-triage/db";
 import { newTenant, seedReviewTask } from "@ai-triage/db/testing";
+import { verifyWebhook } from "@ai-triage/webhooks";
 import { afterAll, describe, expect, it } from "vitest";
 import { createTestApp, WEB_ORIGIN } from "./test-app";
 
@@ -122,5 +125,53 @@ describe("webhook settings", () => {
     await send("PUT", "/settings/webhook", admin, { url: "https://hooks.example.test/triage" });
     const rotated = (await (await send("POST", "/settings/webhook/rotate", admin)).json()) as WebhookSettingsResponse;
     expect(rotated.settings.previousSecretValidUntil).not.toBeNull();
+  });
+});
+
+describe("Send test event", () => {
+  it("POSTs a signed ping through the egress guard and reports the receiver's answer", async () => {
+    const received: { event?: string; signature?: string; key?: string; body: string }[] = [];
+    const receiver = createServer(async (req, res) => {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) chunks.push(chunk as Buffer);
+      received.push({
+        event: req.headers["x-triage-event"] as string,
+        signature: req.headers["x-triage-signature"] as string,
+        key: req.headers["idempotency-key"] as string,
+        body: Buffer.concat(chunks).toString("utf8"),
+      });
+      res.writeHead(204).end();
+    });
+    await new Promise<void>((resolve) => receiver.listen(0, "127.0.0.1", resolve));
+    const local = await createTestApp({ webhookAllowedHosts: ["127.0.0.1"] });
+    try {
+      const tenantId = await newTenant(local.pool);
+      const admin = await local.memberCookie(tenantId, "admin");
+      const request = (method: string, path: string, body?: unknown) =>
+        local.app.request(path, {
+          method,
+          headers: { cookie: admin, origin: WEB_ORIGIN, "content-type": "application/json" },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+      expect((await request("POST", "/settings/webhook/test")).status).toBe(409);
+      const url = `http://127.0.0.1:${(receiver.address() as AddressInfo).port}/hook`;
+      const saved = (await (await request("PUT", "/settings/webhook", { url })).json()) as WebhookSettingsResponse;
+      const res = await request("POST", "/settings/webhook/test");
+      expect(await res.json()).toMatchObject({ ok: true, status: 204, error: null });
+      expect(received).toHaveLength(1);
+      expect(received[0]?.event).toBe("ping");
+      expect(
+        verifyWebhook(
+          saved.secret ?? "",
+          received[0]?.signature ?? null,
+          received[0]?.key ?? null,
+          received[0]?.body ?? "",
+          new Date(),
+        ),
+      ).toBe(true);
+    } finally {
+      receiver.close();
+      await local.close();
+    }
   });
 });

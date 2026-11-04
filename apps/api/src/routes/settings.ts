@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   type ApiKeyCreated,
   type ApiKeyList,
@@ -9,27 +10,38 @@ import {
   type BudgetSettings,
   type ErrorResponse,
   type InboundSettings,
+  IntakeSettings,
   RetentionSettings,
+  type SystemHealthResponse,
   WebhookSettingsRequest,
   type WebhookSettingsResponse,
+  type WebhookTestResponse,
 } from "@ai-triage/contracts";
+import { WEBHOOK_PING_EVENT } from "@ai-triage/core";
 import {
   createApiKey,
+  deploymentHealth,
   getBudget,
+  getIntakeFilters,
   getRetentionDays,
   getWebhookSettings,
   listApiKeys,
   listAuditEvents,
   listInboundAddresses,
+  markWebhookTested,
   recordAudit,
   revokeApiKey,
   rotateInboundAddress,
   rotateWebhookSecret,
   setBudgetCap,
+  setIntakeFilters,
   setRetentionDays,
   setWebhook,
+  tenantHealth,
+  webhookTarget,
   withTenantTx,
 } from "@ai-triage/db";
+import { postWebhook } from "@ai-triage/webhooks";
 import { Hono } from "hono";
 import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
@@ -42,6 +54,7 @@ import { idParam } from "./documents";
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 const toKeySummary = (k: Awaited<ReturnType<typeof listApiKeys>>[number]): ApiKeySummary => ({
   ...k,
+  scopes: k.scopes as ApiKeySummary["scopes"],
   createdAt: k.createdAt.toISOString(),
   lastUsedAt: iso(k.lastUsedAt),
   expiresAt: iso(k.expiresAt),
@@ -84,6 +97,35 @@ export const settingsRoutes = (deps: AppDeps) =>
       });
       return c.json(body, 200);
     })
+    // Send test event: a signed `ping` to the webhook, through the same SSRF guard and headers as a
+    // delivery, with a throwaway Idempotency-Key. Shows the receiver's answer; a 2xx checks off
+    // the getting-started step.
+    .post("/webhook/test", async (c) => {
+      const now = deps.now();
+      const target = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => webhookTarget(tx, deps.keys, now));
+      if (!target.url || target.secrets.length === 0) {
+        return c.json({ error: "Set a webhook URL first.", code: "no_webhook" } satisfies ErrorResponse, 409);
+      }
+      const started = performance.now();
+      const outcome = await postWebhook({
+        fetch: deps.webhookFetch,
+        url: target.url,
+        secrets: target.secrets,
+        idempotencyKey: randomUUID(),
+        event: WEBHOOK_PING_EVENT,
+        body: JSON.stringify({ type: "ping", tenant: c.var.tenant.tenantId, sent_at: now.toISOString() }),
+        now,
+        timeoutMs: 10_000,
+      });
+      if (outcome.ok) await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => markWebhookTested(tx, now));
+      const body: WebhookTestResponse = {
+        ok: outcome.ok,
+        status: outcome.ok ? outcome.status : null,
+        error: outcome.ok ? null : outcome.error,
+        ms: Math.round(performance.now() - started),
+      };
+      return c.json(body, 200);
+    })
     .post("/webhook/rotate", async (c) => {
       const body: WebhookSettingsResponse = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
         const secret = await rotateWebhookSecret(tx, deps.keys, deps.now());
@@ -98,14 +140,19 @@ export const settingsRoutes = (deps: AppDeps) =>
       return c.json(body, 200);
     })
     .post("/api-keys", validate("json", ApiKeyRequest), async (c) => {
-      const { name, expiresInDays } = c.req.valid("json");
+      const { name, expiresInDays, scopes } = c.req.valid("json");
       const expiresAt = expiresInDays ? new Date(deps.now().getTime() + expiresInDays * 86_400_000) : null;
       const body = await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx): Promise<ApiKeyCreated> => {
-        const created = await createApiKey(tx, { name, expiresAt, createdBy: c.var.tenant.user.id });
+        const created = await createApiKey(tx, { name, expiresAt, scopes, createdBy: c.var.tenant.user.id });
         await recordAudit(tx, userActor(c, deps), {
           action: "api_key.created",
           target: { type: "api_key", id: created.id },
-          details: { name, prefix: created.prefix, expiresAt: expiresAt?.toISOString() ?? null },
+          details: {
+            name,
+            prefix: created.prefix,
+            expiresAt: expiresAt?.toISOString() ?? null,
+            scopes: created.scopes,
+          },
         });
         const summary = (await listApiKeys(tx)).find((k) => k.id === created.id);
         if (!summary) throw new Error("created key not found");
@@ -160,6 +207,30 @@ export const settingsRoutes = (deps: AppDeps) =>
         });
       });
       const body: RetentionSettings = { retentionDays };
+      return c.json(body, 200);
+    })
+    // Settings → System health: this tenant's pipeline, plus the deployment facts every tenant shares.
+    .get("/health", async (c) => {
+      const now = deps.now();
+      const tenant = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => tenantHealth(tx, now));
+      const body: SystemHealthResponse = { ...tenant, ...(await deploymentHealth(deps.db, now)) };
+      return c.json(body, 200);
+    })
+    .get("/intake", async (c) => {
+      const body: IntakeSettings = await withTenantTx(deps.pool, c.var.tenant.tenantId, getIntakeFilters);
+      return c.json(body, 200);
+    })
+    .put("/intake", validate("json", IntakeSettings), async (c) => {
+      const filters = c.req.valid("json");
+      await withTenantTx(deps.pool, c.var.tenant.tenantId, async (tx) => {
+        const before = await getIntakeFilters(tx);
+        await setIntakeFilters(tx, filters);
+        await recordAudit(tx, userActor(c, deps), {
+          action: "intake_filters.updated",
+          details: { before, after: filters },
+        });
+      });
+      const body: IntakeSettings = filters;
       return c.json(body, 200);
     })
     .get("/budget", async (c) => {

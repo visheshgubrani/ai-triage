@@ -13,6 +13,7 @@ import {
   buildExtractRequest,
   classifyCategories,
   evaluateExtraction,
+  intakeSkip,
   type ParsedPart,
   PipelineError,
   parseClassifyOutput,
@@ -23,11 +24,13 @@ import {
   advanceDocument,
   applyRouteDecision,
   createAction,
+  currentRunStatus,
   enqueue,
   enqueueStage,
   failRun,
   finishRun,
   getConfig,
+  getIntakeFilters,
   insertClassification,
   insertModelExtraction,
   insertParts,
@@ -41,6 +44,7 @@ import {
   loadSchemaVersion,
   markCanonical,
   setCurrentExtraction,
+  skipRun,
   stagePolicy,
   type TenantTx,
   upsertOpenTask,
@@ -48,8 +52,9 @@ import {
 } from "@ai-triage/db";
 import { readAttemptOutput } from "@ai-triage/llm";
 import { type JsonSchema, validateFields } from "@ai-triage/schemas";
+import { log } from "../observe";
 import type { PipelineDeps } from "./deps";
-import { loadBlobs, loadCategoryOptions, loadSender, parseSource, stageModel } from "./source";
+import { loadBlobs, loadCategoryOptions, loadSender, loadSignals, parseSource, stageModel } from "./source";
 
 // Each stage follows docs/architecture.md §5: read in a short transaction (stop if the run isn't
 // current or the stage is done), do the slow work with no transaction open, then commit in one
@@ -78,8 +83,26 @@ const toNewParts = (parts: ParsedPart[]) =>
   }));
 
 export async function parseStage(deps: PipelineDeps, job: StageJob): Promise<void> {
-  const doc = await withTenantTx(deps.pool, job.tenantId, async (tx) => (await currentRun(tx, job, "parse"))?.document);
-  if (!doc) return;
+  const input = await withTenantTx(deps.pool, job.tenantId, async (tx) => {
+    const found = await currentRun(tx, job, "parse");
+    // Intake filters apply to a document's first run only: Process anyway is a retry.
+    return found
+      ? { doc: found.document, filters: found.run.trigger === "ingest" ? await getIntakeFilters(tx) : null }
+      : null;
+  });
+  if (!input) return;
+  const { doc, filters } = input;
+
+  if (filters) {
+    const skip = intakeSkip(await loadSignals(deps.storage, doc), filters);
+    if (skip) {
+      log.info("intake filter skipped a document", { document: job.documentId, filter: skip });
+      await withTenantTx(deps.pool, job.tenantId, (tx) =>
+        skipRun(tx, { documentId: job.documentId, runId: job.runId, reason: skip }),
+      );
+      return;
+    }
+  }
 
   const parts = await parseSource(deps.storage, doc, deps.limits);
 
@@ -91,7 +114,7 @@ export async function parseStage(deps: PipelineDeps, job: StageJob): Promise<voi
   });
 }
 
-export async function classifyStage(deps: PipelineDeps, job: StageJob): Promise<void> {
+export async function classifyStage(deps: PipelineDeps, job: StageJob, signal?: AbortSignal): Promise<void> {
   const input = await withTenantTx(deps.pool, job.tenantId, async (tx) => {
     const found = await currentRun(tx, job, "classify");
     if (!found) return null;
@@ -112,7 +135,7 @@ export async function classifyStage(deps: PipelineDeps, job: StageJob): Promise<
     blobs: await loadBlobs(deps.storage, input.parts),
   });
   const ctx = { runId: job.runId };
-  const { attemptId, output } = await deps.llm.call({ tenantId: job.tenantId, ctx, request });
+  const { attemptId, output } = await deps.llm.call({ tenantId: job.tenantId, ctx, request, signal });
   const result = parseClassifyOutput(output, classifyCategories(input.categories));
   const other = result.category === OTHER_CATEGORY;
 
@@ -143,7 +166,7 @@ export async function classifyStage(deps: PipelineDeps, job: StageJob): Promise<
   });
 }
 
-export async function extractStage(deps: PipelineDeps, job: StageJob): Promise<void> {
+export async function extractStage(deps: PipelineDeps, job: StageJob, signal?: AbortSignal): Promise<void> {
   const input = await withTenantTx(deps.pool, job.tenantId, async (tx) => {
     const found = await currentRun(tx, job, "extract");
     if (!found) return null;
@@ -172,7 +195,7 @@ export async function extractStage(deps: PipelineDeps, job: StageJob): Promise<v
     blobs: await loadBlobs(deps.storage, input.parts),
   });
   const ctx = { runId: job.runId };
-  const { attemptId, output } = await deps.llm.call({ tenantId: job.tenantId, ctx, request });
+  const { attemptId, output } = await deps.llm.call({ tenantId: job.tenantId, ctx, request, signal });
   const { values } = parseExtractOutput(output, schema);
   const validationErrors = validateFields(input.schemaVersion.id, schema, values);
 
@@ -291,7 +314,10 @@ export async function routeStage(deps: PipelineDeps, job: StageJob): Promise<voi
   });
 }
 
-export const STAGE_HANDLERS: Record<PipelineStage, (deps: PipelineDeps, job: StageJob) => Promise<void>> = {
+export const STAGE_HANDLERS: Record<
+  PipelineStage,
+  (deps: PipelineDeps, job: StageJob, signal?: AbortSignal) => Promise<void>
+> = {
   parse: parseStage,
   classify: classifyStage,
   extract: extractStage,
@@ -303,11 +329,17 @@ export const STAGE_HANDLERS: Record<PipelineStage, (deps: PipelineDeps, job: Sta
  * retrying, so the run fails right away and a human gets a `processing_failed` task. Anything else
  * propagates: pg-boss retries the job, then dead-letters it to `doc.failed`.
  */
-export async function runStage(deps: PipelineDeps, stage: PipelineStage, job: StageJob): Promise<void> {
+export async function runStage(
+  deps: PipelineDeps,
+  stage: PipelineStage,
+  job: StageJob,
+  signal?: AbortSignal,
+): Promise<void> {
   try {
-    await STAGE_HANDLERS[stage](deps, job);
+    await STAGE_HANDLERS[stage](deps, job, signal);
   } catch (err) {
     if (!(err instanceof PipelineError)) throw err;
+    log.warn("run failed", { stage, reason: err.reason, document: job.documentId, run: job.runId, err });
     await withTenantTx(deps.pool, job.tenantId, (tx) =>
       failRun(tx, {
         runId: job.runId,
@@ -328,14 +360,19 @@ export async function failedStage(
   job: StageJob,
   source: { queue: string | null; output: unknown },
 ): Promise<void> {
-  const stage = PIPELINE_STAGES.find((s) => STAGE_QUEUES[s] === source.queue);
-  if (!stage) {
-    console.error(`doc.failed: unknown source queue ${source.queue} for run ${job.runId}`);
-    return;
-  }
-  const output = source.output as { message?: unknown } | null;
+  const known = PIPELINE_STAGES.find((s) => STAGE_QUEUES[s] === source.queue);
+  // Never leave a run waiting: without the source queue, fail it at the status it's in.
+  const status = known
+    ? STAGE_INPUT_STATUS[known]
+    : await withTenantTx(deps.pool, job.tenantId, (tx) => currentRunStatus(tx, job.runId));
+  if (!known) log.error("doc.failed: unknown source queue", { queue: source.queue, run: job.runId });
+  if (!status) return;
+  const output = source.output as { message?: unknown; name?: unknown } | null;
   const message = typeof output?.message === "string" ? output.message : JSON.stringify(source.output ?? null);
+  // Retries that ran out because the provider stayed busy say so: Retry all, once it recovers.
+  const busy = output?.name === "ProviderBusyError" || output?.name === "ProviderCoolingDownError";
+  const reason = busy ? "provider_unavailable" : "retries_exhausted";
   await withTenantTx(deps.pool, job.tenantId, (tx) =>
-    failRun(tx, { runId: job.runId, expectedStatus: STAGE_INPUT_STATUS[stage], reason: "retries_exhausted", message }),
+    failRun(tx, { runId: job.runId, expectedStatus: status, reason, message }),
   );
 }

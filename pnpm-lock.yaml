@@ -208,9 +208,18 @@ importers:
       '@ai-triage/mailbox':
         specifier: workspace:*
         version: link:../../packages/mailbox
+      '@ai-triage/schemas':
+        specifier: workspace:*
+        version: link:../../packages/schemas
       '@ai-triage/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@ai-triage/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+      '@ai-triage/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/webhooks
       '@hono/node-server':
         specifier: ^2.1.5
         version: 2.1.5(hono@4.13.16)
@@ -306,6 +315,12 @@ importers:
       '@ai-triage/storage':
         specifier: workspace:*
         version: link:../../packages/storage
+      '@ai-triage/telemetry':
+        specifier: workspace:*
+        version: link:../../packages/telemetry
+      '@ai-triage/webhooks':
+        specifier: workspace:*
+        version: link:../../packages/webhooks
       pg-boss:
         specifier: ^12.38.0
         version: 12.38.0(@opentelemetry/api@1.10.0)
@@ -344,6 +359,9 @@ importers:
       '@ai-triage/evals':
         specifier: workspace:*
         version: link:../evals
+      '@ai-triage/schemas':
+        specifier: workspace:*
+        version: link:../schemas
       zod:
         specifier: ^4.6.7
         version: 4.6.7
@@ -393,6 +411,9 @@ importers:
       '@ai-triage/schemas':
         specifier: workspace:*
         version: link:../schemas
+      '@ai-triage/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       better-auth:
         specifier: 1.7.15
         version: 1.7.15(@opentelemetry/api@1.10.0)(drizzle-kit@0.31.11)(drizzle-orm@0.45.4(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(kysely@0.29.8)(pg@8.23.1))(next@16.4.3(@opentelemetry/api@1.10.0)(@playwright/test@1.64.1)(@types/node@24.19.2)(react-dom@19.3.1(react@19.3.1))(react@19.3.1))(pg@8.23.1)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)(vitest@5.0.5(@opentelemetry/api@1.10.0)(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
@@ -452,6 +473,13 @@ importers:
       openai:
         specifier: ^7.47.0
         version: 7.47.0(@aws-sdk/credential-provider-node@3.972.92)(@smithy/signature-v4@5.7.5)(undici@7.30.1)(zod@4.6.7)
+    devDependencies:
+      '@ai-triage/schemas':
+        specifier: workspace:*
+        version: link:../schemas
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
 
   packages/mailbox:
     dependencies:
@@ -482,6 +510,17 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.1161.0
         version: 3.1161.0
+
+  packages/telemetry: {}
+
+  packages/webhooks:
+    dependencies:
+      '@ai-triage/core':
+        specifier: workspace:*
+        version: link:../core
+      undici:
+        specifier: ^7.30.1
+        version: 7.30.1
 
 packages:
 

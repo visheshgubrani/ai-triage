@@ -47,7 +47,7 @@ async function connect(cookie: string, consent: Consent, body: Record<string, un
 
 async function callback(googleRedirect: string, cookie: string) {
   const back = new URL(googleRedirect);
-  expect(`${back.origin}${back.pathname}`).toBe("http://localhost:8787/integrations/google/callback");
+  expect(`${back.origin}${back.pathname}`).toBe("http://localhost:3000/api/integrations/google/callback");
   const res = await app.request(`${back.pathname}${back.search}`, { headers: { cookie } });
   expect(res.status).toBe(302);
   const location = new URL(res.headers.get("location") ?? "");

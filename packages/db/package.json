@@ -19,12 +19,15 @@
     "seed": "tsx --env-file-if-exists=../../.env src/bin/seed.ts",
     "api-key:create": "tsx --env-file-if-exists=../../.env src/bin/api-key.ts",
     "secrets:rotate-key": "tsx --env-file-if-exists=../../.env src/bin/rotate-key.ts",
-    "tenant:create": "tsx --env-file-if-exists=../../.env src/bin/tenant-create.ts"
+    "tenant:create": "tsx --env-file-if-exists=../../.env src/bin/tenant-create.ts",
+    "config:docs": "tsx src/bin/config-docs.ts",
+    "setup-link": "tsx --env-file-if-exists=../../.env src/bin/setup-link.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",
     "@ai-triage/evals": "workspace:*",
     "@ai-triage/schemas": "workspace:*",
+    "@ai-triage/telemetry": "workspace:*",
     "better-auth": "1.7.15",
     "drizzle-orm": "^0.45.4",
     "pg": "^8.23.1",

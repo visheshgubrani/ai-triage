@@ -1,6 +1,7 @@
 import { convert } from "html-to-text";
 import { simpleParser } from "mailparser";
 import { MAILBOX_AUTHSERV_IDS, type MailboxProvider } from "../../index";
+import { type MailSignals, mailSignals } from "../intake";
 
 // Emails arrive as Postmark inbound JSON or as .eml files. Ingestion normalizes both to a
 // NormalizedEmail, stores each attachment as its own object and the rest as a StoredEmail (JSON),
@@ -36,6 +37,8 @@ export interface NormalizedEmail {
    * content: then `authResults` holds only what the provider's own servers wrote.
    */
   receivedBy?: MailboxProvider;
+  /** Headers marking it automatic or bulk (intake filters, pipeline/intake.ts). Absent: none. */
+  signals?: MailSignals;
 }
 
 export interface StoredAttachment {
@@ -59,6 +62,8 @@ export interface StoredEmail {
   authResults?: string[];
   /** Synced from this provider's mailbox (see NormalizedEmail). Absent for forwarded mail and uploads. */
   receivedBy?: MailboxProvider;
+  /** Absent when the message had none (and in emails stored before they were recorded). Never shown to the model. */
+  signals?: MailSignals;
 }
 
 /** The subset of Postmark's inbound webhook payload this app reads. */
@@ -120,6 +125,7 @@ export function normalizePostmark(payload: PostmarkInbound): NormalizedEmail {
     authResults: (payload.Headers ?? [])
       .filter((h) => h.Name.toLowerCase() === "authentication-results")
       .map((h) => unfold(h.Value)),
+    ...optionalSignals(mailSignals((payload.Headers ?? []).map((h) => ({ name: h.Name, value: unfold(h.Value) })))),
     attachments: (payload.Attachments ?? []).map((a, i) => {
       const content = new Uint8Array(Buffer.from(a.Content ?? "", "base64"));
       return {
@@ -166,6 +172,8 @@ export function providerAuthResults(
   return trusted;
 }
 
+const optionalSignals = (signals: MailSignals | undefined) => (signals ? { signals } : {});
+
 export async function normalizeEml(
   bytes: Uint8Array,
   options: { receivedBy?: MailboxProvider } = {},
@@ -191,6 +199,9 @@ export async function normalizeEml(
           .filter((h) => h.key === "authentication-results")
           .map((h) => unfold(h.line.replace(/^authentication-results:\s*/i, ""))),
     ...(options.receivedBy ? { receivedBy: options.receivedBy } : {}),
+    ...optionalSignals(
+      mailSignals(mail.headerLines.map((h) => ({ name: h.key, value: unfold(h.line.replace(/^[^:]+:\s*/, "")) }))),
+    ),
     attachments: mail.attachments.map((a, i) => ({
       filename: clean(a.filename) ?? `attachment-${i + 1}`,
       mime: a.contentType.toLowerCase(),

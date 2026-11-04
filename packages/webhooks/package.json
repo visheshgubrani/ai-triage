@@ -1,0 +1,17 @@
+{
+  "name": "@ai-triage/webhooks",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Outbound webhooks: the signer and the SSRF-guarded fetch, shared by delivery and the test event",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-triage/core": "workspace:*",
+    "undici": "^7.30.1"
+  }
+}

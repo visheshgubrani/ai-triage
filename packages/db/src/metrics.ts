@@ -14,6 +14,8 @@ export interface ProductionWindow {
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
 export async function productionMetrics(tx: TenantTx, window: ProductionWindow): Promise<ProductionMetrics> {
+  // Aggregates over the whole window: more room than the app role's 60 s statement_timeout.
+  await tx.db.execute(sql`set local statement_timeout = '120s'`);
   const since = window.since.toISOString();
   const until = window.until.toISOString();
   const inWindow = (column: string) =>

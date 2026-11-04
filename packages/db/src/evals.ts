@@ -6,11 +6,14 @@ import {
   type EvalSplit,
   type FailureReason,
   type LlmCallMode,
+  MIN_CALIB_ITEMS,
   QUEUES,
 } from "@ai-triage/core";
 import { type CallRow, type FieldScores, type ResultDetail, type RunSummary, runMetrics } from "@ai-triage/evals";
+import { type JsonSchema, requiredFields } from "@ai-triage/schemas";
 import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { PgBoss } from "pg-boss";
+import { deterministicJobId, enqueueMany } from "./boss";
 import {
   type CategoryChange,
   createCandidateConfig,
@@ -20,6 +23,7 @@ import {
   setActiveConfig,
 } from "./configs";
 import { markCanonical } from "./llm-calls";
+import { loadSchemaVersion } from "./pipeline";
 import { evalDatasets, evalItems, evalResults, evalRuns, llmCalls, pipelineConfigs } from "./schema";
 import type { TenantTx } from "./tenant-tx";
 
@@ -219,10 +223,12 @@ export async function createEvalRun(
     .values({ tenantId: tx.tenantId, ...input, itemCount: items.length })
     .returning({ id: evalRuns.id });
   if (!run) throw new Error("eval run insert returned no row");
+  // Deterministic ids: the reconciler can tell whether an item's job still exists.
   const jobs = items.map((item) => ({
+    id: deterministicJobId(run.id, item.id),
     data: { tenantId: tx.tenantId, evalRunId: run.id, evalItemId: item.id } satisfies EvalItemJob,
   }));
-  await boss.insert(QUEUES.evalItem, jobs, { db: tx.queueDb });
+  await enqueueMany(boss, tx, QUEUES.evalItem, jobs);
   return { runId: run.id, itemCount: items.length };
 }
 
@@ -311,15 +317,53 @@ export async function freezeCalibratedConfig(
     categories: input.categories,
     createdBy: input.createdBy,
   });
+  // Automation rests on the calib sweep: enough calib items of the category to pick a threshold on,
+  // and at least one required field, so a correct approval means more than the right category (§6).
+  for (const category of config.categories.filter((c) => c.automation === "auto_when_confident")) {
+    const [row] = await tx.db
+      .select({ n: count() })
+      .from(evalItems)
+      .where(
+        and(
+          eq(evalItems.datasetId, run.datasetId),
+          eq(evalItems.split, "calib"),
+          eq(evalItems.expectedCategory, category.category),
+          isNull(evalItems.retiredAt),
+        ),
+      );
+    if ((row?.n ?? 0) < MIN_CALIB_ITEMS) {
+      throw new EvalRequestError(
+        "too_few_calib_items",
+        `${category.category} has ${row?.n ?? 0} calib items; automation needs at least ${MIN_CALIB_ITEMS}`,
+      );
+    }
+    const schema = await loadSchemaVersion(tx, category.schemaVersionId);
+    if (requiredFields((schema?.jsonSchema ?? {}) as JsonSchema).length === 0) {
+      throw new EvalRequestError(
+        "no_required_fields",
+        `${category.category} has no required field to grade approvals on`,
+      );
+    }
+  }
   const frozenAt = await freezeConfig(tx, config.id);
   return { ...config, frozenAt };
 }
 
-/** Makes a frozen version the one new documents run with. */
+/**
+ * Makes a version the one new documents run with. A version that auto-approves any category must
+ * be frozen (its thresholds came from calib); one that sends every category to a person can't
+ * approve anything wrong, so it needs no calibration (docs/architecture.md §8).
+ */
 export async function activateConfig(tx: TenantTx, configId: string): Promise<void> {
   const config = await getConfig(tx, configId);
   if (!config) throw new EvalRequestError("invalid_config", `config ${configId} not found`);
-  if (!config.frozenAt) throw new EvalRequestError("config_not_frozen", "only a frozen config can be activated");
+  const automates = config.categories.some((c) => c.automation === "auto_when_confident");
+  if (automates && !config.frozenAt) {
+    throw new EvalRequestError(
+      "config_not_frozen",
+      "a version that auto-approves must be frozen first (calibrate it on calib, then Freeze)",
+    );
+  }
   await setActiveConfig(tx, configId);
 }
 

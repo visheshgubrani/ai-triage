@@ -1,4 +1,4 @@
-import { MAINTENANCE_CRON, QUEUES, type StorageDeleteJob } from "@ai-triage/core";
+import { MAINTENANCE_CRON, QUEUES, RECONCILE_CRON, type StorageDeleteJob } from "@ai-triage/core";
 import {
   createDb,
   enqueue,
@@ -16,6 +16,8 @@ import {
   withTenantTx,
 } from "@ai-triage/db";
 import type { Storage } from "@ai-triage/storage";
+import { observed } from "../observe";
+import { reconcile } from "./reconcile";
 
 // Daily housekeeping (docs/security.md, M7): purge documents past each tenant's retention, drop
 // uploads that were never completed, prune rate-limit windows, finished OAuth round trips and old
@@ -27,6 +29,8 @@ export interface MaintenanceDeps {
   boss: PgBoss;
   storage: Storage;
   now: () => Date;
+  /** The reconciler's threshold (RECONCILE_STALL_MINUTES). */
+  stallMinutes?: number;
 }
 
 const DAY_MS = 86_400_000;
@@ -98,10 +102,21 @@ export async function deleteStorage(storage: Storage, job: StorageDeleteJob): Pr
 /** Schedules the daily job (idempotent: pg-boss keeps one schedule per queue) and subscribes both queues. */
 export async function registerMaintenance(boss: PgBoss, deps: MaintenanceDeps) {
   await boss.schedule(QUEUES.maintenance, MAINTENANCE_CRON, {}, { tz: "UTC" });
-  await boss.work(QUEUES.maintenance, async () => {
-    await runMaintenance(deps);
-  });
-  await boss.work<StorageDeleteJob>(QUEUES.storageDelete, async ([job]) => {
-    if (job) await deleteStorage(deps.storage, job.data);
-  });
+  await boss.work(
+    QUEUES.maintenance,
+    observed(QUEUES.maintenance, async () => {
+      await runMaintenance(deps);
+    }),
+  );
+  await boss.work<StorageDeleteJob>(
+    QUEUES.storageDelete,
+    observed(QUEUES.storageDelete, (job) => deleteStorage(deps.storage, job.data)),
+  );
+  await boss.schedule(QUEUES.reconcile, RECONCILE_CRON, {}, { tz: "UTC" });
+  await boss.work(
+    QUEUES.reconcile,
+    observed(QUEUES.reconcile, async () => {
+      await reconcile({ pool: deps.pool, now: deps.now, stallMinutes: deps.stallMinutes ?? 30 });
+    }),
+  );
 }

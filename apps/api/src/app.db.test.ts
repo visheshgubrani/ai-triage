@@ -6,8 +6,24 @@ import { createTestApp, WEB_ORIGIN } from "./test-app";
 
 // Sign-in → session → tenant resolution, against the seeded demo tenant in the test database.
 
-const { app, db, signIn, close } = await createTestApp();
+const { app, server, db, signIn, close } = await createTestApp();
 afterAll(close);
+
+describe("paths", () => {
+  it("serves the UI routes under /api only, and health at both", async () => {
+    expect((await server.request("/api/me")).status).toBe(401);
+    expect((await server.request("/me")).status).toBe(404);
+    expect((await server.request("/api/health")).status).toBe(200);
+    expect((await server.request("/health")).status).toBe(200);
+  });
+
+  it("keeps Better Auth at /api/auth", async () => {
+    const res = await server.request("/api/auth/get-session");
+    expect(res.status).toBe(200);
+    const signUp = await server.request("/api/auth/sign-up/email", { method: "POST", headers: { origin: WEB_ORIGIN } });
+    expect(signUp.status).toBe(404);
+  });
+});
 
 describe("GET /me", () => {
   it("returns the user's tenant and role after sign-in", async () => {
@@ -59,5 +75,80 @@ describe("GET /auth/providers", () => {
       body: JSON.stringify({ provider: "google", callbackURL: `${WEB_ORIGIN}/` }),
     });
     expect(social.ok).toBe(false);
+  });
+});
+
+describe("operations endpoints", () => {
+  it("reports readiness: database, migrations and storage", async () => {
+    const res = await app.request("/ready");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ db: "up", migrations: "current", storage: "up" });
+  });
+
+  it("hides /metrics without its token, and serves Prometheus text with it", async () => {
+    expect((await app.request("/metrics")).status).toBe(404);
+    const t2 = await createTestApp({ metricsToken: "scrape-me" });
+    try {
+      expect((await t2.app.request("/metrics", { headers: { authorization: "Bearer wrong" } })).status).toBe(404);
+      await t2.app.request("/health");
+      const res = await t2.app.request("/metrics", { headers: { authorization: "Bearer scrape-me" } });
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toMatch(/^text\/plain; version=0.0.4/);
+      expect(await res.text()).toMatch(
+        /triage_http_requests_total\{method="GET",route="\/api\/health",status="200"\} \d+/,
+      );
+    } finally {
+      await t2.close();
+    }
+  });
+
+  it("tells members what blocks processing", async () => {
+    const { cookie } = await signIn("reviewer@demo.test", DEMO_PASSWORD);
+    const res = await app.request("/system/status", { headers: { cookie } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      workersRunning: expect.any(Number),
+      budgetExhausted: expect.any(Boolean),
+    });
+  });
+});
+
+describe("first run and onboarding", () => {
+  it("refuses setup once a workspace exists, even with a token", async () => {
+    const status = await app.request("/setup/status");
+    expect(await status.json()).toMatchObject({ needed: false });
+    const res = await app.request("/setup", {
+      method: "POST",
+      headers: { origin: WEB_ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({
+        token: "a".repeat(32),
+        workspaceName: "Late",
+        slug: "late-co",
+        adminEmail: "late@example.com",
+        acceptWith: "google_or_password",
+      }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: "setup_closed" });
+  });
+
+  it("gives admins the getting-started steps, from the workspace's data", async () => {
+    const { cookie } = await signIn("admin@demo.test", DEMO_PASSWORD);
+    const res = await app.request("/onboarding", { headers: { cookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { steps: { id: string; done: boolean }[] };
+    expect(body.steps.map((s) => s.id)).toEqual([
+      "model",
+      "categories",
+      "intake",
+      "first-document",
+      "webhook",
+      "team",
+      "automation",
+    ]);
+    // The seeded demo has documents and a second member.
+    expect(body.steps.find((s) => s.id === "team")?.done).toBe(true);
+    const reviewer = await signIn("reviewer@demo.test", DEMO_PASSWORD);
+    expect((await app.request("/onboarding", { headers: { cookie: reviewer.cookie } })).status).toBe(403);
   });
 });

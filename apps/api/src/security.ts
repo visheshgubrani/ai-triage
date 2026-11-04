@@ -1,8 +1,12 @@
+import { timingSafeEqual } from "node:crypto";
 import type { ErrorResponse } from "@ai-triage/contracts";
+import { runWithTrace } from "@ai-triage/telemetry";
 import type { Context, Next } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
+import { routePath } from "hono/route";
 import { secureHeaders } from "hono/secure-headers";
+import { httpRequests, httpSeconds, log } from "./log";
 
 // HTTP edge controls (docs/security.md): response headers, an Origin check on cookie-authenticated
 // writes, a body limit for JSON routes, request ids in logs, and the Better Auth endpoints the web
@@ -12,7 +16,7 @@ import { secureHeaders } from "hono/secure-headers";
  * Machine-to-machine routes: they authenticate with basic auth (Postmark) or an API key, never a
  * cookie, so they skip the Origin check, and they set their own (larger) body limit.
  */
-const MACHINE_PREFIXES = ["/webhooks/", "/v1/"];
+const MACHINE_PREFIXES = ["/api/webhooks/", "/api/v1/", "/webhooks/", "/v1/"];
 const isMachineRoute = (path: string) => MACHINE_PREFIXES.some((p) => path.startsWith(p));
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
@@ -55,11 +59,33 @@ const jsonLimit = bodyLimit({
 export const limitJsonBodies = () =>
   createMiddleware(async (c, next) => (isMachineRoute(c.req.path) ? next() : jsonLimit(c, next)));
 
-/** One line per request: method, path (no query string), status, time and request id. */
-export const requestLog = () =>
-  createMiddleware(async (c: Context, next: Next) => {
-    const start = performance.now();
-    await next();
-    const ms = Math.round(performance.now() - start);
-    console.log(`${c.req.method} ${c.req.path} ${c.res.status} ${ms}ms req=${c.get("requestId")}`);
-  });
+/**
+ * Runs the request under its trace (its request id), so the jobs it enqueues and every line it logs
+ * carry the id. Then one line per request: method, path (no query string), status and time, and the
+ * HTTP metrics by route pattern (`/api/documents/:id`, never the ids themselves).
+ */
+export const requestLog = (options: { log: boolean } = { log: true }) =>
+  createMiddleware(async (c: Context, next: Next) =>
+    runWithTrace(c.get("requestId"), async () => {
+      const start = performance.now();
+      await next();
+      const ms = Math.round(performance.now() - start);
+      const route = routePath(c);
+      httpRequests.inc({ method: c.req.method, route, status: c.res.status });
+      httpSeconds.observe({ route }, ms / 1000);
+      if (options.log) log.info("request", { method: c.req.method, path: c.req.path, status: c.res.status, ms });
+    }),
+  );
+
+/**
+ * Constant-time string comparison. Both sides are padded to the same length (timingSafeEqual needs
+ * that), and the lengths are compared separately, so neither the content nor its length leaks
+ * through timing beyond the longer side's length.
+ */
+export function sameSecret(given: string, expected: string): boolean {
+  const a = Buffer.from(given, "utf8");
+  const b = Buffer.from(expected, "utf8");
+  const size = Math.max(a.length, b.length);
+  const padded = (buf: Buffer) => Buffer.concat([buf, Buffer.alloc(size - buf.length)]);
+  return timingSafeEqual(padded(a), padded(b)) && a.length === b.length;
+}

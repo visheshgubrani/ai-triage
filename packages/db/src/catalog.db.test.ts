@@ -73,7 +73,11 @@ describe("catalog", () => {
       from pg_policy p join pg_class c on c.oid = p.polrelid
       where p.polname <> 'tenant_isolation' order by c.relname`);
     expect(policies).toEqual([
+      // The reconciler lists stale work before any tenant is known (0028_reconcile.sql).
+      { table: "actions", cmd: "r", roles: ["app_resolver"] },
       { table: "api_keys", cmd: "r", roles: ["app_resolver"] },
+      { table: "documents", cmd: "r", roles: ["app_resolver"] },
+      { table: "eval_runs", cmd: "r", roles: ["app_resolver"] },
       { table: "inbound_addresses", cmd: "r", roles: ["app_resolver"] },
       // The cron poll lists due mailboxes before any tenant is known (0023_mailbox_sync.sql).
       { table: "mailbox_connections", cmd: "r", roles: ["app_resolver"] },
@@ -106,6 +110,7 @@ describe("catalog", () => {
         config: ["search_path=public, pg_temp"],
         public_exec: false,
       },
+      { name: "stale_work", owner: "app_resolver", config: ["search_path=public, pg_temp"], public_exec: false },
     ]);
 
     const { rows: members } = await owner.query(

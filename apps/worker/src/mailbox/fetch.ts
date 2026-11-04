@@ -2,12 +2,15 @@ import { type MailboxFetchJob, QUEUES } from "@ai-triage/core";
 import { normalizeEml } from "@ai-triage/core/pipeline";
 import {
   createDb,
+  deterministicJobId,
+  enqueue,
   fetchState,
   hitRateLimit,
   type MessageOutcome,
   mailboxTokenStore,
   markMailboxMessage,
   recordAudit,
+  releaseRateLimitHit,
   SYSTEM_ACTOR,
   withTenantTx,
 } from "@ai-triage/db";
@@ -40,10 +43,23 @@ async function settle(deps: MailboxDeps, job: MailboxFetchJob, outcome: MessageO
   await withTenantTx(deps.pool, job.tenantId, (tx) => markMailboxMessage(tx, job.connectionId, job.messageId, outcome));
 }
 
-/** Puts the message back for later (a rate limit, a mailbox to reconnect): a new job, the same row. */
+/** Deferred messages wake spread over this much time, not all at the window's first second. */
+const DEFER_JITTER_MS = 5 * 60_000;
+
+/**
+ * Puts the message back for later (a rate limit, a mailbox to reconnect): the `deferred` row and its
+ * next job commit together, so a crash can't leave a deferred message with no job. The job id is
+ * deterministic per wake-up time, so a retried defer doesn't queue the message twice.
+ */
 async function defer(deps: MailboxDeps, job: MailboxFetchJob, until: Date) {
-  await settle(deps, job, { status: "deferred" });
-  await deps.boss.send(QUEUES.mailboxFetch, job, { startAfter: until });
+  const wake = new Date(until.getTime() + Math.floor(Math.random() * DEFER_JITTER_MS));
+  await withTenantTx(deps.pool, job.tenantId, async (tx) => {
+    await markMailboxMessage(tx, job.connectionId, job.messageId, { status: "deferred" });
+    await enqueue(deps.boss, tx, QUEUES.mailboxFetch, job, {
+      id: deterministicJobId("mailbox-defer", job.connectionId, job.messageId, String(until.getTime())),
+      startAfter: wake,
+    });
+  });
 }
 
 export async function fetchMessage(deps: MailboxDeps, job: MailboxFetchJob): Promise<void> {
@@ -59,9 +75,14 @@ export async function fetchMessage(deps: MailboxDeps, job: MailboxFetchJob): Pro
     return defer(deps, job, new Date(now.getTime() + REAUTH_RETRY_MS));
   }
 
-  // Counted before downloading, like a Postmark delivery; over the limit, the message waits.
-  const hit = await hitRateLimit(createDb(deps.pool), `tenant:${job.tenantId}:inbound`, INBOUND_WINDOW_SECONDS, now);
-  if (hit.count > deps.limits.inboundPerHour) return defer(deps, job, hit.resetAt);
+  // Counted before downloading, like a Postmark delivery; over the limit, the message waits. A
+  // deferred attempt gives its count back, so messages waiting their turn don't use up the window.
+  const bucket = `tenant:${job.tenantId}:inbound`;
+  const hit = await hitRateLimit(createDb(deps.pool), bucket, INBOUND_WINDOW_SECONDS, now);
+  if (hit.count > deps.limits.inboundPerHour) {
+    await releaseRateLimitHit(createDb(deps.pool), bucket, INBOUND_WINDOW_SECONDS, now);
+    return defer(deps, job, hit.resetAt);
+  }
 
   const store = mailboxTokenStore(deps.pool, deps.keys, job.tenantId, job.connectionId, deps.now, (tx) =>
     recordAudit(tx, SYSTEM_ACTOR("mailbox sync"), {

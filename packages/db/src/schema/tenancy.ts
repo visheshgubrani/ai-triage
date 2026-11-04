@@ -1,3 +1,4 @@
+import { API_KEY_SCOPES, type IntakeFilters } from "@ai-triage/core";
 import { sql } from "drizzle-orm";
 import {
   bigint,
@@ -5,6 +6,7 @@ import {
   date,
   foreignKey,
   integer,
+  jsonb,
   numeric,
   pgTable,
   primaryKey,
@@ -35,6 +37,12 @@ export const tenantSettings = pgTable(
     dailyLlmCapUsd: numeric("daily_llm_cap_usd", { precision: 12, scale: 4 }).notNull().default("5"),
     /** Finished documents older than this many days are purged daily; null keeps them forever. */
     retentionDays: integer("retention_days"),
+    /** Intake filters that are on, by name (core INTAKE_FILTERS); unset keys take DEFAULT_INTAKE_FILTERS. */
+    intakeFilters: jsonb("intake_filters").$type<Partial<IntakeFilters>>().notNull().default({}),
+    /** The getting-started checklist was dismissed by an admin. */
+    onboardingDismissedAt: timestamp("onboarding_dismissed_at", { withTimezone: true }),
+    /** The last Settings test event that the receiver accepted (2xx). */
+    webhookTestedAt: timestamp("webhook_tested_at", { withTimezone: true }),
     updatedAt: updatedAt(),
   },
   (t) => [
@@ -75,9 +83,20 @@ export const apiKeys = pgTable(
     /** Optional: the resolver refuses the key after this (0015_api_key_expiry.sql). */
     expiresAt: timestamp("expires_at", { withTimezone: true }),
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    /**
+     * What the key may do (API_KEY_SCOPES). Keys from before scopes existed only sent documents,
+     * so the column default keeps them at `{ingest}`; createApiKey() sets new keys' scopes.
+     */
+    scopes: text("scopes").array().notNull().default(sql`'{ingest}'::text[]`),
     createdAt: createdAt(),
   },
-  (t) => [tenantKey("api_keys", t)],
+  (t) => [
+    tenantKey("api_keys", t),
+    check(
+      "api_keys_scopes_check",
+      sql`cardinality(${t.scopes}) > 0 and ${t.scopes} <@ array[${sql.raw(API_KEY_SCOPES.map((s) => `'${s}'`).join(", "))}]::text[]`,
+    ),
+  ],
 );
 
 /** Two-step upload: the server issues `storage_key`; clients never choose one. */

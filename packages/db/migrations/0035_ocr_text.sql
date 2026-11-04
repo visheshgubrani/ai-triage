@@ -1,0 +1,2 @@
+ALTER TABLE "document_parts" DROP CONSTRAINT "document_parts_evidence_mode_check";--> statement-breakpoint
+ALTER TABLE "document_parts" ADD CONSTRAINT "document_parts_evidence_mode_check" CHECK ("document_parts"."evidence_mode" in ('text', 'pdf_text', 'unverifiable', 'ocr_text'));

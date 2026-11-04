@@ -5,14 +5,20 @@
   "type": "module",
   "description": "Model gateway (Claude + OpenAI-compatible providers): records llm_calls; live | record | replay modes",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/simulator.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "llm-sim": "tsx --env-file-if-exists=../../.env src/testing/serve.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",
     "@anthropic-ai/sdk": "^1.3.0",
     "openai": "^7.47.0"
+  },
+  "devDependencies": {
+    "@ai-triage/schemas": "workspace:*",
+    "tsx": "^4.23.15"
   }
 }

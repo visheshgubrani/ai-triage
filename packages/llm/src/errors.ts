@@ -35,3 +35,30 @@ export class BudgetExhaustedError extends PipelineError {
     this.name = "BudgetExhaustedError";
   }
 }
+
+/**
+ * The provider answered 429, 529 (overloaded) or 503. Not a PipelineError: the job is retried, and
+ * the gateway cools the model down for every worker (docs/architecture.md §5, backpressure).
+ */
+export class ProviderBusyError extends Error {
+  constructor(
+    readonly status: number,
+    /** The provider's Retry-After, when it sent one. */
+    readonly retryAfterMs: number | null,
+    message: string,
+  ) {
+    super(`provider busy (${status}): ${message}`);
+    this.name = "ProviderBusyError";
+  }
+}
+
+/** The model is cooling down after a busy answer, longer than a job waits: no call was made. */
+export class ProviderCoolingDownError extends Error {
+  constructor(
+    readonly model: string,
+    readonly until: Date,
+  ) {
+    super(`${model} is cooling down after the provider said it was busy, until ${until.toISOString()}`);
+    this.name = "ProviderCoolingDownError";
+  }
+}

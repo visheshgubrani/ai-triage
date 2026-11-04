@@ -256,6 +256,9 @@ describe("eval runs", () => {
     expect(detail.metrics?.summary).toMatchObject({ n: 1 });
     expect(detail.sweeps.find((w) => w.category === "invoice")).toMatchObject({ n: 1, eligible: 1 });
 
+    // One calib invoice is too few to set a threshold on; with three, Freeze goes through.
+    await refused(await post(`/evals/runs/${calib}/freeze`, s.admin, freeze), 422, "too_few_calib_items");
+    await dataset(s, ["calib", "calib"]);
     const res = await post(`/evals/runs/${calib}/freeze`, s.admin, freeze);
     expect(res.status).toBe(201);
     const { config } = (await res.json()) as ConfigResponse;
@@ -263,7 +266,12 @@ describe("eval runs", () => {
     expect(config.categories.find((c) => c.category === "invoice")).toMatchObject({ threshold: 0.8 });
 
     expect(await start("test", config.id)).toEqual(expect.any(String));
-    await refused(await post(`/configs/${s.configId}/activate`, s.admin), 422, "config_not_frozen");
+    // An unfrozen version that auto-approves can't be activated; one that reviews everything can.
+    const uncalibrated = (await (
+      await post("/configs", s.admin, { parentId: s.configId, name: "Uncalibrated", categories: freeze.categories })
+    ).json()) as ConfigResponse;
+    await refused(await post(`/configs/${uncalibrated.config.id}/activate`, s.admin), 422, "config_not_frozen");
+    expect((await post(`/configs/${s.configId}/activate`, s.admin)).status).toBe(200);
     const activated = await post(`/configs/${config.id}/activate`, s.admin);
     expect(activated.status).toBe(200);
     expect(((await activated.json()) as ConfigResponse).config.active).toBe(true);

@@ -25,6 +25,23 @@ export function WebhookSettingsView() {
     })();
   }, []);
 
+  /** A signed `ping`, exactly as deliveries are signed: the receiver's answer shows here. */
+  async function sendTest() {
+    setBusy(true);
+    try {
+      const res = await browserApi.settings.webhook.test.$post();
+      if (!res.ok) return setMessage({ error: true, text: (await readError(res)).error });
+      const result = await res.json();
+      setMessage(
+        result.ok
+          ? { error: false, text: `Test event delivered: HTTP ${result.status} in ${result.ms} ms.` }
+          : { error: true, text: `Test event failed: ${result.error} (${result.ms} ms).` },
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function save(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
@@ -91,6 +108,11 @@ export function WebhookSettingsView() {
             </span>
           </span>
           {settings?.secretSet && <Button onClick={() => void rotate()}>Rotate</Button>}
+          {settings?.url && settings.secretSet && (
+            <Button onClick={() => void sendTest()} disabled={busy}>
+              Send test event
+            </Button>
+          )}
         </div>
         {settings?.previousSecretValidUntil && (
           <p className="mt-2 text-neutral-600 dark:text-neutral-400">

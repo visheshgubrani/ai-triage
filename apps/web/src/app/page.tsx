@@ -1,8 +1,10 @@
 import { HealthResponse } from "@ai-triage/contracts";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getSessionState } from "@/components/header";
 import { SignOutButton } from "@/components/sign-out-button";
 import { api } from "@/lib/api";
+import { Checklist } from "./checklist";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +31,18 @@ const sections = [
   },
 ] as { name: string; detail: string; href?: string }[];
 
+/** A fresh install (no workspace yet) goes to the first-run setup page. */
+async function setupNeeded(): Promise<boolean> {
+  try {
+    const res = await api.setup.status.$get();
+    return res.ok && (await res.json()).needed;
+  } catch {
+    return false;
+  }
+}
+
 export default async function Home() {
+  if (await setupNeeded()) redirect("/setup");
   const [health, { me, noWorkspace }] = await Promise.all([getHealth(), getSessionState()]);
   return (
     <main className="mx-auto max-w-3xl px-4 py-16">
@@ -38,6 +51,8 @@ export default async function Home() {
         Documents are classified and extracted, uncertain ones wait for a reviewer, and approvals go out as signed
         webhooks. Evals measure all of it on labeled data, so thresholds and models rest on numbers.
       </p>
+
+      {me?.role === "admin" && <Checklist />}
 
       <section className="mt-8 rounded-lg border border-neutral-200 p-4 dark:border-neutral-800">
         <h2 className="text-sm font-medium text-neutral-500">Session</h2>

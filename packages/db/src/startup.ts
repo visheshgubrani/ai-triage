@@ -16,12 +16,23 @@ export const DEV_DEFAULTS = {
 export type StartupRole = "api" | "worker";
 type Env = Record<string, string | undefined>;
 
+/** A startup failure whose message is the whole story: printed without a stack trace. */
+export class StartupError extends Error {
+  override name = "StartupError";
+}
+
 export const isDemo = (env: Env) => env.TRIAGE_DEMO === "true";
 export const isProduction = (env: Env) => env.NODE_ENV === "production";
 
-const isHttps = (url: string | undefined) => {
+/**
+ * https, or http on this machine only (a local install): browsers treat loopback as a secure
+ * context, so Secure cookies work, and nothing crosses a network.
+ */
+const isSecureOrigin = (url: string | undefined) => {
   try {
-    return url !== undefined && new URL(url).protocol === "https:";
+    if (url === undefined) return false;
+    const { protocol, hostname } = new URL(url);
+    return protocol === "https:" || (protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(hostname));
   } catch {
     return false;
   }
@@ -43,8 +54,8 @@ export function unsafeConfig(env: Env, role: StartupRole): string[] {
     if (secret === DEV_DEFAULTS.betterAuthSecret || secret.length < 32) {
       problems.push("BETTER_AUTH_SECRET is the dev default or shorter than 32 characters");
     }
-    if (!isHttps(env.BETTER_AUTH_URL)) problems.push("BETTER_AUTH_URL is not an https:// URL");
-    if (!isHttps(env.WEB_ORIGIN)) problems.push("WEB_ORIGIN is not an https:// origin");
+    const publicUrl = env.PUBLIC_URL || env.WEB_ORIGIN;
+    if (!isSecureOrigin(publicUrl)) problems.push("PUBLIC_URL is not an https:// origin (or http://localhost)");
     const postmark = env.POSTMARK_INBOUND_PASSWORD;
     if (
       postmark !== undefined &&
@@ -90,7 +101,7 @@ export async function assertSafeStartup(pool: pg.Pool, env: Env, role: StartupRo
     console.warn(`\n*** TRIAGE_DEMO=true: running with demo defaults. Never expose this instance. ***\n${list}\n`);
     return;
   }
-  throw new Error(
+  throw new StartupError(
     `Refusing to start in production with unsafe settings:\n${list}\n` +
       "Fix them (see the production checklist in docs/security.md), or set TRIAGE_DEMO=true for a local demo.",
   );
@@ -99,7 +110,7 @@ export async function assertSafeStartup(pool: pg.Pool, env: Env, role: StartupRo
 /** The demo seed publishes its users' password, so production refuses it unless TRIAGE_DEMO=true. */
 export function assertDemoSeedAllowed(env: Env): void {
   if (isProduction(env) && !isDemo(env)) {
-    throw new Error(
+    throw new StartupError(
       "Refusing to seed the demo tenant in production (its users have a published password). " +
         "Set TRIAGE_DEMO=true for a local demo; `pnpm db:migrate` already seeds model prices.",
     );

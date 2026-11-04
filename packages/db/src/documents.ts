@@ -1,8 +1,8 @@
-import type { DocumentSource } from "@ai-triage/core";
-import { getTemplate, toJsonSchema } from "@ai-triage/schemas";
-import { and, asc, desc, eq, lt, ne } from "drizzle-orm";
+import type { DocumentSource, ProcessingStatus } from "@ai-triage/core";
+import { compileDefinition, getTemplate, type JsonSchema, toJsonSchema } from "@ai-triage/schemas";
+import { and, asc, desc, eq, ilike, lt, ne } from "drizzle-orm";
 import { enqueueStage, type PgBoss } from "./boss";
-import { getActiveConfig } from "./configs";
+import { getActiveConfig, storedDefinition } from "./configs";
 import { loadClassification, loadParts, loadSchemaVersion } from "./pipeline";
 import { listDecisions } from "./review";
 import {
@@ -23,6 +23,8 @@ export interface NewDocument {
   source: DocumentSource;
   /** Dedup key per tenant and source: Message-ID for email, else the content's SHA-256. */
   externalId: string;
+  /** The sender's own reference (public API), if it gave one. */
+  externalRef?: string | null;
   /** Server-issued storage key of the source object. */
   sourceKey: string;
   title?: string | null;
@@ -87,8 +89,31 @@ export async function findDocument(tx: TenantTx, source: DocumentSource, externa
   return row?.id ?? null;
 }
 
+/** The tenant's documents a sender tagged with `externalRef`, newest first (normally one). */
+export async function findDocumentsByExternalRef(tx: TenantTx, externalRef: string, limit = 20): Promise<string[]> {
+  const rows = await tx.db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(eq(documents.externalRef, externalRef))
+    .orderBy(desc(documents.createdAt))
+    .limit(limit);
+  return rows.map((r) => r.id);
+}
+
 /** Newest first, for the documents page. `before` pages by creation time. */
-export async function listDocuments(tx: TenantTx, options: { limit?: number; before?: Date } = {}) {
+export interface DocumentFilters {
+  limit?: number;
+  /** Cursor: documents created before this (the previous page's last `createdAt`). */
+  before?: Date;
+  status?: ProcessingStatus;
+  source?: DocumentSource;
+  category?: string;
+  /** Case-insensitive match on the title (subject or file name). */
+  q?: string;
+}
+
+export async function listDocuments(tx: TenantTx, options: DocumentFilters = {}) {
+  const like = options.q ? `%${options.q.replace(/[\\%_]/g, (c) => `\\${c}`)}%` : null;
   return tx.db
     .select({
       id: documents.id,
@@ -105,23 +130,43 @@ export async function listDocuments(tx: TenantTx, options: { limit?: number; bef
       decisionReasons: extractions.decisionReasons,
       taskKind: reviewTasks.kind,
       taskReasons: reviewTasks.reasons,
+      skipReason: processingRuns.skipReason,
     })
     .from(documents)
     .leftJoin(extractions, eq(extractions.id, documents.currentExtractionId))
     .leftJoin(reviewTasks, and(eq(reviewTasks.documentId, documents.id), ne(reviewTasks.status, "resolved")))
-    .where(options.before ? lt(documents.createdAt, options.before) : undefined)
+    .leftJoin(processingRuns, eq(processingRuns.id, documents.currentRunId))
+    .where(
+      and(
+        options.before ? lt(documents.createdAt, options.before) : undefined,
+        options.status ? eq(documents.processingStatus, options.status) : undefined,
+        options.source ? eq(documents.source, options.source) : undefined,
+        options.category ? eq(extractions.category, options.category) : undefined,
+        like ? ilike(documents.title, like) : undefined,
+      ),
+    )
     .orderBy(desc(documents.createdAt))
     .limit(options.limit ?? 50);
 }
 
 /**
- * A schema version for display. jsonb doesn't keep object key order, so for a built-in category the
- * same version is rebuilt from its template, which lists fields in their authored order.
+ * A schema version for display. jsonb doesn't keep object key order, so the same version is rebuilt
+ * in authored order: from its template for a built-in, from its stored definition for a custom one.
  */
 async function displaySchema(tx: TenantTx, schemaVersionId: string): Promise<unknown> {
-  const row = await loadSchemaVersion(tx, schemaVersionId);
+  return displaySchemaOf(await loadSchemaVersion(tx, schemaVersionId));
+}
+
+export function displaySchemaOf(row: {
+  category: string;
+  version: number;
+  jsonSchema: unknown;
+  definition: unknown;
+}): JsonSchema {
+  const definition = storedDefinition(row);
+  if (definition) return compileDefinition(definition);
   const template = getTemplate(row.category, row.version);
-  return template ? toJsonSchema(template) : row.jsonSchema;
+  return template ? toJsonSchema(template) : (row.jsonSchema as JsonSchema);
 }
 
 /**

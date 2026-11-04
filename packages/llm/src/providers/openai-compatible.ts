@@ -46,6 +46,7 @@ function effortParams(provider: OpenAiCompatibleProvider, request: LlmRequest, i
     case "openrouter":
       return { reasoning: { effort: request.effort } };
     case "compat":
+    case "sim":
       return {};
   }
 }

@@ -1,0 +1,226 @@
+#!/bin/sh
+# ./triage: run this installation (docs/install.md). install.sh puts it next to compose.yaml and
+# .env. Every command is non-interactive unless it says otherwise, so scripts and AI agents can
+# drive it; `status --json` is the machine-readable check.
+set -eu
+cd "$(dirname "$0")"
+
+usage() {
+  cat <<'EOF'
+usage: ./triage <command>
+
+  status [--json]          containers, then the installation's own checks (ready: true/false)
+  open                     print the address
+  setup-link               a fresh first-run link (while no workspace exists)
+  logs [service…]          follow the logs (api, worker, web, caddy, postgres, …)
+  restart                  apply .env changes and restart what changed
+  stop | start             stop everything, or start it again
+  config set KEY[=VALUE]   set a value in .env, then restart. Without =VALUE it takes $KEY from the
+                           environment (export ANTHROPIC_API_KEY=… first), else asks without echo
+  upgrade [--version X]    back up, pull the new version, migrate and restart
+  backup                   database, stored files and .env into backups/<time>/
+  restore <dir> [--yes]    replace this installation's data with a backup
+  uninstall [--purge [--yes]]  stop and remove the containers (--purge also deletes all data)
+  cli <command> [args]     run one of the image's commands in the api container, such as
+                           tenant-create --name Acme --slug acme --admin you@acme.com,
+                           or api-key-create --tenant acme --scopes ingest
+EOF
+}
+
+[ -f .env ] || { echo "No .env in $(pwd): run install.sh first." >&2; exit 1; }
+
+value() { sed -n "s/^$1=//p" .env | tail -n 1; }
+image() {
+  repo=$(value TRIAGE_IMAGE)
+  version=$(value TRIAGE_VERSION)
+  echo "${repo:-ghcr.io/visheshgubrani/ai-triage}:${version:-latest}"
+}
+dc() { docker compose "$@"; }
+bundled() { case ",$(value COMPOSE_PROFILES)," in *,bundled,*) return 0 ;; *) return 1 ;; esac; }
+
+# `cli configure` in a container, with this directory mounted (no Node on the host). Provider keys
+# pass through from the environment by name only, so they never show in `ps`.
+configure() {
+  docker run --rm -v "$(pwd):/work" --user "$(id -u):$(id -g)" \
+    -e ANTHROPIC_API_KEY -e OPENAI_API_KEY -e DEEPSEEK_API_KEY -e OPENROUTER_API_KEY \
+    "$(image)" cli configure --dir /work "$@"
+}
+
+# Compose identifies a stack by its project name alone: a second stack with the same name (another
+# installation, or the repository's dev stack) would have its containers and volumes taken over.
+guard_project() {
+  name=$(value COMPOSE_PROJECT_NAME)
+  other=$(docker ps -a --filter "label=com.docker.compose.project=${name:-ai-triage-install}" \
+    --format '{{.Label "com.docker.compose.project.working_dir"}}' | sort -u | grep -vx "$(pwd)" || true)
+  if [ -n "$other" ]; then
+    echo "The compose project \"$name\" already runs from $other." >&2
+    echo "  fix: give this installation its own name: ./triage config set COMPOSE_PROJECT_NAME=<name>" >&2
+    exit 1
+  fi
+}
+
+# Up, then wait until the long-running services are healthy (`up --wait` would treat the one-shot
+# migrate and storage-init as failures).
+up() {
+  guard_project
+  out=$(dc up -d 2>&1) || {
+    echo "$out" >&2
+    echo "  fix: the lines above say what failed; ./triage logs <service> has more" >&2
+    return 1
+  }
+  tries=0
+  until [ "$(dc ps --status running --format '{{.Health}}' api worker web 2>/dev/null | grep -c '^healthy$')" = 3 ]; do
+    tries=$((tries + 1))
+    if [ "$tries" -gt 120 ]; then
+      echo "Not healthy after 4 minutes." >&2
+      echo "  fix: ./triage logs api worker migrate shows why" >&2
+      return 1
+    fi
+    if dc ps -a --format '{{.Service}} {{.State}} {{.ExitCode}}' migrate 2>/dev/null | grep -q 'exited [1-9]'; then
+      echo "migrate failed:" >&2
+      dc logs --tail 30 migrate >&2
+      return 1
+    fi
+    sleep 2
+  done
+}
+
+preflight_json() {
+  dc exec -T -e TRIAGE_API_URL=http://api:8787 worker entrypoint cli preflight --installed --json 2>/dev/null ||
+    true
+}
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  status)
+    if [ "${1:-}" = "--json" ]; then
+      checks=$(preflight_json)
+      [ -n "$checks" ] || checks='{"ready":false,"checks":[{"status":"fail","title":"Worker","detail":"not running, or preflight could not run in it","fix":"./triage start, then ./triage logs worker"}]}'
+      printf '{"url":"%s","version":"%s",%s\n' "$(value PUBLIC_URL)" "$(value TRIAGE_VERSION)" "${checks#\{}"
+      # Exit status for scripts: 0 only when ready.
+      case "$checks" in *'"ready":true'*) ;; *) exit 1 ;; esac
+    else
+      dc ps
+      echo
+      dc exec -T -e TRIAGE_API_URL=http://api:8787 worker entrypoint cli preflight --installed || true
+      echo
+      echo "Address: $(value PUBLIC_URL)"
+    fi
+    ;;
+  open) value PUBLIC_URL ;;
+  setup-link) dc exec -T api entrypoint cli setup-link ;;
+  cli) dc exec -T api entrypoint cli "$@" ;;
+  logs) dc logs -f --tail 200 "$@" ;;
+  restart | start) up && echo "Running at $(value PUBLIC_URL)" ;;
+  stop) dc stop ;;
+  config)
+    if [ "${1:-}" != set ] || [ -z "${2:-}" ]; then
+      echo "usage: ./triage config set KEY[=VALUE]" >&2
+      exit 2
+    fi
+    key=${2%%=*}
+    case "$key" in *[!A-Z0-9_]* | "") echo "KEY must be A-Z, 0-9 and _" >&2; exit 2 ;; esac
+    if [ "$key" = "$2" ] && eval "[ -n \"\${$key:-}\" ]"; then
+      # From the environment: the value never appears on a command line.
+      eval "val=\${$key}"
+    elif [ "$key" = "$2" ]; then
+      [ -t 0 ] || [ -r /dev/tty ] || {
+        echo "No terminal to ask for $key: export $key=… and run this again." >&2
+        exit 2
+      }
+      printf '%s: ' "$key" >/dev/tty
+      stty -echo </dev/tty 2>/dev/null || true
+      IFS= read -r val </dev/tty
+      stty echo </dev/tty 2>/dev/null || true
+      echo >/dev/tty
+    else
+      val=${2#*=}
+    fi
+    K="$key" V="$val" awk 'BEGIN { k = ENVIRON["K"]; v = ENVIRON["V"]; done = 0 }
+      index($0, k "=") == 1 { print k "=" v; done = 1; next } { print }
+      END { if (!done) print k "=" v }' .env >.env.tmp
+    chmod 600 .env.tmp && mv .env.tmp .env
+    case "$key" in
+      COMPOSE_*) ;;
+      *)
+        grep -q "\${${key}[:}]" compose*.yaml ||
+          echo "warning: no service here reads $key (docs/configuration.md lists what each one reads)." >&2
+        ;;
+    esac
+    echo "Set $key. Restarting what reads it…"
+    up
+    ;;
+  upgrade)
+    version=latest
+    [ "${1:-}" = --version ] && version="${2:?--version needs a value}"
+    if bundled; then "$0" backup; fi
+    configure --version "$version"
+    dc pull --quiet
+    up
+    echo "Upgraded to $(value TRIAGE_VERSION). Running at $(value PUBLIC_URL)"
+    ;;
+  backup)
+    bundled || { echo "Postgres and storage aren't bundled here: back them up where they run." >&2; exit 1; }
+    dir="backups/$(date -u +%Y%m%dT%H%M%SZ)"
+    # Documents, users and secrets: readable by this user only.
+    umask 077
+    mkdir -p "$dir"
+    chmod 700 backups "$dir"
+    project=$(value COMPOSE_PROJECT_NAME)
+    dc exec -T postgres pg_dump -U triage -d triage -Fc >"$dir/db.dump"
+    # Freeze storage for the copy, so it's consistent; uploads wait a few seconds.
+    dc pause storage >/dev/null 2>&1
+    trap 'dc unpause storage >/dev/null 2>&1 || true' EXIT
+    docker run --rm -v "${project:-ai-triage-install}_storage-data:/data:ro" -v "$(pwd)/$dir:/out" alpine:3 \
+      sh -c "tar czf /out/storage.tgz -C /data . && chown $(id -u):$(id -g) /out/storage.tgz && chmod 600 /out/storage.tgz"
+    dc unpause storage >/dev/null 2>&1
+    trap - EXIT
+    cp .env "$dir/.env"
+    chmod 600 "$dir/.env"
+    echo "Backed up to $dir ($(du -sh "$dir" | cut -f1)). It holds your secrets (.env): keep it private."
+    ;;
+  restore)
+    from="${1:?usage: ./triage restore <backup dir> [--yes]}"
+    for f in db.dump storage.tgz .env; do [ -f "$from/$f" ] || { echo "$from/$f is missing" >&2; exit 1; }; done
+    bundled || { echo "Restore works on bundled Postgres and storage only." >&2; exit 1; }
+    if [ "${2:-}" != --yes ]; then
+      printf 'This replaces every document, setting and user here with %s. Type "restore" to go on: ' "$from" >/dev/tty
+      read -r answer </dev/tty
+      [ "$answer" = restore ] || { echo "Nothing changed."; exit 1; }
+    fi
+    project=$(value COMPOSE_PROJECT_NAME)
+    # The backup's encryption keys and integrations; this installation's own passwords.
+    cp "$from/.env" .env.restore && chmod 600 .env.restore
+    configure --restore-from /work/.env.restore
+    rm -f .env.restore
+    dc stop caddy web api worker >/dev/null 2>&1 || true
+    dc up -d postgres storage >/dev/null 2>&1
+    until dc exec -T postgres pg_isready -U triage -d triage >/dev/null 2>&1; do sleep 1; done
+    # The roles (app, resolver, purger) live in the cluster, not the dump: migrate creates them.
+    dc run --rm migrate >/dev/null 2>&1
+    dc exec -T postgres psql -q -U triage -d postgres -c "drop database triage with (force)" -c "create database triage"
+    dc exec -T postgres pg_restore -U triage -d triage --exit-on-error <"$from/db.dump"
+    dc stop storage >/dev/null 2>&1
+    docker run --rm -v "${project:-ai-triage-install}_storage-data:/data" -v "$(cd "$from" && pwd):/in:ro" alpine:3 \
+      sh -c 'rm -rf /data/* /data/.[!.]* 2>/dev/null; tar xzf /in/storage.tgz -C /data'
+    up
+    echo "Restored $from. Running at $(value PUBLIC_URL)"
+    ;;
+  uninstall)
+    if [ "${1:-}" = --purge ]; then
+      if [ "${2:-}" != --yes ]; then
+        printf 'Delete every document, user and setting for good? Type "delete" to go on: ' >/dev/tty
+        read -r answer </dev/tty
+        [ "$answer" = delete ] || { echo "Nothing changed."; exit 1; }
+      fi
+      dc down -v --remove-orphans
+      echo "Removed the containers and all data. .env and backups/ are still here."
+    else
+      dc down --remove-orphans
+      echo "Removed the containers; the data is kept. ./triage start brings it back."
+    fi
+    ;;
+  -h | --help | help | "") usage ;;
+  *) usage >&2; exit 2 ;;
+esac

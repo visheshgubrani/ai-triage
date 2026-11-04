@@ -1,4 +1,4 @@
-import { type Comparator, getTemplate, type JsonSchema, schemaProperties } from "@ai-triage/schemas";
+import { COMPARATORS, type Comparator, getTemplate, type JsonSchema, schemaProperties } from "@ai-triage/schemas";
 
 // Typed field comparators (docs/architecture.md §8). A missing expected key means the document
 // doesn't state the field, so the right answer is null: null vs null is correct, null vs a value is
@@ -129,6 +129,11 @@ export function compareField(comparator: Comparator, expected: unknown, predicte
   }
 }
 
+function declaredComparator(prop: JsonSchema): Comparator | undefined {
+  const c = prop["x-comparator"];
+  return typeof c === "string" && (COMPARATORS as readonly string[]).includes(c) ? (c as Comparator) : undefined;
+}
+
 /** A comparator from a field's JSON Schema type, for categories without a template. */
 function deriveComparator(prop: JsonSchema): Comparator {
   if (prop.type === "array") return "set_f1";
@@ -137,7 +142,10 @@ function deriveComparator(prop: JsonSchema): Comparator {
   return "exact";
 }
 
-/** The comparator for each field of a schema version: the built-in template's, else derived from types. */
+/**
+ * The comparator for each field of a schema version: the built-in template's, else the one a custom
+ * definition chose (`x-comparator`), else derived from the field's type.
+ */
 export function comparatorsFor(
   category: string,
   schemaVersion: { version: number; jsonSchema: JsonSchema },
@@ -146,7 +154,7 @@ export function comparatorsFor(
   return Object.fromEntries(
     Object.entries(schemaProperties(schemaVersion.jsonSchema)).map(([field, prop]) => [
       field,
-      template?.comparators[field] ?? deriveComparator(prop),
+      template?.comparators[field] ?? declaredComparator(prop) ?? deriveComparator(prop),
     ]),
   );
 }

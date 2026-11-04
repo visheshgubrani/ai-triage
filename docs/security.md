@@ -58,9 +58,10 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 | Uploads | Presigned PUTs sign Content-Type and Content-Length (storage refuses other sizes); refused uploads are deleted; an `.eml` name needs an email or octet-stream type | Done (M5) |
 | Email intake | At most 25 attachments, each within the file limit (Postmark gets a 403, which it doesn't retry); the tenant is chosen by the envelope recipient, never by To/Cc; unguessable inbound addresses that admins can replace (audited) | Done (M5) |
 | Parsers | DOCX zip-bomb check from the central directory (≤ 5000 entries, ≤ 50 MB uncompressed) before mammoth runs; images over 40 MP refused; the PDF page cap | Done (M5) |
+| Parser isolation | PDF, DOCX and email parsing run in a sandboxed thread with a time limit (`PARSE_TIMEOUT_MS`) and a heap cap (`PARSE_MAX_MEMORY_MB`), so a hostile file can't hang or exhaust the worker | Done (phase 7, M4) |
 | Prompt injection | `<part` / `</part` in document text escaped; a deterministic `injection_suspected` gate (pipeline/untrusted.ts) sends text that addresses the triage system to review | Done (M5) |
 | Sender spoofing | Authentication-Results headers stored with each email; the `sender_unauthenticated` gate trusts only headers from receiving servers the config names (`policy.sender.trustedAuthServIds`) and needs DMARC (or DKIM) pass. **Opt-in per config** for forwarded mail; on by default for Gmail-synced mail (phase 6) | Done (M5, phase 6) |
-| Accounts | TOTP 2FA with backup codes (Better Auth `twoFactor`; code checks rate-limited, BA locks out repeated failures); admin-only routes need it when `REQUIRE_ADMIN_2FA` is on (the default outside the demo); session list and revoke; a password change signs out other sessions; API keys created, listed (prefix only) and revoked from Settings, with optional expiry. All audited | Done (M6) |
+| Accounts | TOTP 2FA with backup codes (Better Auth `twoFactor`; code checks rate-limited, BA locks out repeated failures); admin-only routes need it when `REQUIRE_ADMIN_2FA` is on (the default outside the demo); session list and revoke; a password change signs out other sessions; API keys created, listed (prefix only) and revoked from Settings, with optional expiry, and scoped: `ingest` and/or `read` (keys from before scopes keep only `ingest`). All audited | Done (M6, scopes phase 7) |
 | Privacy | `purge_document()`: a SECURITY DEFINER function owned by `app_purger`, the only role the immutability guards let delete, deletes a document and everything derived from it within the caller's tenant; its objects are deleted by a `storage.delete` job enqueued in the same transaction. Admins delete documents (audited with the id and a hash of the external id). Per-tenant retention purges finished documents nightly; abandoned uploads are dropped; `pnpm tenant:delete` offboards a tenant | Done (M7) |
 | Sign-up and sign-in | No public sign-up: Google creates a user only for a verified email that holds a pending invitation, or a Workspace account (`hd`) of a claimed domain. Linking needs an email verified by Google **and** locally. A Google sign-in asks for TOTP like a password one; a passwordless 2FA change needs a sign-in from the last 10 minutes. Google tokens from sign-in aren't stored | Done (phase 6) |
 | Invitations | Random 32-byte tokens in the URL fragment (never logged or sent as Referer), stored as SHA-256, single use, 7-day expiry, revocable, rate-limited lookups. Google-only by default; password acceptance leaves the user unverified. Audited | Done (phase 6) |
@@ -73,6 +74,10 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 
 - **The model can still be fooled.** Gates catch forged structure, missing evidence, failed arithmetic, injection phrasing and (where the config requires it) unauthenticated senders. They can't prove that a well-formed, authenticated document from a real sender is honest. Automation is opt-in per category, and the audit sample measures how often it is wrong.
 - **Evidence matching proves a quote exists, not that it supports the value.**
+- **OCR'd text is document content, so it's untrusted like the rest.**
+  - The OCR server runs inside the compose network with no published port, and receives only page images.
+  - Its model files are pinned by Hugging Face revision and SHA-256 (`cli ocr-model`), and its image by digest.
+  - A misread figure is checked like any other value: quotes are verified against the OCR'd text, and automation needs calibration.
 - **API keys are SHA-256 hashed without a pepper.** They carry 192 bits of randomness, so a leaked hash can't be brute-forced.
 - **Eval snapshots outlive a purged document.** They are copies a human chose to keep. Erasing eval items comes later.
 - **Sender authentication depends on the forwarding path.** Forwarding breaks SPF, and a header any sender can write proves nothing, so for forwarded mail the gate needs the tenant to name the receiving server it trusts and is off by default. For Gmail-synced mail it is on, trusting Google's results by their position in the header block: that rule follows Gmail's documented layout and should be rechecked against real raw messages whenever Gmail changes its trace headers.
@@ -85,7 +90,7 @@ ai-triage has to be safe both **self-hosted** (one company per instance) and **h
 
 Set these before exposing an instance. `TRIAGE_DEMO` must be unset; the api and worker refuse to start on the dev defaults.
 
-- [ ] TLS in front of web and API, with HSTS on the web's TLS terminator (the API sends its own). `BETTER_AUTH_URL` and `WEB_ORIGIN` are `https://` URLs, and `NODE_ENV=production`.
+- [ ] TLS in front of the app (Caddy, which routes `/api` to the api), with HSTS (the API sends its own). `PUBLIC_URL` is an `https://` origin, and `NODE_ENV=production`.
 - [ ] `pnpm db:migrate` (it also seeds model prices).
 - [ ] `BETTER_AUTH_SECRET`: at least 32 random bytes (`openssl rand -base64 32`).
 - [ ] `ENCRYPTION_KEYS` (or `ENCRYPTION_KEY`): 32 random bytes, base64. Back it up apart from the database; losing it loses the webhook secrets.

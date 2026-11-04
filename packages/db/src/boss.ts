@@ -7,6 +7,7 @@ import {
   STAGE_QUEUES,
   type StageJob,
 } from "@ai-triage/core";
+import { currentTraceId } from "@ai-triage/telemetry";
 import type pg from "pg";
 import { type ConstructorOptions, PgBoss, type SendOptions } from "pg-boss";
 import { APP_GROUP_ROLE } from "./roles";
@@ -26,13 +27,47 @@ const RUNTIME_OPTIONS = {
 } satisfies ConstructorOptions;
 
 export function createBoss(connectionString: string, options: ConstructorOptions = {}): PgBoss {
-  const boss = new PgBoss({ connectionString, ...options, ...RUNTIME_OPTIONS });
+  // pg-boss's own pool: fetching, completing and heartbeats. Separate from the app's pool.
+  const boss = new PgBoss({ connectionString, max: 10, ...options, ...RUNTIME_OPTIONS });
   return boss;
 }
 
+/**
+ * Every tenant job carries its tenant as its pg-boss group, so a worker's `groupConcurrency` caps
+ * how many of one tenant's jobs run at once across the cluster (docs/architecture.md §5, fairness).
+ * Jobs are sent only through these helpers (a source scan checks).
+ */
+export const tenantGroup = (tenantId: string) => ({ id: tenantId });
+
+/** The job's payload plus the trace of the work that sent it (packages/telemetry), if there is one. */
+const traced = (data: object) => {
+  const traceId = currentTraceId();
+  return traceId ? { ...data, traceId } : data;
+};
+
 /** Enqueues on the tenant transaction's client, so the job exists only if the transaction commits. */
 export function enqueue(boss: PgBoss, tx: TenantTx, name: QueueName, data: object, options: SendOptions = {}) {
-  return boss.send(name, data, { ...options, db: tx.queueDb });
+  return boss.send(name, traced(data), { group: tenantGroup(tx.tenantId), ...options, db: tx.queueDb });
+}
+
+/** Many jobs of one queue in one insert, inside the tenant transaction. */
+export function enqueueMany(boss: PgBoss, tx: TenantTx, name: QueueName, jobs: { id?: string; data: object }[]) {
+  return boss.insert(
+    name,
+    jobs.map((job) => ({ ...job, data: traced(job.data), group: tenantGroup(tx.tenantId) })),
+    { db: tx.queueDb },
+  );
+}
+
+/** A tenant job sent outside a transaction (the cron's fan-out, where nothing else commits with it). */
+export function sendTenantJob(
+  boss: PgBoss,
+  tenantId: string,
+  name: QueueName,
+  data: object,
+  options: SendOptions = {},
+) {
+  return boss.send(name, traced(data), { group: tenantGroup(tenantId), ...options });
 }
 
 /**

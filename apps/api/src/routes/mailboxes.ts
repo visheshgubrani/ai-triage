@@ -48,6 +48,7 @@ import { z } from "zod";
 import { userActor } from "../audit";
 import { clientIp } from "../client-ip";
 import type { AppDeps } from "../deps";
+import { log } from "../log";
 import { limitUserWrites } from "../rate-limit";
 import { requireRole, requireTenant, type TenantEnv } from "../tenant";
 import { validate } from "../validate";
@@ -212,7 +213,7 @@ export const mailboxRoutes = (deps: AppDeps) =>
           await revokeToken(googleDeps(deps), tokens.refreshToken);
           revoked = true;
         } catch (err) {
-          console.warn(`req=${c.get("requestId")} could not revoke a mailbox token at Google: ${(err as Error).name}`);
+          log.warn("could not revoke a mailbox token at Google", { err: (err as Error).name });
         }
       }
       const found = await withTenantTx(deps.pool, tenantId, async (tx) => {
@@ -272,7 +273,7 @@ async function verifyWorkspaceDomain(
     return back({ domain });
   } catch (err) {
     if (err instanceof MemberError) return back({ error: err.code });
-    console.warn(`req=${c.get("requestId")} domain check failed: ${(err as Error).name}: ${(err as Error).message}`);
+    log.warn("domain check failed", { err });
     return back({ error: "google_error" });
   }
 }
@@ -374,9 +375,7 @@ export const integrationRoutes = (deps: AppDeps) =>
       return back({ connected: result.id });
     } catch (err) {
       // The provider's response stays out of the redirect and the audit log.
-      console.warn(
-        `req=${c.get("requestId")} mailbox connection failed: ${(err as Error).name}: ${(err as Error).message}`,
-      );
+      log.warn("mailbox connection failed", { err });
       return fail("google_error");
     }
   });

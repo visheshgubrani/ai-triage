@@ -56,6 +56,8 @@ export const MODEL_PRICE_SEED = [
     w1h: "2",
     read: "2",
   },
+  // The simulator answers for free.
+  { model: "sim:simulated", promptTokensAbove: 0, input: "0", output: "0", w5m: "0", w1h: "0", read: "0" },
   // A local OpenAI-compatible server costs nothing per token.
   { model: "compat:qwen3", promptTokensAbove: 0, input: "0", output: "0", w5m: "0", w1h: "0", read: "0" },
 ] as const;

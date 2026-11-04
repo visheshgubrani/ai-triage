@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { enqueueStage, type PgBoss } from "./boss";
+import { getActiveConfig } from "./configs";
 import { documents, processingRuns } from "./schema";
 import type { TenantTx } from "./tenant-tx";
 
@@ -51,4 +52,21 @@ export async function startRun(tx: TenantTx, boss: PgBoss, input: NewRun): Promi
     .where(eq(documents.id, input.documentId));
   await enqueueStage(boss, tx, stage, { tenantId: tx.tenantId, documentId: input.documentId, runId: run.id });
   return run.id;
+}
+
+/**
+ * Process anyway: a document an intake filter skipped runs the pipeline after all, as a retry
+ * (which the filters never apply to). Locks the document, so a second click finds it no longer
+ * skipped and starts nothing. Null: the document isn't skipped (or doesn't exist).
+ */
+export async function processSkipped(tx: TenantTx, boss: PgBoss, documentId: string): Promise<string | null> {
+  const [document] = await tx.db
+    .select({ status: documents.processingStatus })
+    .from(documents)
+    .where(eq(documents.id, documentId))
+    .for("update");
+  if (document?.status !== "skipped") return null;
+  const config = await getActiveConfig(tx);
+  if (!config) throw new Error("the tenant has no active pipeline config");
+  return startRun(tx, boss, { documentId, configId: config.id, trigger: "retry" });
 }

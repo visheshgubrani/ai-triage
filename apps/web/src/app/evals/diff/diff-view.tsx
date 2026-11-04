@@ -21,7 +21,7 @@ function RunHeader({ label, run }: { label: string; run: EvalRun }) {
       <div className="text-xs text-neutral-500">{label}</div>
       <div className="font-medium">
         v{run.config.version} {run.config.name} <FrozenBadge frozen={run.config.frozen} />{" "}
-        <ReplayBadge replay={run.llmMode === "replay"} />
+        <ReplayBadge replay={run.llmMode === "replay"} models={[run.config.classifyModel, run.config.extractModel]} />
       </div>
       <div className="text-xs text-neutral-500">
         {run.config.classifyModel} · {run.split} · {run.datasetName}

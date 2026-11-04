@@ -1,10 +1,53 @@
 # ai-triage
 
-An open-source AI triage inbox. Emails and documents come in, Claude classifies them and extracts structured, schema-validated fields, and anything uncertain goes to a human approval queue instead of being acted on. An evals page measures accuracy per category plus cost and latency per request.
+An open-source AI triage inbox for the documents a company receives by email: invoices, support requests, contracts, and any document type you define.
+1. Mail and files come in.
+2. A model classifies each one and extracts schema-validated fields.
+3. Deterministic checks decide whether it's safe to act on, or whether a person should look first.
+4. Approved results go to your systems as signed webhooks.
+5. An evals page measures all of it on labeled data, with honest error bars.
 
-> **Status: the MVP is complete.** Documents are ingested, classified and extracted; uncertain ones go to a review queue; approvals are delivered as signed webhooks; and an evals page measures the same pipeline on labeled data, with every rate shown with its n and a 95% Wilson lower bound. See [docs/architecture.md](docs/architecture.md) for the design.
+It runs anywhere Docker does, with one command, and works with Claude, OpenAI, DeepSeek, OpenRouter or a local model. It's MIT licensed.
 
 ![Evals: runs with accuracy and auto-approval precision, each with n and a lower bound](docs/media/evals-runs.png)
+
+## Three ways in
+
+**Try it** (about 2 minutes, no API key: recorded model answers and sample documents):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/install.sh | sh -s -- --demo
+```
+
+Open http://localhost:3000 and sign in as `admin@demo.test` / `demo-password`. From a clone, `docker compose up` runs the same demo.
+
+**Run it for your team**, on your computer or a server with HTTPS:
+
+```bash
+export ANTHROPIC_API_KEY=…    # or OPENAI_API_KEY, DEEPSEEK_API_KEY, OPENROUTER_API_KEY
+curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/install.sh | sh
+# a server: … | sh -s -- --host triage.example.com --email you@example.com
+# scans too: add --ocr vulkan (AMD or Intel GPU), --ocr nvidia, or --ocr cpu
+```
+
+The installer:
+- generates every secret and starts everything;
+- prints a one-time setup link for your workspace;
+- leaves `./triage` behind for status, logs, backups and upgrades.
+
+Then connect email: forward a mailbox to Postmark (any provider, no DNS) or connect Gmail, and point a webhook at your system. [docs/install.md](docs/install.md) walks through it, including how an AI agent should do the install.
+
+**Develop it** (Node ≥ 24, pnpm 12, Docker):
+
+```bash
+pnpm install
+pnpm dev:setup     # .env, Postgres, storage, a webhook catcher, migrations, demo data
+pnpm dev           # http://localhost:3000
+```
+
+`pnpm preflight` checks the setup and prints the fix for each problem. [CONTRIBUTING.md](CONTRIBUTING.md) has the checks and conventions, and [docs/architecture.md](docs/architecture.md) the design.
+
+## What it does
 
 ```
  Postmark inbound ─┐                                     ┌─> Next.js: inbox · review · evals · settings
@@ -19,38 +62,23 @@ An open-source AI triage inbox. Emails and documents come in, Claude classifies 
                    model API      (eval runner: same code, results → eval_results only)
 ```
 
-## Stack
+- **Your own document types.**
+  - Define a type and its fields in Settings → Categories: text, numbers, amounts, dates, one-of lists, yes/no, lists, and tables of rows.
+  - Start from scratch or from a starter (purchase order, receipt, credit note, shipping notice, refund request, job application, insurance claim, order confirmation).
+  - The built-in invoice, support request and contract types add arithmetic and date rules.
+- **Nothing acts on a guess.**
+  - Each value the model extracts must quote the source, and the quote must be found there.
+  - Schema, required fields, confidence and sender authentication are all checked.
+  - A category auto-approves only once you've calibrated it, and only above its measured threshold. Everything else goes to a review queue.
+- **Scans and photos** can be read with optional OCR (PaddleOCR-VL 1.6, on CPU or GPU), so their quotes can be verified too.
+- **Out to your systems:** each approval is delivered as a signed webhook, at least once, with an idempotency key. Other systems can send documents and look up their outcome through a small REST API ([docs/api.md](docs/api.md)).
+- **Built to keep running:**
+  - per-tenant fairness and provider backpressure;
+  - stalled work surfaced, never silently redone;
+  - JSON logs and metrics, and a System health page.
+  - Load and chaos numbers are in [docs/reliability.md](docs/reliability.md).
 
-TypeScript · Hono (API) · Next.js (UI) · Postgres + Drizzle + pg-boss · S3-compatible storage (RustFS locally) · Claude API · pnpm + Turborepo · Biome · Vitest
-
-## Quickstart
-
-Requires Docker only. No API key: models run in **replay mode** from recorded responses.
-
-```bash
-docker compose up --build
-```
-
-A one-shot `init` service applies the migrations and seeds a demo tenant with 60 synthetic documents and the labeled eval dataset; the worker then processes them and runs the first evals (dev, calib, and test on a frozen config). Open http://localhost:3000 and sign in as `admin@demo.test` / `demo-password`. Re-running is idempotent.
-
-## Getting started (development)
-
-Requires Node ≥ 24, pnpm 12 and Docker.
-
-```bash
-pnpm install
-cp .env.example .env
-pnpm infra:up      # Postgres on :5440, RustFS on :9020, a webhook catcher on :9030
-pnpm db:migrate    # creates the app's database role, applies migrations, installs the job queue
-pnpm db:seed       # model prices, a demo tenant, 60 synthetic documents, the eval dataset and first runs
-pnpm dev           # web http://localhost:3000 · api http://localhost:8787
-```
-
-Sign in at http://localhost:3000/sign-in as `admin@demo.test` or `reviewer@demo.test`, with the password `demo-password`. These are **dev-only** demo credentials created by the seed.
-
-The app connects to Postgres as a restricted role (`DATABASE_URL`), so row-level security always applies. Only migrations and seeds use the owner (`DATABASE_OWNER_URL`).
-
-LLM calls default to **replay mode** (recorded responses, no API key, no spend). The demo tenant uses GPT-6.1 Terra (`DEMO_MODEL`), the model its responses were recorded with; configs can use Claude, OpenAI, DeepSeek, OpenRouter or a local server. Set `LLM_MODE=live` and the provider's key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, …) to call a model for real.
+![Settings → Categories: a purchase order from a starter, with its fields](docs/media/categories.png)
 
 ## Google Workspace and Gmail
 
@@ -84,7 +112,7 @@ Locally, the demo tenant's webhook points at the catcher: open http://localhost:
 
 Open http://localhost:3000/evals. The same code that runs in production (parsing, the request builders, output parsing, gates and routing) runs over a labeled dataset, but an eval run can never act: it has no queue, actions or delivery port, and eval items never create documents, which actions require.
 
-- **Datasets** have three splits. Iterate on **dev**. Run the candidate on **calib** and read its threshold sweep (auto-approval rate vs precision per category) and reliability table (does a 0.95 score mean 95% right?), then **Freeze**: a new, immutable config version with the chosen thresholds. Only frozen versions run on **test**, and those are the headline numbers. Activate a frozen version to run new documents with it.
+- **Datasets** have three splits. Iterate on **dev**. Run the candidate on **calib** and read its threshold sweep (auto-approval rate vs precision per category) and reliability table (does a 0.95 score mean 95% right?), then **Freeze**: a new, immutable config version with the chosen thresholds. Only frozen versions run on **test**, and those are the headline numbers. Activate a frozen version to run new documents with it, with auto-approval for the categories you calibrated. To change models before you have an eval set, use Settings → Pipeline: the new version sends every category to a person, so it needs no calibration.
 - **A correct auto-approval** means the right category *and* every required field correct under its comparator (exact, normalized text, date, amount within a cent, set F1 for lists, presence for free text). Category accuracy alone never counts.
 - **Every rate shows k/n and its 95% Wilson lower bound.** The demo's calib split has 1 to 5 items per category, so the bounds are wide; that is the honest reading, not a bug.
 - **Run A vs run B** lists the items that got worse first. Cost per item (every attempt, so a run costs exactly the sum of its calls) and latency per stage are shown; replayed figures carry a **Replay** badge and say "recorded".
@@ -103,34 +131,9 @@ DEEPSEEK_API_KEY=… LLM_MODE=record pnpm cassettes:record --yes --model deepsee
 
 DeepSeek Flash can't read PDFs, so scanned documents fail as `unsupported_file` and text PDFs go as text: the run diff shows the difference honestly. With `LLM_MODE=live`, eval runs call the model for real (admins confirm the item count first) and draw on the tenant's daily budget.
 
-## Webhook receiver contract
+## Public API and webhooks
 
-Each approved document is POSTed as JSON (the action payload: `document_id`, `extraction_id`, `category`, `fields`, `approved_by`, `approved_at`) with these headers:
-
-- `Idempotency-Key`: the action id. **Delivery is at least once**, and a manual Redeliver sends the same key, so dedupe on it.
-- `X-Triage-Event: document.approved`
-- `X-Triage-Signature: t=<unix seconds>,v2=<hex>`, where `v2` is HMAC-SHA256 of `<t>.<Idempotency-Key>.<raw body>` with the tenant's secret. After a secret rotation the header carries one `v2` per secret (newest first) for 24 hours; accept the delivery if any of them verifies with the secret you hold.
-
-```js
-import { createHmac, timingSafeEqual } from "node:crypto";
-
-function verify(secret, header, idempotencyKey, rawBody, toleranceSeconds = 300) {
-  const pairs = header.split(",").map((kv) => kv.split("=", 2));
-  const t = pairs.find(([k]) => k === "t")?.[1];
-  if (!t || Math.abs(Date.now() / 1000 - Number(t)) > toleranceSeconds) return false;
-  const expected = createHmac("sha256", secret).update(`${t}.${idempotencyKey}.${rawBody}`).digest();
-  return pairs
-    .filter(([k]) => k === "v2")
-    .some(([, hex]) => {
-      const given = Buffer.from(hex ?? "", "hex");
-      return given.length === expected.length && timingSafeEqual(given, expected);
-    });
-}
-```
-
-Webhook URLs must be public `https://` hosts on port 443, 8443 or above 1023: the API refuses private, loopback and metadata addresses when the URL is saved, and the worker checks again at every connection. Receivers on a private network go in the operator's `WEBHOOK_ALLOWED_HOSTS` (hostnames or CIDRs, which may also use http).
-
-Answer 2xx to accept. 5xx, 408, 425, 429, timeouts (10 s) and network errors are retried with exponential backoff (8 retries, starting at 30 s); any other 4xx or a redirect fails the delivery at once, and it waits under Delivery failures for a Redeliver.
+Other systems send documents with `POST /api/v1/documents` (optionally tagged with their own `external_ref`), and look up what happened with `GET /api/v1/documents/:id` or `?external_ref=`. `GET /api/v1/categories` gives each category's JSON Schema. Approved documents are POSTed to your webhook, signed and delivered at least once. The calls, the states, the signature check (Node and Python) and the retry rules are in [docs/api.md](docs/api.md).
 
 ## Checks
 
@@ -155,14 +158,17 @@ pnpm typecheck && pnpm lint && pnpm test && pnpm build
 
 Production refuses to start on the demo's defaults. Webhooks can't reach private networks, and their secrets (and mailbox tokens) are encrypted at rest. Sign-up is by invitation or Workspace domain only. Admins need TOTP 2FA. Every security-relevant change is in an audit log, and documents can be deleted or expire on a retention schedule. [docs/security.md](docs/security.md) has the threat model, the controls and the production checklist. To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
-## License
+## Stack and license
 
-MIT
+TypeScript · Hono (API) · Next.js (UI) · Postgres + Drizzle + pg-boss · S3-compatible storage (RustFS locally) · llama.cpp + PaddleOCR-VL (optional OCR) · pnpm + Turborepo · Biome · Vitest. MIT licensed.
 
 ## Known limits
 
 - **Repeated model calls are possible.** Each response is saved as soon as it arrives and reused on retry, but a worker that crashes between Claude answering and that save pays for the call again on retry. Every attempt is kept for cost accounting, and only one is canonical.
-- **Evidence matching proves a quote exists, not that it supports the value.** A verbatim quote must appear in the source (or on the cited PDF page); scans and images can't be checked, so they always go to review.
+- **Evidence matching proves a quote exists, not that it supports the value.**
+  - A verbatim quote must appear in the source, or on the cited PDF page.
+  - Without OCR, scans and images can't be checked, so they always go to review.
+  - With OCR, they're checked against the OCR'd text, which is only as good as the OCR.
 - **The prompt-injection fixtures are regression tests, not proof of resistance.** A deterministic gate sends text that addresses the triage system to review, but phrasing it doesn't know gets through to the model. Triage calls have no tools, the only action is a webhook to a tenant-configured target, and automation is opt-in per category, which keeps the damage of a confidently wrong answer small.
 - **Inline email images (`cid:`) and remote images aren't shown** in the review view: the HTML is sanitized and rendered with a CSP that blocks remote loads.
 - **Free-text fields are graded by presence only.** A summary written in the model's own words can't be graded by string matching, so `issue_summary` counts as right when it is present exactly when the label has one.

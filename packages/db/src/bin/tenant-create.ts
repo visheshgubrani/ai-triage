@@ -1,14 +1,6 @@
 import { parseArgs } from "node:util";
-import { INVITATION_ACCEPT_METHODS, type InvitationAcceptMethod, isOneOf } from "@ai-triage/core";
-import {
-  buildPipelineConfig,
-  createInvitation,
-  createPool,
-  createTenant,
-  recordAudit,
-  SYSTEM_ACTOR,
-  withTenantTx,
-} from "../index";
+import { INVITATION_ACCEPT_METHODS, type InvitationAcceptMethod, isOneOf, resolvePublicUrls } from "@ai-triage/core";
+import { createPool, createWorkspace, defaultModelFromEnv, SYSTEM_ACTOR } from "../index";
 
 // `pnpm tenant:create --name "Acme" --slug acme --admin you@acme.com [--accept-with google|google_or_password]`
 //
@@ -41,26 +33,18 @@ if (!isOneOf(INVITATION_ACCEPT_METHODS, acceptWith)) {
   process.exit(2);
 }
 
-const webOrigin = process.env.WEB_ORIGIN ?? "http://localhost:3000";
+const webOrigin = resolvePublicUrls(process.env).origin;
 const pool = createPool();
 try {
-  const { id } = await createTenant(pool, { name, slug, inboundDomain: process.env.INBOUND_DOMAIN || undefined });
-  const actor = SYSTEM_ACTOR("cli: tenant:create");
-  const token = await withTenantTx(pool, id, async (tx) => {
-    const config = await buildPipelineConfig(tx, { name: "Default config" });
-    await recordAudit(tx, actor, {
-      action: "config.created",
-      target: { type: "config", id: config.id },
-      details: { name: "Default config", activated: true },
-    });
-    const { token } = await createInvitation(tx, actor, {
-      email: admin,
-      role: "admin",
-      acceptWith: acceptWith as InvitationAcceptMethod,
-      inviterId: null,
-      now: new Date(),
-    });
-    return token;
+  const { token } = await createWorkspace(pool, {
+    name,
+    slug,
+    adminEmail: admin,
+    acceptWith: acceptWith as InvitationAcceptMethod,
+    actor: SYSTEM_ACTOR("cli: tenant:create"),
+    inboundDomain: process.env.INBOUND_DOMAIN || undefined,
+    model: defaultModelFromEnv(process.env),
+    now: new Date(),
   });
   console.log(`Created tenant "${name}" (${slug}). Send this invite link to ${admin}; it is shown only once:\n`);
   console.log(`  ${webOrigin}/invite#${token}\n`);

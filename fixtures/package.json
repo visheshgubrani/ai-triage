@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Synthetic labeled documents and recorded LLM cassettes",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./variety": "./src/variety/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

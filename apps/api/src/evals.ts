@@ -12,6 +12,8 @@ export const EVAL_ERROR_STATUS: Record<EvalErrorCode, 409 | 422> = {
   run_not_done: 409,
   runs_not_comparable: 422,
   invalid_config: 422,
+  too_few_calib_items: 422,
+  no_required_fields: 422,
 };
 
 const iso = (d: Date | null) => d?.toISOString() ?? null;

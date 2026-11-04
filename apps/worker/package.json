@@ -12,7 +12,9 @@
     "seed:evals": "tsx --env-file-if-exists=../../.env src/bin/seed-evals.ts",
     "eval:import": "tsx --env-file-if-exists=../../.env src/bin/eval-import.ts",
     "cassettes:record": "tsx --env-file-if-exists=../../.env src/bin/record-cassettes.ts",
-    "tenant:delete": "tsx --env-file-if-exists=../../.env src/bin/tenant-delete.ts"
+    "tenant:delete": "tsx --env-file-if-exists=../../.env src/bin/tenant-delete.ts",
+    "preflight": "tsx --env-file-if-exists=../../.env src/bin/preflight.ts",
+    "load": "tsx --env-file-if-exists=../../.env src/bin/load.ts"
   },
   "dependencies": {
     "@ai-triage/core": "workspace:*",
@@ -24,6 +26,8 @@
     "@ai-triage/mailbox": "workspace:*",
     "@ai-triage/schemas": "workspace:*",
     "@ai-triage/storage": "workspace:*",
+    "@ai-triage/telemetry": "workspace:*",
+    "@ai-triage/webhooks": "workspace:*",
     "pg-boss": "^12.38.0",
     "undici": "^7.30.1"
   },

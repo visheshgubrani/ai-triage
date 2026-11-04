@@ -14,6 +14,7 @@ import { DEMO_PASSWORD } from "@ai-triage/db/seed";
 import { testDbUrls } from "@ai-triage/db/testing";
 import type { GoogleConfig } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
+import { createGuardedFetch } from "@ai-triage/webhooks";
 import { createApp } from "./app";
 import { type RateLimits, rateLimitsFromEnv } from "./rate-limit";
 
@@ -47,6 +48,7 @@ export async function createTestApp(
     google?: GoogleConfig;
     /** Where mailbox code sends Google requests (a FakeGoogle's fetch). */
     googleFetch?: typeof fetch;
+    metricsToken?: string;
   } = {},
 ) {
   // Tests may pin the clock (to let a lease run out); otherwise it's real time.
@@ -58,14 +60,14 @@ export async function createTestApp(
   const auth = createAuth({
     db,
     secret: "test-only-secret-0123456789abcdef0123456789",
-    baseURL: "http://localhost:8787",
+    baseURL: WEB_ORIGIN,
     webOrigin: WEB_ORIGIN,
     google,
   });
   const boss: PgBoss = createBoss(appUrl, { supervise: false, schedule: false });
   await boss.start();
   const storage = createStorage(storageConfigFromEnv());
-  const app = createApp({
+  const server = createApp({
     db,
     pool,
     auth,
@@ -78,6 +80,7 @@ export async function createTestApp(
     trustedProxies: [],
     now: () => fixedNow ?? new Date(),
     webhookEgress: { policy: egressPolicy(options.webhookAllowedHosts ?? []), resolve: testResolve },
+    webhookFetch: createGuardedFetch(egressPolicy(options.webhookAllowedHosts ?? [])),
     keys: keyRingFromEnv({}),
     // Every test file signs in as the demo users from the same (unknown) address, and the counters
     // live in the shared test database: limits stay out of the way unless a test sets its own.
@@ -88,8 +91,18 @@ export async function createTestApp(
     google,
     googleSignIn: google !== null,
     googleFetch: options.googleFetch ?? (() => Promise.reject(new Error("no Google in this test"))),
-    apiBaseUrl: "http://localhost:8787",
+    apiBaseUrl: `${WEB_ORIGIN}/api`,
+    metricsToken: options.metricsToken ?? null,
   });
+
+  /**
+   * The app as tests talk to it: paths are the `/api` routes without the prefix (`/me`), as the
+   * web's typed client sees them. `server.request` reaches the real paths, root ones included.
+   */
+  const app = {
+    request: (path: string, init?: RequestInit) =>
+      server.request(path.startsWith("/api/") ? path : `/api${path}`, init),
+  };
 
   /** Pins the app's clock (null: real time again). */
   function setNow(at: Date | null) {
@@ -123,7 +136,7 @@ export async function createTestApp(
     await pool.end();
   }
 
-  return { app, pool, db, boss, storage, signIn, memberCookie, setNow, close };
+  return { app, server, pool, db, boss, storage, signIn, memberCookie, setNow, close };
 }
 
 /** RFC 6238 TOTP (SHA-1, 30 s, 6 digits), as authenticator apps compute it. */

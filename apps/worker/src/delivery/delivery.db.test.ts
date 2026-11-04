@@ -17,12 +17,11 @@ import {
   withTenantTx,
 } from "@ai-triage/db";
 import { newTenant, SAMPLE_INVOICE_FIELDS, seedReviewTask, testDbUrls } from "@ai-triage/db/testing";
+import { createGuardedFetch, verifyWebhook } from "@ai-triage/webhooks";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { deliverAction } from "./deliver";
 import type { DeliveryDeps } from "./deps";
 import { drainDeliveries } from "./drain";
-import { createGuardedFetch } from "./egress";
-import { verifyWebhook } from "./sign";
 
 // Webhook delivery against a real HTTP receiver: signing, the Idempotency-Key, permanent versus
 // transient failures, the dead letter, and Redeliver (docs/architecture.md §5, §10).

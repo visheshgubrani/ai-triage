@@ -33,7 +33,13 @@ import type { EvalDeps } from "./deps";
 
 type Outcome = Omit<NewEvalResult, "evalRunId" | "evalItemId">;
 
-async function evaluate(deps: EvalDeps, job: EvalItemJob, input: EvalItemInput, resultId: string): Promise<Outcome> {
+async function evaluate(
+  deps: EvalDeps,
+  job: EvalItemJob,
+  input: EvalItemInput,
+  resultId: string,
+  signal?: AbortSignal,
+): Promise<Outcome> {
   const { item, config } = input;
   const ctx = { evalRunId: job.evalRunId, evalItemId: job.evalItemId };
   const expectedFields = item.expectedFields as Record<string, unknown>;
@@ -59,6 +65,7 @@ async function evaluate(deps: EvalDeps, job: EvalItemJob, input: EvalItemInput, 
     const classified = await deps.llm.call({
       tenantId: job.tenantId,
       ctx,
+      signal,
       request: buildClassifyRequest({
         model: stageModel(config, "classify"),
         promptBody: prepared.classifyPrompt,
@@ -104,6 +111,7 @@ async function evaluate(deps: EvalDeps, job: EvalItemJob, input: EvalItemInput, 
     const extracted = await deps.llm.call({
       tenantId: job.tenantId,
       ctx,
+      signal,
       request: buildExtractRequest({
         model: stageModel(config, "extract"),
         promptBody: prepared.extractPrompt,
@@ -182,7 +190,7 @@ const errorOutcome = (
   error,
 });
 
-export async function runEvalItem(deps: EvalDeps, job: EvalItemJob): Promise<void> {
+export async function runEvalItem(deps: EvalDeps, job: EvalItemJob, signal?: AbortSignal): Promise<void> {
   const input = await withTenantTx(deps.pool, job.tenantId, (tx) => loadEvalItemInput(tx, job, deps.now()));
   if (!input) return;
   if (input.run.llmMode !== deps.llmMode) {
@@ -197,7 +205,7 @@ export async function runEvalItem(deps: EvalDeps, job: EvalItemJob): Promise<voi
     );
     return;
   }
-  const outcome = await evaluate(deps, job, input, randomUUID());
+  const outcome = await evaluate(deps, job, input, randomUUID(), signal);
   await withTenantTx(deps.pool, job.tenantId, (tx) =>
     commitEvalResult(tx, { evalRunId: job.evalRunId, evalItemId: job.evalItemId, ...outcome }, deps.now()),
   );

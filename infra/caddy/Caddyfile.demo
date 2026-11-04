@@ -1,0 +1,16 @@
+# The Docker demo's front door (docs/architecture.md §2): one origin, the API under /api. Plain
+# http on localhost; deploy/Caddyfile is the production one, with TLS.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	# The API: straight to the api, never through Next (bodies, timeouts, X-Forwarded-For).
+	handle /api/* {
+		reverse_proxy api:8787
+	}
+	handle {
+		reverse_proxy web:3000
+	}
+}
