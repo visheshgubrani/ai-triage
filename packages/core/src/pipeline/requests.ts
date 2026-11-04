@@ -21,6 +21,19 @@ export const MAX_REQUEST_BYTES = 30 * 1024 * 1024;
 export interface CategoryOption {
   name: string;
   description: string;
+  /** Sample subjects or openings from a custom category's definition (classify prompt v2's `{{examples}}`). */
+  examples?: readonly string[];
+}
+
+/** Code-point order: the same in every locale, so a request's bytes (and its cassette) never depend on one. */
+const byName = (a: { name: string }, b: { name: string }) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+
+/** The custom categories' examples, for a prompt that asks for `{{examples}}` (v2). */
+function renderExamples(categories: readonly CategoryOption[]): string {
+  const blocks = categories.flatMap((c) =>
+    (c.examples ?? []).map((e) => `<example>\n${e}\nAnswer: ${c.name}\n</example>`),
+  );
+  return blocks.length > 0 ? `\nExamples (abridged):\n${blocks.join("\n")}` : "";
 }
 
 type DocumentPart = Pick<
@@ -115,12 +128,13 @@ export function buildClassifyRequest(input: {
   parts: readonly DocumentPart[];
   blobs: ReadonlyMap<string, Uint8Array>;
 }): LlmRequest {
-  const sorted = [...input.categories].sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = [...input.categories].sort(byName);
   return {
     stage: "classify",
     ...input.model,
     system: renderPrompt(input.promptBody, {
       categories: sorted.map((c) => `- ${c.name}: ${c.description}`).join("\n"),
+      examples: renderExamples(sorted),
     }),
     content: [
       ...documentContent(input.parts, input.blobs, modelInfo(input.model.model).inputs),

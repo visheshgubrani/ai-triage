@@ -1,8 +1,8 @@
 import type { DocumentSource, ProcessingStatus } from "@ai-triage/core";
-import { getTemplate, toJsonSchema } from "@ai-triage/schemas";
+import { compileDefinition, getTemplate, type JsonSchema, toJsonSchema } from "@ai-triage/schemas";
 import { and, asc, desc, eq, ilike, lt, ne } from "drizzle-orm";
 import { enqueueStage, type PgBoss } from "./boss";
-import { getActiveConfig } from "./configs";
+import { getActiveConfig, storedDefinition } from "./configs";
 import { loadClassification, loadParts, loadSchemaVersion } from "./pipeline";
 import { listDecisions } from "./review";
 import {
@@ -137,13 +137,23 @@ export async function listDocuments(tx: TenantTx, options: DocumentFilters = {})
 }
 
 /**
- * A schema version for display. jsonb doesn't keep object key order, so for a built-in category the
- * same version is rebuilt from its template, which lists fields in their authored order.
+ * A schema version for display. jsonb doesn't keep object key order, so the same version is rebuilt
+ * in authored order: from its template for a built-in, from its stored definition for a custom one.
  */
 async function displaySchema(tx: TenantTx, schemaVersionId: string): Promise<unknown> {
-  const row = await loadSchemaVersion(tx, schemaVersionId);
+  return displaySchemaOf(await loadSchemaVersion(tx, schemaVersionId));
+}
+
+export function displaySchemaOf(row: {
+  category: string;
+  version: number;
+  jsonSchema: unknown;
+  definition: unknown;
+}): JsonSchema {
+  const definition = storedDefinition(row);
+  if (definition) return compileDefinition(definition);
   const template = getTemplate(row.category, row.version);
-  return template ? toJsonSchema(template) : row.jsonSchema;
+  return template ? toJsonSchema(template) : (row.jsonSchema as JsonSchema);
 }
 
 /**

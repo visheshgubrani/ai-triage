@@ -33,6 +33,7 @@ import { EVAL_ERROR_STATUS } from "./evals";
 import { log, registry } from "./log";
 import { REVIEW_ERROR_STATUS } from "./review";
 import { actionRoutes } from "./routes/actions";
+import { categoryRoutes } from "./routes/categories";
 import { configRoutes } from "./routes/configs";
 import { documentRoutes } from "./routes/documents";
 import { evalRoutes } from "./routes/evals";
@@ -198,6 +199,7 @@ function apiRoutes(deps: AppDeps) {
       .route("/configs", configRoutes(deps))
       .route("/models", modelRoutes(deps))
       .route("/pipeline", pipelineRoutes(deps))
+      .route("/categories", categoryRoutes(deps))
       .route("/webhooks", webhookRoutes(deps))
       .route("/v1", publicApiRoutes(deps))
   );

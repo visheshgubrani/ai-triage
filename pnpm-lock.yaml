@@ -208,6 +208,9 @@ importers:
       '@ai-triage/mailbox':
         specifier: workspace:*
         version: link:../../packages/mailbox
+      '@ai-triage/schemas':
+        specifier: workspace:*
+        version: link:../../packages/schemas
       '@ai-triage/storage':
         specifier: workspace:*
         version: link:../../packages/storage
@@ -356,6 +359,9 @@ importers:
       '@ai-triage/evals':
         specifier: workspace:*
         version: link:../evals
+      '@ai-triage/schemas':
+        specifier: workspace:*
+        version: link:../schemas
       zod:
         specifier: ^4.6.7
         version: 4.6.7

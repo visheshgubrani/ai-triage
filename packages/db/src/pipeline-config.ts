@@ -1,8 +1,8 @@
 import type { AutomationMode, Effort, ModelRef } from "@ai-triage/core";
 import { PROMPTS, TEMPLATES, toJsonSchema } from "@ai-triage/schemas";
 import { and, eq } from "drizzle-orm";
-import { createConfigVersion, type PipelineConfig, setActiveConfig } from "./configs";
-import { categorySchemaVersions, promptVersions } from "./schema";
+import { createConfigVersion, ensurePromptVersion, type PipelineConfig, setActiveConfig } from "./configs";
+import { categorySchemaVersions } from "./schema";
 import type { TenantTx } from "./tenant-tx";
 
 /** Per-stage limits stored in `pipeline_configs.policy`, so they are versioned with the config. */
@@ -79,20 +79,12 @@ export async function buildPipelineConfig(tx: TenantTx, options: PipelineConfigO
     schemaIds[template.category] = row.id;
   }
 
-  const promptIds = { classify: "", extract: "" };
-  for (const stage of ["classify", "extract"] as const) {
-    const { version, body } = PROMPTS[stage];
-    const where = and(eq(promptVersions.stage, stage), eq(promptVersions.version, version));
-    const [existing] = await tx.db.select({ id: promptVersions.id }).from(promptVersions).where(where);
-    const [row] = existing
-      ? [existing]
-      : await tx.db
-          .insert(promptVersions)
-          .values({ tenantId: tx.tenantId, stage, version, body })
-          .returning({ id: promptVersions.id });
-    if (!row) throw new Error(`prompt version insert for ${stage} returned no row`);
-    promptIds[stage] = row.id;
-  }
+  // Pinned to v1: the seeds, the recorder and tenant:create stay built-in only, so their requests
+  // match the committed cassettes byte for byte.
+  const promptIds = {
+    classify: await ensurePromptVersion(tx, "classify", PROMPTS.classify),
+    extract: await ensurePromptVersion(tx, "extract", PROMPTS.extract),
+  };
 
   const classify = options.classify ?? { model: "claude-opus-5-5", effort: "low" };
   const extract = options.extract ?? { model: "claude-opus-5-5", effort: "low" };

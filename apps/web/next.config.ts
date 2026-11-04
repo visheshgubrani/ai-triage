@@ -3,7 +3,13 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Workspace packages ship TypeScript source.
-  transpilePackages: ["@ai-triage/contracts", "@ai-triage/core", "@ai-triage/api", "@ai-triage/evals"],
+  transpilePackages: [
+    "@ai-triage/contracts",
+    "@ai-triage/core",
+    "@ai-triage/api",
+    "@ai-triage/evals",
+    "@ai-triage/schemas",
+  ],
   poweredByHeader: false,
   // The Docker image runs `.next/standalone` (a server plus only the files it needs), traced from
   // the repo root because workspace packages live outside apps/web.

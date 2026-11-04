@@ -27,7 +27,7 @@ apps/web        Next.js UI only (no business logic, no DB access)
 packages/db         Drizzle schema + migrations. The ONLY package that imports drizzle-orm / pg.
 packages/core       Closed sets (`.`, web-safe) and the pure pipeline (`./pipeline`, Node-only). No I/O.
 packages/llm        Model gateway (Claude + OpenAI-compatible) + llm_calls + replay/record/live
-packages/schemas    Category templates, prompts, toApiSchema(), Ajv, rules (a leaf: no workspace deps)
+packages/schemas    Built-in templates, custom category definitions + starters, prompts, toApiSchema(), Ajv, rules (a leaf)
 packages/storage    S3 client, presigned URLs, server-issued storage keys
 packages/ingest     Ingestion paths: store the source, then create document + run + parse job
 packages/evals      Comparators, grading, metrics, threshold sweep, reliability, run diff (pure, web-safe)
@@ -112,6 +112,8 @@ docker compose up            # the whole demo in containers (pulls the GHCR imag
 | Add a queue | Add it to `QUEUES` in core; `db:migrate` creates it |
 | A pipeline stage handler | Commit order: guarded status advance, stage result, pointers, `markCanonical`, then enqueue |
 | The eval runner (`apps/worker/src/evals/`) | No `createAction`, `enqueue` or delivery imports; a source scan and a type test enforce this |
+| A built-in category (template) | Built-ins are code with rules; keep `BUILTIN_CATEGORY_NAMES` (schemas), `BUILTIN_CATEGORIES` (core) and `TEMPLATES` equal (`categories.db.test.ts`). Tenants' own types are data: definitions in `packages/schemas/src/definition.ts`, created in Settings → Categories |
+| How a definition compiles (`compileDefinition`) | Stored versions are insert-only, so old versions keep their schema. Keep the output inside `toApiSchema`'s subset (`definition.test.ts` runs every starter) |
 | A package that web imports | Add it to `transpilePackages` in `apps/web/next.config.ts` |
 | Add a document-derived table | Add it to `purge_document()` (a new migration replacing the function), or purges fail on the FK |
 | Log or measure something | `log` from `apps/{api,worker}/src/{log,observe}.ts` (never `console.*`; lines get the trace id), metrics on their `registry`. Add a new metric to docs/operations.md |

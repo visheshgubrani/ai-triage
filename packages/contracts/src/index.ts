@@ -4,6 +4,7 @@ import {
   AUDIT_ACTIONS,
   AUDIT_ACTOR_TYPES,
   AUTOMATION_MODES,
+  type CATEGORY_ORIGINS,
   DECISIONS,
   DELIVERY_STATUSES,
   DOCUMENT_SOURCES,
@@ -46,6 +47,13 @@ import type {
   RunSummary,
   ThresholdSweep,
 } from "@ai-triage/evals";
+import type {
+  CategoryDefinition,
+  CategoryDefinitionInput,
+  Comparator,
+  DEFINITION_LIMITS,
+  FieldType,
+} from "@ai-triage/schemas";
 import { z } from "zod";
 
 export const HealthResponse = z.object({
@@ -957,3 +965,48 @@ export const UpdateMailboxRequest = z
   .object({ labelId: z.string().trim().min(1).max(200).optional(), paused: z.boolean().optional() })
   .refine((v) => v.labelId !== undefined || v.paused !== undefined, { message: "Nothing to change" });
 export type UpdateMailboxRequest = z.infer<typeof UpdateMailboxRequest>;
+
+// ── Categories ───────────────────────────────────────────────────────────────────────────────
+
+/** One category of the active version, built in (code, with rules) or custom (a tenant definition). */
+export interface CategoryInfo {
+  category: string;
+  origin: (typeof CATEGORY_ORIGINS)[number];
+  version: number;
+  schemaVersionId: string;
+  description: string;
+  /** Field names in authored order, with whether each is required. */
+  fields: { name: string; required: boolean }[];
+  automation: (typeof AUTOMATION_MODES)[number];
+  /** A custom category's definition, to edit; null for a built-in. */
+  definition: CategoryDefinition | null;
+}
+
+export interface CategoryList {
+  configId: string;
+  categories: CategoryInfo[];
+  starters: { id: string; title: string; definition: CategoryDefinitionInput }[];
+  limits: typeof DEFINITION_LIMITS;
+  fieldTypes: FieldType[];
+  comparators: Comparator[];
+  /** What saving a change would do that an admin should know first (replay mode, automation off). */
+  warnings: string[];
+}
+
+/** POST /categories/preview: the compiled schema, or the definition's problems. */
+export interface CategoryPreview {
+  jsonSchema: Record<string, unknown> | null;
+  issues: { path: string; message: string }[];
+  warnings: string[];
+}
+
+/** POST /categories: a custom category added, or a new version of one; the new config is active. */
+export interface CategorySaved {
+  category: string;
+  version: number;
+  config: ConfigSummary;
+}
+
+export type { CategoryDefinition, CategoryDefinitionInput };
+
+export const CategoryNameParam = z.object({ name: z.string().regex(/^[a-z][a-z0-9_]{1,39}$/) });

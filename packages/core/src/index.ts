@@ -585,6 +585,9 @@ export const EMAIL_SOURCE_MIME = "application/vnd.ai-triage.email+json";
 export const BUILTIN_CATEGORIES = ["invoice", "support_request", "contract"] as const;
 export type BuiltinCategory = (typeof BUILTIN_CATEGORIES)[number];
 export const OTHER_CATEGORY = "other";
+/** Where a category schema version came from: a built-in template (code) or a tenant's definition (data). */
+export const CATEGORY_ORIGINS = ["builtin", "custom"] as const;
+export type CategoryOrigin = (typeof CATEGORY_ORIGINS)[number];
 
 /**
  * Gate reason codes. A failed gate is recorded as `code` or `code:field` (for example

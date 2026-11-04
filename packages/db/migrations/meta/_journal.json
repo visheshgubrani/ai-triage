@@ -232,6 +232,13 @@
       "when": 1793777133356,
       "tag": "0032_installation",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793778272075,
+      "tag": "0033_custom_categories",
+      "breakpoints": true
     }
   ]
 }

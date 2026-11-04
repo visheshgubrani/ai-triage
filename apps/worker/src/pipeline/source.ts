@@ -101,8 +101,13 @@ export async function loadCategoryOptions(tx: TenantTx, config: PipelineConfig):
     tx,
     config.categories.map((c) => c.schemaVersionId),
   );
-  return config.categories.map((c) => ({
-    name: c.category,
-    description: schemaDescription((versions.find((v) => v.id === c.schemaVersionId)?.jsonSchema ?? {}) as JsonSchema),
-  }));
+  return config.categories.map((c) => {
+    const version = versions.find((v) => v.id === c.schemaVersionId);
+    const examples = (version?.definition as { examples?: string[] } | null)?.examples;
+    return {
+      name: c.category,
+      description: schemaDescription((version?.jsonSchema ?? {}) as JsonSchema),
+      ...(examples?.length ? { examples } : {}),
+    };
+  });
 }

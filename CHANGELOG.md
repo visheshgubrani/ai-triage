@@ -49,6 +49,7 @@ Phase 7: production-ready (docs/architecture.md §9).
 - **UI polish:** error, not-found and loading pages, a datasets empty state, and list fields editable in review.
 - **Intake filters:** auto-replies and bounces (and bulk mail, when turned on in Settings) end as `skipped` before any model call, with no review task. Documents → Skipped has Process anyway.
 - **Documents list:** filters by status, source and category, a title search, and paging.
+- **Custom categories (Settings → Categories):** define your own document types with typed fields (text, numbers, amounts, dates, emails, one-of lists, yes/no, lists, and tables of rows), quote requirements and eval comparators, from scratch or from eight starters (purchase order, receipt, credit note, shipping notice, refund request, job application, insurance claim, order confirmation). Saving activates a version that reviews every category. Built-ins keep their rules; custom categories get every gate but no code rules. They need a live model or the simulator: replay can't serve them.
 - Provider backpressure: a busy answer (429, 529, 503) cools that model down for every worker, honoring Retry-After. Classify and extract ride out about an hour of it before failing as `provider_unavailable`.
 
 ### Fixed

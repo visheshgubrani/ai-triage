@@ -3,9 +3,12 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { normalizeEml } from "@ai-triage/core/pipeline";
 import {
+  activateConfig,
   buildPipelineConfig,
   clearCooldown,
   createBoss,
+  createCandidateConfig,
+  createCategoryVersion,
   createDb,
   createPool,
   getDocumentDetail,
@@ -17,6 +20,7 @@ import { newTenant, testDbUrls } from "@ai-triage/db/testing";
 import { ingestEmail, ingestFile } from "@ai-triage/ingest";
 import { createTransport } from "@ai-triage/llm";
 import { DEFAULT_SIMULATOR_OPTIONS, type SimulatorOptions, simulate } from "@ai-triage/llm/testing";
+import { STARTERS } from "@ai-triage/schemas";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { workerConfig } from "../config";
@@ -34,6 +38,8 @@ const storage = createStorage(storageConfigFromEnv());
 let boss: PgBoss;
 let server: Server;
 let options: SimulatorOptions = { ...DEFAULT_SIMULATOR_OPTIONS, latencyMs: 0, jitterMs: 0 };
+/** Every request body the simulator received, newest last. */
+const received: { messages?: { role: string; content: unknown }[] }[] = [];
 
 beforeAll(async () => {
   boss = createBoss(appUrl, { supervise: false, schedule: false });
@@ -41,7 +47,9 @@ beforeAll(async () => {
   server = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const chunk of req) chunks.push(chunk as Buffer);
-    const answer = simulate(JSON.parse(Buffer.concat(chunks).toString("utf8")), options);
+    const body = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    received.push(body);
+    const answer = simulate(body, options);
     res
       .writeHead(answer.status, { "content-type": "application/json", ...answer.headers })
       .end(JSON.stringify(answer.body));
@@ -68,7 +76,7 @@ Please pay this invoice by 2026-10-31.`;
 
 async function setup() {
   const tenantId = await newTenant(pool);
-  await withTenantTx(pool, tenantId, (tx) =>
+  const config = await withTenantTx(pool, tenantId, (tx) =>
     buildPipelineConfig(tx, {
       classify: { model: "sim:simulated", effort: "none" },
       extract: { model: "sim:simulated", effort: "none" },
@@ -101,7 +109,7 @@ async function setup() {
         eml: new TextEncoder().encode(raw),
       })
     ).documentId;
-  return { tenantId, deps, ingest, ingestEml, rows, drain: () => drainTenantJobs(deps, tenantId) };
+  return { tenantId, configId: config.id, deps, ingest, ingestEml, rows, drain: () => drainTenantJobs(deps, tenantId) };
 }
 
 describe("simulated models", () => {
@@ -135,6 +143,48 @@ describe("simulated models", () => {
       options = { ...options, rate429: 0 };
       await clearCooldown(createDb(pool), "sim", "sim:simulated");
     }
+  });
+});
+
+describe("custom categories", () => {
+  const purchaseOrder = STARTERS.find((s) => s.id === "purchase_order")?.definition;
+  const PO = `PURCHASE ORDER
+PO number: PO-${randomUUID().slice(0, 6)}
+Buyer name: Contoso Retail
+Supplier name: Northwind Supplies
+Order date: 2026-10-02
+Please supply 200 units of part A-17 against this purchase order.`;
+
+  it("classify into a tenant's category with prompt v2, extract its fields in order, and go to review", async () => {
+    if (!purchaseOrder) throw new Error("purchase_order starter missing");
+    const t = await setup();
+    await withTenantTx(pool, t.tenantId, async (tx) => {
+      const version = await createCategoryVersion(tx, purchaseOrder);
+      const created = await createCandidateConfig(tx, {
+        parentId: t.configId,
+        name: "with purchase orders",
+        schemaVersions: { purchase_order: version.id },
+      });
+      await activateConfig(tx, created.id);
+    });
+    const documentId = await t.ingest(PO);
+    await t.drain();
+    const detail = await withTenantTx(pool, t.tenantId, (tx) => getDocumentDetail(tx, documentId));
+    expect(detail?.document.processingStatus).toBe("done");
+    expect(detail?.classification?.category).toBe("purchase_order");
+    expect(detail?.extraction?.fields).toMatchObject({ buyer_name: "Contoso Retail" });
+    // The page shows fields in the definition's order, which jsonb alone wouldn't keep.
+    const shown = Object.keys(((detail?.schema ?? {}) as { properties?: object }).properties ?? {});
+    expect(shown).toEqual(purchaseOrder.fields.map((f) => f.name));
+    // Every category is on review_all after a category change, so a person sees it.
+    expect(detail?.task?.status).toBe("pending");
+    // The classify request used v2: the definition's examples, and none of v1's built-in ones.
+    const system = received
+      .map((r) => r.messages?.find((m) => m.role === "system")?.content)
+      .filter((c): c is string => typeof c === "string")
+      .findLast((c) => c.includes("- purchase_order: "));
+    expect(system).toContain("Answer: purchase_order");
+    expect(system).not.toContain("Answer: invoice");
   });
 });
 

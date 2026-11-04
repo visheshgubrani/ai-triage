@@ -1,5 +1,7 @@
 import {
   AUTOMATION_MODES,
+  BUILTIN_CATEGORIES,
+  CATEGORY_ORIGINS,
   DECISIONS,
   DELIVERY_STATUSES,
   DOCUMENT_SOURCES,
@@ -7,6 +9,7 @@ import {
   EXTRACTION_AUTHORS,
   INTAKE_FILTERS,
   LLM_STAGES,
+  OTHER_CATEGORY,
   PART_KINDS,
   PROCESSING_STATUSES,
   REVIEW_STATUSES,
@@ -45,10 +48,27 @@ export const categorySchemaVersions = pgTable(
     category: text("category").notNull(),
     version: integer("version").notNull(),
     jsonSchema: jsonb("json_schema").notNull(),
+    /**
+     * A custom category's definition (packages/schemas definition.ts), in field order, which the
+     * jsonb schema doesn't keep. Null for built-ins, whose templates are code.
+     */
+    definition: jsonb("definition"),
+    origin: text("origin", { enum: CATEGORY_ORIGINS }).notNull().default("builtin"),
+    createdBy: uuid("created_by"),
     createdAt: createdAt(),
   },
   (t) => [
     tenantKey("category_schema_versions", t),
+    oneOf("category_schema_versions_origin_check", t.origin, CATEGORY_ORIGINS),
+    // A custom category never takes a built-in's name: its rules, comparators and form order come
+    // from the template looked up by name.
+    check(
+      "category_schema_versions_custom_name_check",
+      sql`${t.definition} is null or ${t.category} not in (${sql.raw(
+        [...BUILTIN_CATEGORIES, OTHER_CATEGORY].map((c) => `'${c}'`).join(", "),
+      )})`,
+    ),
+    check("category_schema_versions_definition_check", sql`(${t.definition} is null) = (${t.origin} = 'builtin')`),
     unique("category_schema_versions_category_version_key").on(t.tenantId, t.category, t.version),
     // Lets pipeline_config_categories prove its category matches the schema version's category.
     unique("category_schema_versions_tenant_id_id_category_key").on(t.tenantId, t.id, t.category),

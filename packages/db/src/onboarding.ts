@@ -50,7 +50,7 @@ export async function onboardingFacts(tx: TenantTx, db: Db, now: Date): Promise<
         (select onboarding_dismissed_at is not null from tenant_settings) as dismissed,
         (select count(*)::int from pipeline_configs) as config_versions,
         (select count(distinct category)::int from category_schema_versions
-          where category not in ('invoice', 'support_request', 'contract')) as custom_categories,
+          where origin = 'custom') as custom_categories,
         (select count(*)::int from documents) as documents,
         (select count(*)::int from documents where processing_status = 'done') as processed,
         (select count(*)::int from mailbox_connections where status = 'active')

@@ -5,6 +5,7 @@ import { getMe } from "@/components/header";
 const PAGES = [
   { href: "/settings", label: "Settings" },
   { href: "/settings/pipeline", label: "Pipeline" },
+  { href: "/settings/categories", label: "Categories" },
   { href: "/settings/members", label: "Members" },
   { href: "/settings/mailboxes", label: "Mailboxes" },
   { href: "/settings/health", label: "System health" },
