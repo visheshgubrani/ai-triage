@@ -26,7 +26,8 @@ const RUNTIME_OPTIONS = {
 } satisfies ConstructorOptions;
 
 export function createBoss(connectionString: string, options: ConstructorOptions = {}): PgBoss {
-  const boss = new PgBoss({ connectionString, ...options, ...RUNTIME_OPTIONS });
+  // pg-boss's own pool: fetching, completing and heartbeats. Separate from the app's pool.
+  const boss = new PgBoss({ connectionString, max: 10, ...options, ...RUNTIME_OPTIONS });
   return boss;
 }
 

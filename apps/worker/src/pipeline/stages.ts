@@ -91,7 +91,7 @@ export async function parseStage(deps: PipelineDeps, job: StageJob): Promise<voi
   });
 }
 
-export async function classifyStage(deps: PipelineDeps, job: StageJob): Promise<void> {
+export async function classifyStage(deps: PipelineDeps, job: StageJob, signal?: AbortSignal): Promise<void> {
   const input = await withTenantTx(deps.pool, job.tenantId, async (tx) => {
     const found = await currentRun(tx, job, "classify");
     if (!found) return null;
@@ -112,7 +112,7 @@ export async function classifyStage(deps: PipelineDeps, job: StageJob): Promise<
     blobs: await loadBlobs(deps.storage, input.parts),
   });
   const ctx = { runId: job.runId };
-  const { attemptId, output } = await deps.llm.call({ tenantId: job.tenantId, ctx, request });
+  const { attemptId, output } = await deps.llm.call({ tenantId: job.tenantId, ctx, request, signal });
   const result = parseClassifyOutput(output, classifyCategories(input.categories));
   const other = result.category === OTHER_CATEGORY;
 
@@ -143,7 +143,7 @@ export async function classifyStage(deps: PipelineDeps, job: StageJob): Promise<
   });
 }
 
-export async function extractStage(deps: PipelineDeps, job: StageJob): Promise<void> {
+export async function extractStage(deps: PipelineDeps, job: StageJob, signal?: AbortSignal): Promise<void> {
   const input = await withTenantTx(deps.pool, job.tenantId, async (tx) => {
     const found = await currentRun(tx, job, "extract");
     if (!found) return null;
@@ -172,7 +172,7 @@ export async function extractStage(deps: PipelineDeps, job: StageJob): Promise<v
     blobs: await loadBlobs(deps.storage, input.parts),
   });
   const ctx = { runId: job.runId };
-  const { attemptId, output } = await deps.llm.call({ tenantId: job.tenantId, ctx, request });
+  const { attemptId, output } = await deps.llm.call({ tenantId: job.tenantId, ctx, request, signal });
   const { values } = parseExtractOutput(output, schema);
   const validationErrors = validateFields(input.schemaVersion.id, schema, values);
 
@@ -291,7 +291,10 @@ export async function routeStage(deps: PipelineDeps, job: StageJob): Promise<voi
   });
 }
 
-export const STAGE_HANDLERS: Record<PipelineStage, (deps: PipelineDeps, job: StageJob) => Promise<void>> = {
+export const STAGE_HANDLERS: Record<
+  PipelineStage,
+  (deps: PipelineDeps, job: StageJob, signal?: AbortSignal) => Promise<void>
+> = {
   parse: parseStage,
   classify: classifyStage,
   extract: extractStage,
@@ -303,9 +306,14 @@ export const STAGE_HANDLERS: Record<PipelineStage, (deps: PipelineDeps, job: Sta
  * retrying, so the run fails right away and a human gets a `processing_failed` task. Anything else
  * propagates: pg-boss retries the job, then dead-letters it to `doc.failed`.
  */
-export async function runStage(deps: PipelineDeps, stage: PipelineStage, job: StageJob): Promise<void> {
+export async function runStage(
+  deps: PipelineDeps,
+  stage: PipelineStage,
+  job: StageJob,
+  signal?: AbortSignal,
+): Promise<void> {
   try {
-    await STAGE_HANDLERS[stage](deps, job);
+    await STAGE_HANDLERS[stage](deps, job, signal);
   } catch (err) {
     if (!(err instanceof PipelineError)) throw err;
     await withTenantTx(deps.pool, job.tenantId, (tx) =>

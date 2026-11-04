@@ -188,6 +188,14 @@ Enum-like columns are `text` with a CHECK built from the `as const` arrays in `p
 
 **Failure classes:** a `PipelineError` (bad file, refusal, `max_tokens`, missing cassette, budget, …) fails the run at once. Anything else is retried by pg-boss per `QUEUE_OPTIONS`, then dead-lettered to `doc.failed`. `failRun` is guarded on the failing stage's input status, so a stale job can't fail a newer run.
 
+**Timeouts (phase 7):** nothing waits forever.
+- **Model calls:** a per-stage timeout (`llmTimeoutMs`: classify 120 s, extract 60 s plus `max_tokens`/40, at most 600 s). The SDK retries nothing; pg-boss owns retries, with capped backoff (`retryDelayMax`). Each stage's `expireInSeconds` outlasts its longest call (a test checks the margin), so an expired job never runs alongside its retry. The handler passes `job.signal` to the SDK, so an expired job also stops paying for its call.
+- **Dead workers:** stage jobs heartbeat every 15 s (`heartbeatSeconds: 30`), so a job whose worker died retries within 30 s, not at its expiry.
+- **Parsing:** files are parsed in a `worker_threads` sandbox bounded by `PARSE_TIMEOUT_MS` and `PARSE_MAX_MEMORY_MB`; an overrun fails the run as `parse_timeout`. The thread runs core's parsers unchanged, so requests are byte-identical.
+- **Database:** the app role has `statement_timeout = 60s`, `lock_timeout = 15s` and `idle_in_transaction_session_timeout = 30s`; a pool waits at most 10 s for a connection.
+- **Storage and HTTP:** S3 requests time out (5 s connect, 60 s request, 3 attempts); the api times out slow clients (30 s headers, 120 s request).
+- **Shutdown:** on SIGTERM the worker stops fetching, lets running jobs finish for `WORKER_SHUTDOWN_GRACE_MS`, then aborts their model calls so they retry elsewhere; the api drains for up to 10 s.
+
 **Actions by task kind** (enforced by the API, not only the UI):
 | Task kind | Available actions |
 |---|---|

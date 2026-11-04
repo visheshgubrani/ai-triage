@@ -1,6 +1,10 @@
 import type pg from "pg";
 import { StartupError } from "./startup";
 
+/** Session limits of the app role (ensureAppRole). */
+export const APP_STATEMENT_TIMEOUT = "60s";
+export const APP_LOCK_TIMEOUT = "15s";
+
 /** NOLOGIN group role that migrations grant to. The login role from DATABASE_URL is a member. */
 export const APP_GROUP_ROLE = "app_rw";
 
@@ -35,7 +39,12 @@ export async function ensureAppRole(ownerPool: pg.Pool, appUrl: string): Promise
     await client.query(
       `${verb} ROLE ${ident} LOGIN PASSWORD ${secret} NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS INHERIT`,
     );
+    // Bounds for every app session (docs/architecture.md §5, short transactions): no transaction
+    // sits idle, no statement runs away, no lock wait hangs a request. The few long reads (metrics)
+    // raise statement_timeout with SET LOCAL.
     await client.query(`ALTER ROLE ${ident} SET idle_in_transaction_session_timeout = '30s'`);
+    await client.query(`ALTER ROLE ${ident} SET statement_timeout = '${APP_STATEMENT_TIMEOUT}'`);
+    await client.query(`ALTER ROLE ${ident} SET lock_timeout = '${APP_LOCK_TIMEOUT}'`);
     await client.query(`GRANT ${APP_GROUP_ROLE} TO ${ident}`);
     return role;
   } finally {

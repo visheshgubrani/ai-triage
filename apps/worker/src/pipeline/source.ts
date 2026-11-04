@@ -12,6 +12,7 @@ import {
 import { loadSchemaVersions, type PipelineConfig, stagePolicy, type TenantTx } from "@ai-triage/db";
 import { type JsonSchema, schemaDescription } from "@ai-triage/schemas";
 import type { Storage } from "@ai-triage/storage";
+import { parseInSandbox, type SandboxOptions } from "../parse/sandbox";
 
 // What a model request is built from, shared by the pipeline stages and the eval runner, so an eval
 // of a document sends exactly the bytes production would (and replays from the same cassettes).
@@ -24,18 +25,28 @@ export interface SourceRef {
   title: string | null;
 }
 
+/** Parse limits, plus the sandbox the worker parses in (tests without one parse inline). */
+export type SourceParseLimits = ParseLimits & { sandbox?: SandboxOptions };
+
 /** Parses a stored source: the normalized email and its attachments, or the file. */
-export async function parseSource(storage: Storage, source: SourceRef, limits: ParseLimits): Promise<ParsedPart[]> {
+export async function parseSource(
+  storage: Storage,
+  source: SourceRef,
+  { sandbox, ...limits }: SourceParseLimits,
+): Promise<ParsedPart[]> {
   if (source.mime === EMAIL_SOURCE_MIME) {
     const email = JSON.parse(new TextDecoder().decode(await storage.get(source.sourceKey))) as StoredEmail;
     const attachments = email.attachments.filter(isContentAttachment);
     const blobs = new Map(
       await Promise.all(attachments.map(async (a) => [a.storageKey, await storage.get(a.storageKey)] as const)),
     );
+    if (sandbox) return parseInSandbox({ kind: "email", email, blobs, limits }, sandbox);
     return parseEmail(email, blobs, limits);
   }
   const bytes = await storage.get(source.sourceKey);
-  return parseFile({ label: source.title, bytes, declaredMime: source.mime, storageKey: source.sourceKey }, limits);
+  const file = { label: source.title, bytes, declaredMime: source.mime, storageKey: source.sourceKey };
+  if (sandbox) return parseInSandbox({ kind: "file", file, limits }, sandbox);
+  return parseFile(file, limits);
 }
 
 /**

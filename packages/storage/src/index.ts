@@ -84,6 +84,9 @@ function client(config: StorageConfig, endpoint: string) {
     // Default CRC checksums would leak into presigned URLs and aren't supported everywhere.
     requestChecksumCalculation: "WHEN_REQUIRED",
     responseChecksumValidation: "WHEN_REQUIRED",
+    // A stalled store fails a request instead of hanging the job or the upload; pg-boss retries.
+    requestHandler: { connectionTimeout: 5_000, requestTimeout: 60_000 },
+    maxAttempts: 3,
   });
 }
 

@@ -88,6 +88,15 @@ export const ENV_VARS: readonly EnvVar[] = [
     description:
       "The app role, created by `pnpm db:migrate` and subject to row-level security. The worker needs a direct (non-pooled) connection: pg-boss uses LISTEN and advisory locks.",
   },
+  {
+    name: "DB_POOL_MAX",
+    group: "Postgres",
+    processes: API_WORKER,
+    kind: "int",
+    default: "10 (api); 4 + 2 × WORKER_LLM_CONCURRENCY + eval + mailbox concurrency (worker)",
+    description:
+      "Connections in the app's pool, per process (pg-boss keeps 10 more of its own). Raise it with the worker's concurrency; keep the total under Postgres's max_connections.",
+  },
   // ── Storage ──
   {
     name: "S3_PORT",
@@ -528,6 +537,31 @@ export const ENV_VARS: readonly EnvVar[] = [
     default: "200",
     example: "200",
     description: "New messages one sync of a mailbox takes; the rest follow a minute later.",
+  },
+  {
+    name: "WORKER_SHUTDOWN_GRACE_MS",
+    group: "Worker",
+    processes: ["worker"],
+    kind: "int",
+    default: "25000",
+    description:
+      "On SIGTERM, how long running jobs may finish before their model calls are aborted (they retry on another worker). Keep it under the container's stop grace period.",
+  },
+  {
+    name: "PARSE_TIMEOUT_MS",
+    group: "Worker",
+    processes: ["worker"],
+    kind: "int",
+    default: "60000",
+    description: "Files are parsed in a sandboxed thread; one that takes longer fails as parse_timeout.",
+  },
+  {
+    name: "PARSE_MAX_MEMORY_MB",
+    group: "Worker",
+    processes: ["worker"],
+    kind: "int",
+    default: "512",
+    description: "Heap limit of the parse thread. A file that needs more fails as parse_timeout.",
   },
   // ── Webhooks ──
   {

@@ -12,6 +12,7 @@ import { createDbLlmGateway } from "./llm";
 import { registerMailbox } from "./mailbox/register";
 import { registerMaintenance } from "./maintenance/register";
 import { registerPipeline } from "./pipeline/register";
+import { abortInFlight } from "./shutdown";
 
 try {
   assertEnv(process.env, "worker");
@@ -24,7 +25,12 @@ const mode = getLlmMode();
 
 // Runs as the app role: RLS applies, and pg-boss's schema and queues were installed by
 // `pnpm db:migrate`, so this instance never migrates (see packages/db/src/boss.ts).
-const pool = createPool(connectionString);
+// Model calls hold no connection (short transactions), so the pool needs less than one per slot.
+const pool = createPool(connectionString, {
+  max:
+    Number(process.env.DB_POOL_MAX) ||
+    4 + 2 * config.llmConcurrency + config.evalConcurrency + config.mailboxConcurrency,
+});
 await checkStartup(pool, process.env, "worker").catch(exitOnStartupError);
 
 // Workers need a direct (non-pooled) connection: pg-boss uses LISTEN (docs/configuration.md, DATABASE_URL).
@@ -34,7 +40,11 @@ await boss.start();
 
 const storage = createStorage(storageConfigFromEnv());
 const llm = createDbLlmGateway({ pool, mode, transport: createTransport(mode, config.cassetteDir) });
-const limits = { maxPdfPages: config.maxPdfPages };
+// Files are parsed in a sandboxed thread, bounded in time and memory (src/parse/sandbox.ts).
+const limits = {
+  maxPdfPages: config.maxPdfPages,
+  sandbox: { timeoutMs: config.parseTimeoutMs, maxMemoryMb: config.parseMaxMemoryMb },
+};
 const now = () => new Date();
 
 await registerPipeline(
@@ -86,9 +96,20 @@ console.log(
     `gmail sync: ${google ? "on" : "off, no GOOGLE_CLIENT_ID"})`,
 );
 
+// SIGTERM: stop fetching, let running jobs finish for up to the grace period, then abort their model
+// calls so they retry elsewhere at once. A second signal exits immediately.
+let stopping = false;
 const shutdown = async () => {
-  await boss.stop({ graceful: true });
-  await pool.end();
+  if (stopping) process.exit(1);
+  stopping = true;
+  console.log(`worker stopping: finishing running jobs (up to ${config.shutdownGraceMs} ms)`);
+  const abortTimer = setTimeout(abortInFlight, config.shutdownGraceMs);
+  try {
+    await boss.stop({ graceful: true, timeout: config.shutdownGraceMs + 5000 });
+  } finally {
+    clearTimeout(abortTimer);
+    await pool.end();
+  }
   process.exit(0);
 };
 process.on("SIGINT", shutdown);

@@ -1,4 +1,4 @@
-import type { LlmCallContext, LlmCallMode, LlmStage } from "@ai-triage/core";
+import { type LlmCallContext, type LlmCallMode, type LlmStage, llmTimeoutMs } from "@ai-triage/core";
 import { type LlmRequest, PipelineError } from "@ai-triage/core/pipeline";
 import { estimatePromptTokens, estimateWorstCaseUsd, type FindPrice, responseCostUsd } from "./cost";
 import { BudgetExhaustedError } from "./errors";
@@ -81,8 +81,14 @@ const describe = (err: unknown) => (err instanceof Error ? `${err.name}: ${err.m
  * are possible, but saved responses are always reused. Never call this inside a transaction.
  */
 export function createLlmGateway(deps: GatewayDeps) {
-  async function call(input: { tenantId: string; ctx: LlmCallContext; request: LlmRequest }): Promise<CallResult> {
-    const { tenantId, ctx, request } = input;
+  async function call(input: {
+    tenantId: string;
+    ctx: LlmCallContext;
+    request: LlmRequest;
+    /** The job's signal: aborts the call when the job expires or the worker shuts down. */
+    signal?: AbortSignal;
+  }): Promise<CallResult> {
+    const { tenantId, ctx, request, signal } = input;
     const existing = await deps.store.findReusable(tenantId, ctx, request.stage);
     if (existing) {
       return {
@@ -107,7 +113,12 @@ export function createLlmGateway(deps: GatewayDeps) {
     const base = { stage: request.stage, model: request.model, effort: request.effort, requestHash: hash };
     let sent: Awaited<ReturnType<Transport["send"]>>;
     try {
-      sent = await deps.transport.send(wire, { hash, stage: request.stage });
+      sent = await deps.transport.send(wire, {
+        hash,
+        stage: request.stage,
+        signal,
+        timeoutMs: llmTimeoutMs(request.stage, request.maxTokens),
+      });
     } catch (err) {
       if (reservation) await deps.budget.settle(tenantId, reservation.day, reservation.usd, 0);
       // A call that reached the API but failed is still an attempt (replay misses never call anything).

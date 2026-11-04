@@ -7,6 +7,8 @@ export default defineConfig({
   ...serverBundle,
   entry: {
     index: "src/index.ts",
+    // Loaded by the parse sandbox (src/parse/sandbox.ts) from beside the bundle that runs it.
+    "parse-thread": "src/parse/thread.ts",
     "bin/migrate": "../../packages/db/src/bin/migrate.ts",
     "bin/seed": "../../packages/db/src/bin/seed.ts",
     "bin/tenant-create": "../../packages/db/src/bin/tenant-create.ts",

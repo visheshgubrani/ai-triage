@@ -1,5 +1,6 @@
 import { LLM_STAGES, PIPELINE_STAGES, QUEUES, STAGE_QUEUES, type StageJob } from "@ai-triage/core";
 import type { PgBoss } from "@ai-triage/db";
+import { jobSignal } from "../shutdown";
 import type { PipelineDeps } from "./deps";
 import { failedStage, runStage } from "./stages";
 
@@ -14,7 +15,7 @@ export async function registerPipeline(boss: PgBoss, deps: PipelineDeps, options
       STAGE_QUEUES[stage],
       { localConcurrency: llm ? options.llmConcurrency : 4, pollingIntervalSeconds: POLLING_INTERVAL_SECONDS },
       async ([job]) => {
-        if (job) await runStage(deps, stage, job.data);
+        if (job) await runStage(deps, stage, job.data, jobSignal(job));
       },
     );
   }

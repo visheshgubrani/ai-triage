@@ -20,6 +20,10 @@ export interface SendResult {
 export interface RequestMeta {
   hash: string;
   stage: LlmStage;
+  /** Aborts the call: the job expired, or the worker is shutting down. */
+  signal?: AbortSignal;
+  /** How long the provider may take (llmTimeoutMs). */
+  timeoutMs?: number;
 }
 
 /** Sends one request. live and record call the provider; replay reads cassettes; fake is for tests. */
@@ -61,7 +65,8 @@ function openAiClient(provider: OpenAiCompatibleProvider, env: NodeJS.ProcessEnv
   if (!apiKey) throw missing(endpoint.keyEnv);
   const baseURL = env[endpoint.baseUrlEnv] || endpoint.baseUrl;
   if (provider === "compat" && !baseURL) throw missing(endpoint.baseUrlEnv);
-  return new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+  // pg-boss owns retries (with backoff and a dead letter), so the SDK makes none of its own.
+  return new OpenAI({ apiKey, maxRetries: 0, ...(baseURL ? { baseURL } : {}) });
 }
 
 /** Errors retrying can't fix become PipelineErrors, so the run fails at once. */
@@ -81,14 +86,16 @@ function classify(err: unknown, sdk: typeof Anthropic | typeof OpenAI): unknown 
  * Calls the provider's API: the Messages API for Claude, Chat Completions for the rest. Clients are
  * built on first use, so a missing key only matters for a provider a config actually uses. Errors
  * retrying can't fix (400, 404, 413, 422, a missing key) become PipelineErrors so the run fails at
- * once; rate limits, server errors and connection errors propagate for a retry (after the SDK's own).
+ * once; rate limits, server errors, timeouts and connection errors propagate, and pg-boss retries the
+ * job (the SDK retries nothing itself).
  */
 export function liveTransport(options: { anthropic?: Anthropic; env?: NodeJS.ProcessEnv } = {}): Transport {
   const env = options.env ?? process.env;
   let anthropic = options.anthropic;
   const openai = new Map<OpenAiCompatibleProvider, OpenAI>();
   return {
-    async send(request) {
+    async send(request, meta) {
+      const options = { signal: meta.signal, timeout: meta.timeoutMs, maxRetries: 0 };
       const started = performance.now();
       const done = (response: unknown, requestId: string | null): SendResult => ({
         response,
@@ -99,10 +106,10 @@ export function liveTransport(options: { anthropic?: Anthropic; env?: NodeJS.Pro
       if (request.provider === "anthropic") {
         if (!anthropic) {
           if (!env.ANTHROPIC_API_KEY) throw missing("ANTHROPIC_API_KEY");
-          anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
+          anthropic = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, maxRetries: 0 });
         }
         try {
-          const { data, request_id } = await anthropic.beta.messages.create(request.params).withResponse();
+          const { data, request_id } = await anthropic.beta.messages.create(request.params, options).withResponse();
           return done(data, request_id ?? null);
         } catch (err) {
           throw classify(err, Anthropic);
@@ -114,7 +121,7 @@ export function liveTransport(options: { anthropic?: Anthropic; env?: NodeJS.Pro
         openai.set(request.provider, client);
       }
       try {
-        const { data, request_id } = await client.chat.completions.create(request.params).withResponse();
+        const { data, request_id } = await client.chat.completions.create(request.params, options).withResponse();
         return done(data, request_id ?? data.id ?? null);
       } catch (err) {
         throw classify(err, OpenAI);

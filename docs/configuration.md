@@ -21,6 +21,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `DATABASE_OWNER_URL` 🔒 | cli | – | The owner role: migrations, seeds and the admin CLIs only. Never give it to the api, worker or web. |
 | `MIGRATIONS_DIR` | cli | `packages/db/migrations (next to the source)` | Where `db:migrate` finds the SQL migrations. The Docker image sets it for its bundled CLI. |
 | `DATABASE_URL` 🔒 (required: api, worker) | api, worker, cli | – | The app role, created by `pnpm db:migrate` and subject to row-level security. The worker needs a direct (non-pooled) connection: pg-boss uses LISTEN and advisory locks. |
+| `DB_POOL_MAX` | api, worker | `10 (api); 4 + 2 × WORKER_LLM_CONCURRENCY + eval + mailbox concurrency (worker)` | Connections in the app's pool, per process (pg-boss keeps 10 more of its own). Raise it with the worker's concurrency; keep the total under Postgres's max_connections. |
 
 ## Storage
 
@@ -110,6 +111,9 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `WORKER_EVAL_CONCURRENCY` | worker | `2` | Eval items processed at once (each makes up to two model calls), on top of the pipeline stages. |
 | `WORKER_MAILBOX_CONCURRENCY` | worker | `4` | Gmail messages downloaded at once. |
 | `MAILBOX_SYNC_BATCH` | worker | `200` | New messages one sync of a mailbox takes; the rest follow a minute later. |
+| `WORKER_SHUTDOWN_GRACE_MS` | worker | `25000` | On SIGTERM, how long running jobs may finish before their model calls are aborted (they retry on another worker). Keep it under the container's stop grace period. |
+| `PARSE_TIMEOUT_MS` | worker | `60000` | Files are parsed in a sandboxed thread; one that takes longer fails as parse_timeout. |
+| `PARSE_MAX_MEMORY_MB` | worker | `512` | Heap limit of the parse thread. A file that needs more fails as parse_timeout. |
 
 ## Webhooks
 

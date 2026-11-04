@@ -1,5 +1,6 @@
 import { type EvalItemJob, QUEUES } from "@ai-triage/core";
 import type { PgBoss } from "@ai-triage/db";
+import { jobSignal } from "../shutdown";
 import type { EvalDeps } from "./deps";
 import { failedEvalItem, runEvalItem } from "./run-item";
 
@@ -9,7 +10,7 @@ export async function registerEvals(boss: PgBoss, deps: EvalDeps, options: { con
     QUEUES.evalItem,
     { localConcurrency: options.concurrency, pollingIntervalSeconds: 1 },
     async ([job]) => {
-      if (job) await runEvalItem(deps, job.data);
+      if (job) await runEvalItem(deps, job.data, jobSignal(job));
     },
   );
   // No explicit type argument here: it would stop TypeScript inferring the metadata-bearing job type.

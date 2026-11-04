@@ -184,6 +184,13 @@ export interface QueueSettings {
   /** How long a job may stay active before pg-boss retries it. LLM stages get room for slow calls. */
   expireInSeconds: number;
   deadLetter?: QueueName;
+  /** Seconds: the longest a retry waits, however far backoff has doubled. */
+  retryDelayMax?: number;
+  /**
+   * Seconds. A handler's worker refreshes the job this often (pg-boss does it); a job whose worker
+   * died stops being refreshed and is retried after this long, instead of after `expireInSeconds`.
+   */
+  heartbeatSeconds?: number;
   /**
    * pg-boss queue policy (default `standard`). `exclusive` allows one queued or active job per
    * `singletonKey`, so a mailbox never syncs twice at once. A queue's policy is fixed when it's created.
@@ -195,43 +202,73 @@ const stage = (retryLimit: number, expireInSeconds: number): QueueSettings => ({
   retryLimit,
   retryDelay: 5,
   retryBackoff: true,
+  retryDelayMax: 300,
   expireInSeconds,
+  heartbeatSeconds: 30,
   deadLetter: QUEUES.failed,
 });
+
+/**
+ * How long one model call may take before the SDK aborts it. Classify answers briefly; extract may
+ * write up to its max_tokens, at about 40 tokens a second at worst. pg-boss owns retries (the SDK
+ * makes none), so a stage's job expiry only has to outlast one call (a test checks the margin).
+ */
+export function llmTimeoutMs(stage: LlmStage, maxTokens: number): number {
+  if (stage === "classify") return 120_000;
+  return Math.min(600_000, 60_000 + Math.ceil(maxTokens / 40) * 1000);
+}
 
 /** Retry policy per queue, applied by `db:migrate` (create, or update an existing queue). */
 export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
   [QUEUES.ping]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 60 },
+  // Parsing runs in a sandbox bounded by PARSE_TIMEOUT_MS (60 s by default).
   [QUEUES.parse]: stage(3, 300),
-  [QUEUES.classify]: stage(4, 900),
-  [QUEUES.extract]: stage(4, 900),
+  // One model call each: classify's 120 s timeout, extract's at most 600 s, plus a margin.
+  [QUEUES.classify]: stage(4, 300),
+  [QUEUES.extract]: stage(4, 660),
   [QUEUES.route]: stage(3, 120),
-  [QUEUES.failed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
+  [QUEUES.failed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 120 },
   [QUEUES.deliver]: {
     retryLimit: 8,
     retryDelay: 30,
     retryBackoff: true,
+    retryDelayMax: 1800,
     expireInSeconds: 60,
     deadLetter: QUEUES.deliveryFailed,
   },
-  [QUEUES.deliveryFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
-  // An item makes up to two LLM calls in one job, so it gets the stages' expiry for both.
+  [QUEUES.deliveryFailed]: {
+    retryLimit: 5,
+    retryDelay: 5,
+    retryBackoff: true,
+    retryDelayMax: 300,
+    expireInSeconds: 60,
+  },
+  // An item parses and makes up to two model calls in one job, so its expiry covers all three.
   [QUEUES.evalItem]: {
     retryLimit: 3,
     retryDelay: 5,
     retryBackoff: true,
-    expireInSeconds: 1800,
+    retryDelayMax: 300,
+    expireInSeconds: 900,
+    heartbeatSeconds: 30,
     deadLetter: QUEUES.evalFailed,
   },
-  [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 120 },
-  [QUEUES.maintenance]: { retryLimit: 3, retryDelay: 60, retryBackoff: true, expireInSeconds: 900 },
-  [QUEUES.storageDelete]: { retryLimit: 10, retryDelay: 30, retryBackoff: true, expireInSeconds: 300 },
+  [QUEUES.evalFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 120 },
+  [QUEUES.maintenance]: { retryLimit: 3, retryDelay: 60, retryBackoff: true, retryDelayMax: 900, expireInSeconds: 900 },
+  [QUEUES.storageDelete]: {
+    retryLimit: 10,
+    retryDelay: 30,
+    retryBackoff: true,
+    retryDelayMax: 1800,
+    expireInSeconds: 300,
+  },
   // A missed minute is caught by the next one, so the poll never retries.
   [QUEUES.mailboxPoll]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 60 },
   [QUEUES.mailboxSync]: {
     retryLimit: 2,
     retryDelay: 30,
     retryBackoff: true,
+    retryDelayMax: 300,
     expireInSeconds: 300,
     policy: "exclusive",
   },
@@ -239,10 +276,11 @@ export const QUEUE_OPTIONS: Record<QueueName, QueueSettings> = {
     retryLimit: 5,
     retryDelay: 30,
     retryBackoff: true,
+    retryDelayMax: 900,
     expireInSeconds: 300,
     deadLetter: QUEUES.mailboxFailed,
   },
-  [QUEUES.mailboxFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, expireInSeconds: 60 },
+  [QUEUES.mailboxFailed]: { retryLimit: 5, retryDelay: 5, retryBackoff: true, retryDelayMax: 300, expireInSeconds: 60 },
   // A missed pass is caught by the next one.
   [QUEUES.reconcile]: { retryLimit: 0, retryDelay: 0, retryBackoff: false, expireInSeconds: 240 },
 };

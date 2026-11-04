@@ -22,8 +22,16 @@ Phase 7: production-ready (docs/architecture.md §9).
 - The api and worker list every environment problem at once, explain an unreachable database or a missing app role, and refuse to start while migrations are pending.
 - A prebuilt, multi-arch image on GHCR (amd64 and arm64, with SBOM and provenance). It's 316 MB, down from 1.86 GB. `docker compose up` pulls it, and builds locally when there's no published image.
 - The version is shown in `/api/health` and the web footer.
+- Bounded everything that could hang:
+  - model calls (per-stage timeouts, pg-boss owning retries, aborted when the job expires);
+  - dead workers (heartbeats);
+  - parsing (a sandboxed thread with time and memory limits, `parse_timeout`);
+  - Postgres (statement, lock and pool timeouts);
+  - S3 and slow HTTP clients;
+  - shutdown (the worker drains, then aborts its in-flight calls).
 
 ### Fixed
 
+- A slow model call could outlast its job's expiry, so pg-boss retried it while the first call was still running and paid twice. Expiries now outlast the longest call.
 - A `.env` copied from `.env.example` no longer points the Docker demo's fake Google at the real one.
 - The Docker demo no longer gives the database owner URL to the api, worker and web, or any secret to web.

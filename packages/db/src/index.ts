@@ -39,9 +39,14 @@ export { schema };
 
 export type Pool = pg.Pool;
 
-export function createPool(connectionString = process.env.DATABASE_URL) {
+/**
+ * A Postgres pool. `max` defaults to DB_POOL_MAX, else 10; a query waiting longer than 10 s for a
+ * connection fails instead of queueing forever (a saturated pool shows up as errors, not a hang).
+ */
+export function createPool(connectionString = process.env.DATABASE_URL, options: { max?: number } = {}) {
   if (!connectionString) throw new Error("DATABASE_URL is not set");
-  return new pg.Pool({ connectionString });
+  const max = options.max ?? (Number(process.env.DB_POOL_MAX) || 10);
+  return new pg.Pool({ connectionString, max, connectionTimeoutMillis: 10_000 });
 }
 
 /**

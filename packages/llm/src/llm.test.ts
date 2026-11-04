@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { LlmCallContext } from "@ai-triage/core";
+import { type LlmCallContext, llmTimeoutMs } from "@ai-triage/core";
 import type { LlmRequest } from "@ai-triage/core/pipeline";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -367,6 +367,16 @@ describe("gateway", () => {
     const again = await h.gateway.call({ tenantId: "t", ctx, request: request() });
     expect(again).toEqual({ attemptId: "att-1", output: { category: "invoice" }, reused: true });
     expect(h.transport.calls).toHaveLength(1);
+  });
+
+  it("hands the transport the job's signal and the stage's timeout", async () => {
+    const h = harness("live");
+    const signal = new AbortController().signal;
+    await h.gateway.call({ tenantId: "t", ctx, request: request(), signal });
+    expect(h.transport.calls[0]?.meta).toMatchObject({
+      signal,
+      timeoutMs: llmTimeoutMs("classify", request().maxTokens),
+    });
   });
 
   it("fails on a missing cassette in replay, without touching the network or the budget", async () => {

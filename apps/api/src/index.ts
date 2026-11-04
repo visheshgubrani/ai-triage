@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { assertEnv, callModeOf, getLlmMode, resolvePublicUrls } from "@ai-triage/core";
 import { egressPolicyFromEnv } from "@ai-triage/core/pipeline";
 import {
@@ -84,13 +85,24 @@ const app = createApp({
 });
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`api listening on http://localhost:${info.port}`);
-});
+  console.log(`api listening on http://localhost:${info.port} (public URL ${urls.origin})`);
+}) as import("node:http").Server;
+// A slow client can't hold a connection open forever: headers within 30 s, the whole request
+// (Postmark payloads can be ~29 MB) within 2 minutes.
+server.headersTimeout = 30_000;
+server.requestTimeout = 120_000;
 
+// SIGTERM: stop accepting, let in-flight requests finish for up to 10 s, then close the pools.
+let stopping = false;
 const shutdown = async () => {
-  server.close();
-  await boss.stop({ graceful: true });
+  if (stopping) process.exit(1);
+  stopping = true;
+  const closed = new Promise<void>((resolve) => server.close(() => resolve()));
+  const drained = await Promise.race([closed.then(() => true), sleep(10_000).then(() => false)]);
+  if (!drained) server.closeAllConnections();
+  await boss.stop({ graceful: true, timeout: 5_000 });
   await pool.end();
+  process.exit(0);
 };
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
