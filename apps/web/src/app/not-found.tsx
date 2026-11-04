@@ -1,17 +1,22 @@
+import { SearchX } from "lucide-react";
 import Link from "next/link";
+import { Button } from "@/components/button";
+import { EmptyState } from "@/components/empty-state";
 
 export default function NotFound() {
   return (
-    <main className="mx-auto max-w-xl px-4 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Not found</h1>
-      <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">
-        There's nothing at this address, or it belongs to another workspace.
-      </p>
-      <p className="mt-6 text-sm">
-        <Link href="/" className="underline underline-offset-2">
-          Home
-        </Link>
-      </p>
+    <main className="flex min-h-svh items-center justify-center p-4">
+      <EmptyState
+        heading
+        icon={SearchX}
+        title="Not found"
+        description="There's nothing at this address, or it belongs to another workspace."
+        action={
+          <Button asChild variant="primary">
+            <Link href="/">Home</Link>
+          </Button>
+        }
+      />
     </main>
   );
 }

@@ -67,11 +67,11 @@ test("connect a Gmail mailbox, sync a message into review, disconnect", async ({
 
   const revokedBefore = (await (await page.request.get(`${FAKE}/fake/state`)).json()).revoked as number;
   await page.goto("/settings/mailboxes");
-  page.once("dialog", (dialog) => dialog.accept());
   await page
     .locator("section", { hasText: "ap@demo-workspace.test" })
     .getByRole("button", { name: "Disconnect" })
     .click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Disconnect" }).click();
   await expect(page.getByText("ap@demo-workspace.test")).toHaveCount(0);
   expect((await (await page.request.get(`${FAKE}/fake/state`)).json()).revoked).toBe(revokedBefore + 1);
 });

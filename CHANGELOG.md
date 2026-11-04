@@ -4,6 +4,10 @@ All notable changes to ai-triage. The format follows [Keep a Changelog](https://
 
 ## [Unreleased]
 
+### Changed
+
+- **A redesigned UI on shadcn/ui.** A collapsible sidebar with a live review count, a Dashboard as the home page (KPIs, documents per day, recent documents, what needs attention), Light / Dark / System themes, a ⌘K page switcher, dialogs instead of browser confirms, and consistent cards, tables, filters, skeletons and empty states on every page. Signed-out visitors now go to sign-in and come back to the page they wanted. No API or behaviour changes.
+
 ### Added
 
 - **Install behind a reverse proxy you already run** (nginx, Caddy, Traefik on 80/443): `install.sh --host <app> --files-host <files> --port <n>`. The app and its files listen on 127.0.0.1, and the installer prints the proxy config to add. The installation's own Caddy believes `X-Forwarded-For` from private addresses, so the API still sees each client's address.

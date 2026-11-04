@@ -18,7 +18,6 @@ const PASSWORD = "e2e-categories-password";
 test("a custom category from a starter: classify, extract in field order, review, approve", async ({ page }) => {
   test.skip(!INVITE, "set E2E_INVITE_URL to a fresh workspace's invite link (see the comment above)");
   if (!INVITE) return;
-  page.on("dialog", (d) => void d.accept());
 
   // The first admin joins with a password.
   await page.goto(INVITE);
@@ -32,7 +31,12 @@ test("a custom category from a starter: classify, extract in field order, review
   await page.goto("/settings/categories");
   await page.getByRole("button", { name: "Receipt" }).click();
   await page.getByRole("button", { name: "Save and activate" }).click();
-  await expect(page.getByRole("status")).toContainText("Saved receipt v1");
+  // With warnings to read, saving asks first; without any, it just saves.
+  const saved = page.getByRole("status").filter({ hasText: "Saved receipt v1" });
+  const asked = page.getByRole("alertdialog");
+  await expect(saved.or(asked)).toBeVisible();
+  if (await asked.isVisible()) await asked.getByRole("button", { name: "Save anyway" }).click();
+  await expect(saved).toBeVisible();
   await expect(page.getByText("custom v1")).toBeVisible();
 
   // Upload a receipt.

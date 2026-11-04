@@ -18,7 +18,15 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "preset": "recommended"
+      "preset": "recommended",
+      "a11y": {
+        "noLabelWithoutControl": {
+          "level": "error",
+          "options": {
+            "inputComponents": ["Input", "Textarea", "NativeSelect", "Checkbox", "Switch", "RadioGroupItem"]
+          }
+        }
+      }
     }
   },
   "javascript": {
@@ -31,6 +39,19 @@
       "tailwindDirectives": true
     }
   },
+  "overrides": [
+    {
+      "includes": ["apps/web/src/components/ui/**", "apps/web/src/hooks/use-mobile.ts"],
+      "linter": {
+        "rules": {
+          "a11y": "off",
+          "correctness": { "useExhaustiveDependencies": "off" },
+          "security": { "noDangerouslySetInnerHtml": "off" },
+          "suspicious": { "noArrayIndexKey": "off", "noDocumentCookie": "off", "noExplicitAny": "off" }
+        }
+      }
+    }
+  ],
   "assist": {
     "enabled": true,
     "actions": {
