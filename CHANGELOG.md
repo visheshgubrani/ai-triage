@@ -2,7 +2,7 @@
 
 All notable changes to ai-triage. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow [Semantic Versioning](https://semver.org/) (pre-1.0: a minor version may break things, and says how below). Each release publishes `ghcr.io/visheshgubrani/ai-triage:<version>`.
 
-## [0.7.0] - Unreleased
+## [0.7.0] - 2026-11-04
 
 Phase 7: production-ready (docs/architecture.md §9).
 
