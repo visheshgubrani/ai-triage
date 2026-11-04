@@ -41,6 +41,7 @@ import { integrationRoutes, mailboxRoutes } from "./routes/mailboxes";
 import { invitationRoutes, MEMBER_ERROR_STATUS, memberRoutes } from "./routes/members";
 import { reviewRoutes } from "./routes/review";
 import { settingsRoutes } from "./routes/settings";
+import { onboardingRoutes, setupRoutes } from "./routes/setup";
 import { uploadRoutes } from "./routes/uploads";
 import { apiSecureHeaders, limitJsonBodies, requestLog, requireTrustedOrigin, sameSecret } from "./security";
 import { requireTenant } from "./tenant";
@@ -181,6 +182,8 @@ function apiRoutes(deps: AppDeps) {
         const body: MeResponse = { user, tenant, role, twoFactorEnabled, twoFactorRequired };
         return c.json(body, 200);
       })
+      .route("/setup", setupRoutes(deps))
+      .route("/onboarding", onboardingRoutes(deps))
       .route("/uploads", uploadRoutes(deps))
       .route("/documents", documentRoutes(deps))
       .route("/review", reviewRoutes(deps))

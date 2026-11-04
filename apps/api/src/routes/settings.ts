@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   type ApiKeyCreated,
   type ApiKeyList,
@@ -14,7 +15,9 @@ import {
   type SystemHealthResponse,
   WebhookSettingsRequest,
   type WebhookSettingsResponse,
+  type WebhookTestResponse,
 } from "@ai-triage/contracts";
+import { WEBHOOK_PING_EVENT } from "@ai-triage/core";
 import {
   createApiKey,
   deploymentHealth,
@@ -25,6 +28,7 @@ import {
   listApiKeys,
   listAuditEvents,
   listInboundAddresses,
+  markWebhookTested,
   recordAudit,
   revokeApiKey,
   rotateInboundAddress,
@@ -34,8 +38,10 @@ import {
   setRetentionDays,
   setWebhook,
   tenantHealth,
+  webhookTarget,
   withTenantTx,
 } from "@ai-triage/db";
+import { postWebhook } from "@ai-triage/webhooks";
 import { Hono } from "hono";
 import { userActor } from "../audit";
 import type { AppDeps } from "../deps";
@@ -88,6 +94,35 @@ export const settingsRoutes = (deps: AppDeps) =>
         });
         return { settings: await getWebhookSettings(tx, deps.keys, deps.now()), secret };
       });
+      return c.json(body, 200);
+    })
+    // Send test event: a signed `ping` to the webhook, through the same SSRF guard and headers as a
+    // delivery, with a throwaway Idempotency-Key. Shows the receiver's answer; a 2xx checks off
+    // the getting-started step.
+    .post("/webhook/test", async (c) => {
+      const now = deps.now();
+      const target = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => webhookTarget(tx, deps.keys, now));
+      if (!target.url || target.secrets.length === 0) {
+        return c.json({ error: "Set a webhook URL first.", code: "no_webhook" } satisfies ErrorResponse, 409);
+      }
+      const started = performance.now();
+      const outcome = await postWebhook({
+        fetch: deps.webhookFetch,
+        url: target.url,
+        secrets: target.secrets,
+        idempotencyKey: randomUUID(),
+        event: WEBHOOK_PING_EVENT,
+        body: JSON.stringify({ type: "ping", tenant: c.var.tenant.tenantId, sent_at: now.toISOString() }),
+        now,
+        timeoutMs: 10_000,
+      });
+      if (outcome.ok) await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) => markWebhookTested(tx, now));
+      const body: WebhookTestResponse = {
+        ok: outcome.ok,
+        status: outcome.ok ? outcome.status : null,
+        error: outcome.ok ? null : outcome.error,
+        ms: Math.round(performance.now() - started),
+      };
       return c.json(body, 200);
     })
     .post("/webhook/rotate", async (c) => {

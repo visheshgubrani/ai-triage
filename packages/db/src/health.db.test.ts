@@ -39,7 +39,15 @@ describe("System health", () => {
 
   it("counts running workers from their heartbeats", async () => {
     const now = new Date();
-    const worker = { workerId: "test-worker", hostname: "h", version: "0.7.0", llmMode: "replay", startedAt: now };
+    const capabilities = { providers: [], simulator: false, recorded: [] };
+    const worker = {
+      workerId: "test-worker",
+      hostname: "h",
+      version: "0.7.0",
+      llmMode: "replay",
+      capabilities,
+      startedAt: now,
+    };
     await recordHeartbeat(db, worker, now);
     try {
       expect((await deploymentHealth(db, now)).workers).toContainEqual({

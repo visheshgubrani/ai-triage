@@ -9,9 +9,12 @@ import {
   createPool,
   exitOnStartupError,
   keyRingFromEnv,
+  rotateSetupToken,
+  setupNeeded,
 } from "@ai-triage/db";
 import { googleConfigFromEnv, isRealGoogle } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
+import { createGuardedFetch } from "@ai-triage/webhooks";
 import { serve } from "@hono/node-server";
 import { createApp } from "./app";
 import { parseTrustedProxies } from "./client-ip";
@@ -71,6 +74,7 @@ const app = createApp({
   trustedProxies: parseTrustedProxies(trustedProxies.join(",")),
   now: () => new Date(),
   webhookEgress: { policy: egressPolicyFromEnv(process.env), resolve: systemResolve },
+  webhookFetch: createGuardedFetch(egressPolicyFromEnv(process.env)),
   keys: keyRingFromEnv(process.env),
   rateLimits: rateLimitsFromEnv(process.env),
   inboundDomain: process.env.INBOUND_DOMAIN || null,
@@ -85,6 +89,14 @@ const app = createApp({
   apiBaseUrl: urls.apiBaseUrl,
   metricsToken: process.env.METRICS_TOKEN || null,
 });
+
+// A fresh install has no workspace: print a one-time link to the setup page (docs/deploy.md).
+if (await setupNeeded(db)) {
+  const token = await rotateSetupToken(db, new Date());
+  log.warn("no workspace exists yet: open the setup link to create the first one (valid 24 h)", {
+    setupUrl: `${urls.origin}/setup#${token}`,
+  });
+}
 
 const server = serve({ fetch: app.fetch, port }, (info) => {
   log.info("api listening", { port: info.port, publicUrl: urls.origin, version: APP_VERSION });

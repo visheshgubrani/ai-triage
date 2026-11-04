@@ -56,6 +56,44 @@ export const HealthResponse = z.object({
 });
 export type HealthResponse = z.infer<typeof HealthResponse>;
 
+/** First-run setup (no workspace exists yet): whether it's open, and how an admin can accept. */
+export const SetupStatusResponse = z.object({ needed: z.boolean(), googleSignIn: z.boolean() });
+export type SetupStatusResponse = z.infer<typeof SetupStatusResponse>;
+
+export const SetupRequest = z.object({
+  token: z.string().min(20).max(100),
+  workspaceName: z.string().trim().min(1).max(100),
+  slug: z.string().regex(/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/, "3 to 40 lowercase letters, digits and dashes"),
+  adminEmail: z.email().max(254),
+  acceptWith: z.enum(INVITATION_ACCEPT_METHODS),
+});
+export type SetupRequest = z.infer<typeof SetupRequest>;
+
+/** The first admin continues at this invite link (a password or Google), as any invited member. */
+export const SetupResponse = z.object({ inviteUrl: z.string() });
+export type SetupResponse = z.infer<typeof SetupResponse>;
+
+export const OnboardingStep = z.object({
+  id: z.string(),
+  title: z.string(),
+  done: z.boolean(),
+  detail: z.string(),
+  href: z.string(),
+});
+export type OnboardingStep = z.infer<typeof OnboardingStep>;
+
+export const OnboardingResponse = z.object({ dismissed: z.boolean(), steps: z.array(OnboardingStep) });
+export type OnboardingResponse = z.infer<typeof OnboardingResponse>;
+
+/** A signed `ping` to the tenant's webhook (Settings → Send test event). */
+export const WebhookTestResponse = z.object({
+  ok: z.boolean(),
+  status: z.number().nullable(),
+  error: z.string().nullable(),
+  ms: z.number(),
+});
+export type WebhookTestResponse = z.infer<typeof WebhookTestResponse>;
+
 export const ReadyResponse = z.object({
   db: z.enum(["up", "down"]),
   migrations: z.enum(["current", "pending"]),

@@ -4,7 +4,7 @@
 // so the jobs it enqueues and the lines it logs carry the id of the request that started the work.
 import { createServer, type Server } from "node:http";
 import { hostname } from "node:os";
-import { APP_VERSION } from "@ai-triage/core";
+import { APP_VERSION, PROVIDERS } from "@ai-triage/core";
 import {
   activeCooldowns,
   createDb,
@@ -14,7 +14,7 @@ import {
   recordHeartbeat,
   removeHeartbeat,
 } from "@ai-triage/db";
-import type { CallInfo } from "@ai-triage/llm";
+import { type CallInfo, providerKeyEnv, readRecorded } from "@ai-triage/llm";
 import { createLogger, logLevelFromEnv, METRICS_CONTENT_TYPE, Registry, runWithTrace } from "@ai-triage/telemetry";
 
 export const log = createLogger({ service: "worker", level: logLevelFromEnv() });
@@ -114,6 +114,20 @@ export async function sampleQueues(pool: Pool): Promise<void> {
   cooldowns.replace(cooling.map((c) => ({ labels: { provider: c.provider, model: c.model }, value: 1 })));
 }
 
+/** What this worker can call, for onboarding's "can the active config run?" (core modelBlocker). */
+export function workerCapabilities(env: NodeJS.ProcessEnv, cassetteDir: string) {
+  const providers = PROVIDERS.filter((p) => {
+    if (p === "sim") return false;
+    if (p === "compat") return Boolean(env.OPENAI_COMPAT_BASE_URL);
+    return Boolean(env[providerKeyEnv(p)]);
+  });
+  const recorded = Object.entries(readRecorded(cassetteDir)).map(([model, set]) => ({
+    model,
+    effort: set.effort ?? "low",
+  }));
+  return { providers, simulator: Boolean(env.LLM_SIMULATOR_URL), recorded };
+}
+
 /**
  * Starts the heartbeat (every 15 s, also pruning rows a day stale), the queue sampler and the HTTP
  * server. Returns a stop function for shutdown, which also removes this worker's heartbeat.
@@ -122,6 +136,7 @@ export async function startObservability(input: {
   pool: Pool;
   llmMode: string;
   port: number;
+  cassetteDir: string;
 }): Promise<() => Promise<void>> {
   const db = createDb(input.pool);
   const worker = {
@@ -129,6 +144,7 @@ export async function startObservability(input: {
     hostname: hostname(),
     version: APP_VERSION,
     llmMode: input.llmMode,
+    capabilities: workerCapabilities(process.env, input.cassetteDir),
     startedAt: new Date(),
   };
   registry.gauge("triage_worker_info", "").set({ version: APP_VERSION, llm_mode: input.llmMode }, 1);

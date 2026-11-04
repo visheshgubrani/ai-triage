@@ -27,6 +27,7 @@
     "api-key:create": "pnpm --filter @ai-triage/db api-key:create",
     "secrets:rotate-key": "pnpm --filter @ai-triage/db secrets:rotate-key",
     "tenant:create": "pnpm --filter @ai-triage/db tenant:create",
+    "setup-link": "pnpm --filter @ai-triage/db setup-link",
     "tenant:delete": "pnpm --filter @ai-triage/worker tenant:delete",
     "ingest": "pnpm --filter @ai-triage/api ingest",
     "fake-google": "pnpm --filter @ai-triage/mailbox fake-google",

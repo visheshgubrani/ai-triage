@@ -1,6 +1,6 @@
 import { desc, eq, gt, lt } from "drizzle-orm";
 import type { Db } from "./index";
-import { workerHeartbeats } from "./schema";
+import { type WorkerCapabilities, workerHeartbeats } from "./schema";
 
 /** A worker unseen for longer than this counts as gone. */
 export const HEARTBEAT_STALE_MS = 2 * 60_000;
@@ -10,6 +10,7 @@ export interface WorkerInfo {
   hostname: string;
   version: string;
   llmMode: string;
+  capabilities: WorkerCapabilities;
   startedAt: Date;
 }
 
@@ -17,7 +18,10 @@ export async function recordHeartbeat(db: Db, worker: WorkerInfo, now: Date): Pr
   await db
     .insert(workerHeartbeats)
     .values({ ...worker, lastSeenAt: now })
-    .onConflictDoUpdate({ target: workerHeartbeats.workerId, set: { lastSeenAt: now, version: worker.version } });
+    .onConflictDoUpdate({
+      target: workerHeartbeats.workerId,
+      set: { lastSeenAt: now, version: worker.version, capabilities: worker.capabilities },
+    });
 }
 
 /** Workers seen in the last two minutes, newest first. */

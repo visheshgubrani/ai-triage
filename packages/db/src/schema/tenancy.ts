@@ -39,6 +39,10 @@ export const tenantSettings = pgTable(
     retentionDays: integer("retention_days"),
     /** Intake filters that are on, by name (core INTAKE_FILTERS); unset keys take DEFAULT_INTAKE_FILTERS. */
     intakeFilters: jsonb("intake_filters").$type<Partial<IntakeFilters>>().notNull().default({}),
+    /** The getting-started checklist was dismissed by an admin. */
+    onboardingDismissedAt: timestamp("onboarding_dismissed_at", { withTimezone: true }),
+    /** The last Settings test event that the receiver accepted (2xx). */
+    webhookTestedAt: timestamp("webhook_tested_at", { withTimezone: true }),
     updatedAt: updatedAt(),
   },
   (t) => [

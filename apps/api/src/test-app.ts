@@ -14,6 +14,7 @@ import { DEMO_PASSWORD } from "@ai-triage/db/seed";
 import { testDbUrls } from "@ai-triage/db/testing";
 import type { GoogleConfig } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
+import { createGuardedFetch } from "@ai-triage/webhooks";
 import { createApp } from "./app";
 import { type RateLimits, rateLimitsFromEnv } from "./rate-limit";
 
@@ -79,6 +80,7 @@ export async function createTestApp(
     trustedProxies: [],
     now: () => fixedNow ?? new Date(),
     webhookEgress: { policy: egressPolicy(options.webhookAllowedHosts ?? []), resolve: testResolve },
+    webhookFetch: createGuardedFetch(egressPolicy(options.webhookAllowedHosts ?? [])),
     keys: keyRingFromEnv({}),
     // Every test file signs in as the demo users from the same (unknown) address, and the counters
     // live in the shared test database: limits stay out of the way unless a test sets its own.

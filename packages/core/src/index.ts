@@ -463,6 +463,13 @@ export const API_ERROR_CODES = [
   "two_factor_required",
   /** A sensitive account change by a user without a password needs a sign-in from the last few minutes. */
   "recent_sign_in_required",
+  /** The setup link was used, expired or replaced (first-run setup). */
+  "setup_closed",
+  "slug_taken",
+  /** Send test event, with no webhook set. */
+  "no_webhook",
+  /** Process anyway, on a document an intake filter didn't skip. */
+  "not_skipped",
 ] as const;
 export type ApiErrorCode = (typeof API_ERROR_CODES)[number];
 
@@ -542,6 +549,8 @@ export const WEBHOOK_HEADERS = {
   signature: "X-Triage-Signature",
 } as const;
 export const WEBHOOK_EVENT = "document.approved";
+/** Settings → Send test event: a signed delivery with a throwaway Idempotency-Key and no document. */
+export const WEBHOOK_PING_EVENT = "ping";
 /** How far a receiver should let the signed timestamp drift before rejecting a delivery. */
 export const WEBHOOK_TOLERANCE_SECONDS = 300;
 

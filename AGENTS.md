@@ -32,6 +32,7 @@ packages/storage    S3 client, presigned URLs, server-issued storage keys
 packages/ingest     Ingestion paths: store the source, then create document + run + parse job
 packages/evals      Comparators, grading, metrics, threshold sweep, reliability, run diff (pure, web-safe)
 packages/mailbox    Mail providers: Google config, OAuth and Gmail REST over an injected fetch (no SDK)
+packages/webhooks   Outbound webhooks: the signer, the SSRF-guarded fetch and one signed POST (delivery and the test event)
 packages/telemetry  JSON logger, trace ids (AsyncLocalStorage) and a Prometheus registry; no deps
 packages/contracts  Zod API contracts shared by api and web
 fixtures/           Synthetic labeled docs (generated, committed) + LLM cassettes
@@ -56,6 +57,7 @@ pnpm format                  # Biome autofix
 pnpm ingest <file>           # .pdf/.docx/.eml/.png/.txt via the REST API (TRIAGE_API_KEY), .json as a Postmark payload
 pnpm api-key:create --tenant demo
 pnpm tenant:create --name Acme --slug acme --admin you@acme.com   # a real tenant + the first admin's invite link
+pnpm setup-link              # a fresh first-run setup link while no workspace exists (the api also logs one at startup)
 pnpm fake-google             # a fake Google on :9040 for mailbox sync without a Google project (docs/google.md)
 pnpm llm-sim                 # the simulator on :9050 for `sim:simulated` (LLM_SIMULATOR_URL=http://localhost:9050/v1), any LLM_MODE, $0
 pnpm load --docs 1000 --tenants 5 --skew 0.8   # load and chaos test against a running stack (docs/reliability.md)

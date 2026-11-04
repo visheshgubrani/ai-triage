@@ -4,8 +4,8 @@ import { checkStartup, createBoss, createPool, exitOnStartupError, keyRingFromEn
 import { callModeOf, createTransport, getLlmMode } from "@ai-triage/llm";
 import { googleConfigFromEnv } from "@ai-triage/mailbox";
 import { createStorage, storageConfigFromEnv } from "@ai-triage/storage";
+import { createGuardedFetch } from "@ai-triage/webhooks";
 import { workerConfig } from "./config";
-import { createGuardedFetch } from "./delivery/egress";
 import { registerDelivery } from "./delivery/register";
 import { registerEvals } from "./evals/register";
 import { createDbLlmGateway } from "./llm";
@@ -107,7 +107,12 @@ await registerMailbox(
   { fetchConcurrency: config.mailboxConcurrency, tenantConcurrency: config.tenantConcurrency },
 );
 
-const stopObservability = await startObservability({ pool, llmMode: mode, port: config.httpPort });
+const stopObservability = await startObservability({
+  pool,
+  llmMode: mode,
+  port: config.httpPort,
+  cassetteDir: config.cassetteDir,
+});
 
 log.info("worker started", {
   version: APP_VERSION,

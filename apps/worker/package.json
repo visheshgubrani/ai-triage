@@ -27,6 +27,7 @@
     "@ai-triage/schemas": "workspace:*",
     "@ai-triage/storage": "workspace:*",
     "@ai-triage/telemetry": "workspace:*",
+    "@ai-triage/webhooks": "workspace:*",
     "pg-boss": "^12.38.0",
     "undici": "^7.30.1"
   },

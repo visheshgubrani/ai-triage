@@ -12,6 +12,7 @@ export default defineConfig({
     "bin/migrate": "../../packages/db/src/bin/migrate.ts",
     "bin/seed": "../../packages/db/src/bin/seed.ts",
     "bin/tenant-create": "../../packages/db/src/bin/tenant-create.ts",
+    "bin/setup-link": "../../packages/db/src/bin/setup-link.ts",
     "bin/api-key-create": "../../packages/db/src/bin/api-key.ts",
     "bin/secrets-rotate-key": "../../packages/db/src/bin/rotate-key.ts",
     "bin/seed-documents": "src/bin/seed-documents.ts",

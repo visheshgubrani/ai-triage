@@ -11,7 +11,7 @@ import { ago } from "@/lib/format";
 import { headClass, tableClass } from "../ui";
 
 export function DatasetsView({ isAdmin }: { isAdmin: boolean }) {
-  const [datasets, setDatasets] = useState<EvalDataset[]>([]);
+  const [datasets, setDatasets] = useState<EvalDataset[] | null>(null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
   const [split, setSplit] = useState<EvalSplit | "">("");
   const [items, setItems] = useState<EvalItem[] | null>(null);
@@ -55,101 +55,116 @@ export function DatasetsView({ isAdmin }: { isAdmin: boolean }) {
   return (
     <>
       {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
-      <Section title="Datasets">
-        <table className={tableClass}>
-          <thead className={headClass}>
-            <tr>
-              <th>Name</th>
-              {EVAL_SPLITS.map((s) => (
-                <th key={s}>{s}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {datasets.map((d) => (
-              <tr
-                key={d.id}
-                onClick={() => setDatasetId(d.id)}
-                className={`cursor-pointer ${d.id === datasetId ? "font-medium" : ""}`}
-              >
-                <td>{d.name}</td>
+      {datasets?.length === 0 && (
+        <Section title="Datasets">
+          <p className="text-neutral-600 dark:text-neutral-400">
+            No eval set yet. The quickest way to start one: approve documents in Review with <em>Add to eval set</em> on
+            (it's on by default when you edit a field). The approved values become the labels, in a dataset named Main.
+            To import labeled files in bulk, use <code>pnpm eval:import items.jsonl --tenant your-slug</code>.
+          </p>
+        </Section>
+      )}
+      {datasets && datasets.length > 0 && (
+        <Section title="Datasets">
+          <table className={tableClass}>
+            <thead className={headClass}>
+              <tr>
+                <th>Name</th>
                 {EVAL_SPLITS.map((s) => (
-                  <td key={s} className="tabular-nums">
-                    {d.counts[s]}
-                  </td>
+                  <th key={s}>{s}</th>
                 ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </Section>
-      <Section
-        title="Items"
-        actions={
-          <select
-            aria-label="Split"
-            value={split}
-            onChange={(e) => setSplit(e.target.value as EvalSplit | "")}
-            className="rounded border border-neutral-300 bg-transparent px-1 text-sm dark:border-neutral-700"
-          >
-            <option value="">all splits</option>
-            {EVAL_SPLITS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        }
-      >
-        {!items ? (
-          <p className="text-neutral-500">Loading…</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className={tableClass}>
-              <thead className={headClass}>
-                <tr>
-                  <th>Source</th>
-                  <th>Split</th>
-                  <th>Label</th>
-                  <th>Fields stated</th>
-                  <th>Origin</th>
-                  <th>Added</th>
-                  <th />
+            </thead>
+            <tbody>
+              {datasets?.map((d) => (
+                <tr
+                  key={d.id}
+                  onClick={() => setDatasetId(d.id)}
+                  className={`cursor-pointer ${d.id === datasetId ? "font-medium" : ""}`}
+                >
+                  <td>{d.name}</td>
+                  {EVAL_SPLITS.map((s) => (
+                    <td key={s} className="tabular-nums">
+                      {d.counts[s]}
+                    </td>
+                  ))}
                 </tr>
-              </thead>
-              <tbody>
-                {items.map((i) => (
-                  <tr key={i.id} className="border-t border-neutral-100 dark:border-neutral-900">
-                    <td>
-                      <button type="button" onClick={() => void open(i)} className="underline underline-offset-2">
-                        {i.sourceTitle ?? i.id.slice(0, 8)}
-                      </button>
-                      {i.tags.length > 0 && <span className="ml-1 text-xs text-neutral-500">{i.tags.join(", ")}</span>}
-                    </td>
-                    <td>{i.split}</td>
-                    <td>{i.expectedCategory}</td>
-                    <td className="text-xs text-neutral-500">
-                      {Object.entries(i.expectedFields).filter(([, v]) => v !== null).length}
-                    </td>
-                    <td className="text-xs">
-                      {i.origin}
-                      {i.originRef && <span className="text-neutral-500"> · {i.originRef}</span>}
-                    </td>
-                    <td className="text-xs text-neutral-500">{ago(i.createdAt)}</td>
-                    <td>
-                      {isAdmin && (
-                        <Button variant="danger" onClick={() => void retire(i)}>
-                          Retire
-                        </Button>
-                      )}
-                    </td>
+              ))}
+            </tbody>
+          </table>
+        </Section>
+      )}
+      {datasets && datasets.length > 0 && (
+        <Section
+          title="Items"
+          actions={
+            <select
+              aria-label="Split"
+              value={split}
+              onChange={(e) => setSplit(e.target.value as EvalSplit | "")}
+              className="rounded border border-neutral-300 bg-transparent px-1 text-sm dark:border-neutral-700"
+            >
+              <option value="">all splits</option>
+              {EVAL_SPLITS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          }
+        >
+          {!items ? (
+            <p className="text-neutral-500">Loading…</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className={tableClass}>
+                <thead className={headClass}>
+                  <tr>
+                    <th>Source</th>
+                    <th>Split</th>
+                    <th>Label</th>
+                    <th>Fields stated</th>
+                    <th>Origin</th>
+                    <th>Added</th>
+                    <th />
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Section>
+                </thead>
+                <tbody>
+                  {items.map((i) => (
+                    <tr key={i.id} className="border-t border-neutral-100 dark:border-neutral-900">
+                      <td>
+                        <button type="button" onClick={() => void open(i)} className="underline underline-offset-2">
+                          {i.sourceTitle ?? i.id.slice(0, 8)}
+                        </button>
+                        {i.tags.length > 0 && (
+                          <span className="ml-1 text-xs text-neutral-500">{i.tags.join(", ")}</span>
+                        )}
+                      </td>
+                      <td>{i.split}</td>
+                      <td>{i.expectedCategory}</td>
+                      <td className="text-xs text-neutral-500">
+                        {Object.entries(i.expectedFields).filter(([, v]) => v !== null).length}
+                      </td>
+                      <td className="text-xs">
+                        {i.origin}
+                        {i.originRef && <span className="text-neutral-500"> · {i.originRef}</span>}
+                      </td>
+                      <td className="text-xs text-neutral-500">{ago(i.createdAt)}</td>
+                      <td>
+                        {isAdmin && (
+                          <Button variant="danger" onClick={() => void retire(i)}>
+                            Retire
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Section>
+      )}
     </>
   );
 }

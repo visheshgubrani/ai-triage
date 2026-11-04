@@ -88,3 +88,31 @@ export function parseModelRef(ref: string): { provider: Provider; model: string 
   }
   return { provider: provider as Provider, model: ref.slice(colon + 1) };
 }
+
+/** What a running worker can call (its heartbeat reports it; see packages/db worker_heartbeats). */
+export interface ModelCapabilities {
+  llmMode: string;
+  /** Providers it has a key (or, for compat, an address) for. */
+  providers: readonly string[];
+  simulator: boolean;
+  /** Models replay has a complete recording of, and at what effort. */
+  recorded: readonly { model: string; effort: string }[];
+}
+
+/**
+ * Why a worker with these capabilities can't run a stage's model, or null if it can: the
+ * simulator needs its address in any mode; replay needs a recording at the same effort; live and
+ * record need the provider's key.
+ */
+export function modelBlocker(stage: { model: string; effort: string }, worker: ModelCapabilities): string | null {
+  const { provider } = parseModelRef(stage.model);
+  if (provider === "sim") return worker.simulator ? null : "the simulator isn't configured (LLM_SIMULATOR_URL)";
+  if (worker.llmMode === "replay") {
+    const set = worker.recorded.find((r) => r.model === stage.model);
+    if (!set) return `${stage.model} has no recorded responses, and replay mode never calls a model`;
+    return set.effort === stage.effort
+      ? null
+      : `${stage.model} was recorded at effort ${set.effort}, not ${stage.effort}`;
+  }
+  return worker.providers.includes(provider) ? null : `the worker has no API key for ${provider}`;
+}

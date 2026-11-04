@@ -112,3 +112,43 @@ describe("operations endpoints", () => {
     });
   });
 });
+
+describe("first run and onboarding", () => {
+  it("refuses setup once a workspace exists, even with a token", async () => {
+    const status = await app.request("/setup/status");
+    expect(await status.json()).toMatchObject({ needed: false });
+    const res = await app.request("/setup", {
+      method: "POST",
+      headers: { origin: WEB_ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({
+        token: "a".repeat(32),
+        workspaceName: "Late",
+        slug: "late-co",
+        adminEmail: "late@example.com",
+        acceptWith: "google_or_password",
+      }),
+    });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ code: "setup_closed" });
+  });
+
+  it("gives admins the getting-started steps, from the workspace's data", async () => {
+    const { cookie } = await signIn("admin@demo.test", DEMO_PASSWORD);
+    const res = await app.request("/onboarding", { headers: { cookie } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { steps: { id: string; done: boolean }[] };
+    expect(body.steps.map((s) => s.id)).toEqual([
+      "model",
+      "categories",
+      "intake",
+      "first-document",
+      "webhook",
+      "team",
+      "automation",
+    ]);
+    // The seeded demo has documents and a second member.
+    expect(body.steps.find((s) => s.id === "team")?.done).toBe(true);
+    const reviewer = await signIn("reviewer@demo.test", DEMO_PASSWORD);
+    expect((await app.request("/onboarding", { headers: { cookie: reviewer.cookie } })).status).toBe(403);
+  });
+});

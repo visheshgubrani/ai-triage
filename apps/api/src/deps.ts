@@ -28,6 +28,8 @@ export interface AppDeps {
   now: () => Date;
   /** What webhook URLs may point at (WEBHOOK_ALLOWED_HOSTS, TRIAGE_DEMO), and how hosts resolve. */
   webhookEgress: WebhookEgress;
+  /** Outbound fetch for the Settings test event: the same SSRF guard as delivery (createGuardedFetch). */
+  webhookFetch: typeof fetch;
   /** Encrypts and decrypts webhook signing secrets (ENCRYPTION_KEYS). */
   keys: KeyRing;
   /** Admin-only routes need the admin's TOTP 2FA (REQUIRE_ADMIN_2FA; off under TRIAGE_DEMO). */
