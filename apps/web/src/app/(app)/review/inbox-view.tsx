@@ -1,13 +1,14 @@
 "use client";
 
-import type { DeliveryFailure, InboxAge, InboxQuery, InboxResponse, RetryFailedRequest } from "@ai-triage/contracts";
+import type { DeliveryFailure, InboxQuery, InboxResponse, RetryFailedRequest } from "@ai-triage/contracts";
 import { INBOX_AGES } from "@ai-triage/contracts";
 import type { ReviewTaskKind } from "@ai-triage/core";
+import { describeReason, humanize } from "@ai-triage/core/review";
 import { CircleCheck, RotateCw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Badge, Pill } from "@/components/badge";
+import { Badge } from "@/components/badge";
 import { Button } from "@/components/button";
 import { useConfirm } from "@/components/confirm-dialog";
 import { DataTable } from "@/components/data-table";
@@ -15,15 +16,24 @@ import { EmptyState } from "@/components/empty-state";
 import { FilterChip } from "@/components/filter-chip";
 import { LoadingBlock } from "@/components/loading";
 import { PageHeader } from "@/components/page-header";
+import { ReasonPill } from "@/components/reason-pill";
 import { Section } from "@/components/section";
 import { ViewTabs } from "@/components/segmented";
 import { browserApi } from "@/lib/api";
 import { readError } from "@/lib/api-error";
 import { ago, isTyping } from "@/lib/format";
 import { usePolling } from "@/lib/use-polling";
+import {
+  claimFilter,
+  type QueueContext,
+  type QueueEnd,
+  type QueueFilters,
+  type QueueView,
+  queueQuery,
+} from "./queue-query";
 
 const POLL_MS = 5000;
-type View = "open" | "failed" | "delivery";
+type View = QueueView;
 const VIEWS: { id: View; label: string }[] = [
   { id: "open", label: "Open" },
   { id: "failed", label: "Processing failed" },
@@ -37,18 +47,20 @@ const KIND_LABELS: Record<ReviewTaskKind, string> = {
   processing_failed: "failed",
 };
 
-type Filters = { kind?: ReviewTaskKind; category?: string; reason?: string; olderThan?: InboxAge; mine?: boolean };
+type Filters = QueueFilters;
 
 function FacetRow({
   title,
   counts,
   value,
   onChange,
+  labelOf = (k) => k,
 }: {
   title: string;
   counts: Record<string, number>;
   value?: string;
   onChange: (v?: string) => void;
+  labelOf?: (key: string) => string;
 }) {
   const keys = Object.keys(counts).sort();
   if (keys.length === 0) return null;
@@ -58,7 +70,7 @@ function FacetRow({
       {keys.map((k) => (
         <FilterChip
           key={k}
-          label={k}
+          label={labelOf(k)}
           count={counts[k]}
           active={value === k}
           onClick={() => onChange(value === k ? undefined : k)}
@@ -81,16 +93,43 @@ function ScoreBar({ score }: { score: number | null | undefined }) {
   );
 }
 
-export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; isAdmin?: boolean }) {
+export function InboxView({
+  canReview,
+  isAdmin = false,
+  initial = { view: "open", filters: {} },
+  end,
+}: {
+  canReview: boolean;
+  isAdmin?: boolean;
+  /** The view and filters from the URL: a reload, or a return from a task, keeps them. */
+  initial?: QueueContext;
+  /** Back from a task with nothing (else) to claim within these filters. */
+  end?: QueueEnd;
+}) {
   const confirm = useConfirm();
   const router = useRouter();
-  const [view, setView] = useState<View>("open");
-  const [filters, setFilters] = useState<Filters>({});
+  const [view, setView] = useState<View>(initial.view);
+  const [filters, setFilters] = useState<Filters>(initial.filters);
   const [inbox, setInbox] = useState<InboxResponse | null>(null);
   const [failures, setFailures] = useState<DeliveryFailure[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const filtered = Object.values(initial.filters).some(Boolean);
+  const [message, setMessage] = useState<string | null>(
+    end === "cleared"
+      ? filtered
+        ? "You've cleared everything that matches these filters."
+        : "You've cleared the queue."
+      : end === "skipped"
+        ? `Nothing else to claim${filtered ? " with these filters" : ""}.`
+        : null,
+  );
   const [busy, setBusy] = useState(false);
+
+  // The URL follows the view and filters (without a navigation), so task links can carry them.
+  const query = queueQuery({ view, filters });
+  useEffect(() => {
+    window.history.replaceState(null, "", `/review${query}`);
+  }, [query]);
 
   const kind = view === "failed" ? "processing_failed" : filters.kind;
   const load = useCallback(
@@ -122,15 +161,15 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
     setBusy(true);
     setMessage(null);
     try {
-      const res = await browserApi.review["claim-next"].$post({ json: { kind, category: filters.category } });
+      const res = await browserApi.review["claim-next"].$post({ json: claimFilter({ view, filters }) });
       if (!res.ok) return setMessage((await readError(res)).error);
       const { claim } = await res.json();
-      if (claim) router.push(`/review/${claim.taskId}`);
+      if (claim) router.push(`/review/${claim.taskId}${queueQuery({ view, filters })}`);
       else setMessage("Nothing left to claim with these filters.");
     } finally {
       setBusy(false);
     }
-  }, [kind, filters.category, router]);
+  }, [view, filters, router]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -145,7 +184,7 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
 
   /** Retry all: every open, unclaimed failure shown (of the selected reason, if one is picked). */
   async function retryAll() {
-    const scope = filters.reason ? `failed with ${filters.reason}` : "that failed";
+    const scope = filters.reason ? `that failed with “${describeReason(filters.reason).label}”` : "that failed";
     if (
       !(await confirm({
         title: `Retry every unclaimed document ${scope}?`,
@@ -175,7 +214,10 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
     await load();
   }
 
-  const set = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }));
+  const set = (patch: Partial<Filters>) => {
+    setMessage(null);
+    setFilters((f) => ({ ...f, ...patch }));
+  };
   const counts = inbox?.counts;
   const tasks = inbox?.tasks ?? [];
 
@@ -195,7 +237,7 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
             {isAdmin && view === "failed" && tasks.length > 0 && (
               <Button onClick={retryAll} disabled={busy}>
                 <RotateCw aria-hidden="true" />
-                Retry all{filters.reason ? ` ${filters.reason}` : ""} ({tasks.length})
+                Retry all{filters.reason ? ` “${describeReason(filters.reason).label}”` : ""} ({tasks.length})
               </Button>
             )}
             {canReview && view !== "delivery" && (
@@ -227,6 +269,7 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
               counts={Object.fromEntries(OPEN_KINDS.filter((k) => counts.kind[k]).map((k) => [k, counts.kind[k] ?? 0]))}
               value={filters.kind}
               onChange={(v) => set({ kind: v as ReviewTaskKind | undefined })}
+              labelOf={(k) => humanize(KIND_LABELS[k as ReviewTaskKind] ?? k)}
             />
           )}
           <FacetRow
@@ -234,8 +277,15 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
             counts={counts.category}
             value={filters.category}
             onChange={(v) => set({ category: v })}
+            labelOf={humanize}
           />
-          <FacetRow title="Reason" counts={counts.reason} value={filters.reason} onChange={(v) => set({ reason: v })} />
+          <FacetRow
+            title="Reason"
+            counts={counts.reason}
+            value={filters.reason}
+            onChange={(v) => set({ reason: v })}
+            labelOf={(k) => describeReason(k).label}
+          />
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="w-16 shrink-0 text-xs font-medium text-muted-foreground">Age</span>
             {INBOX_AGES.map((age) => (
@@ -297,9 +347,9 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
               </thead>
               <tbody>
                 {tasks.map((t) => (
-                  <tr key={t.id} className="cursor-pointer" onClick={() => router.push(`/review/${t.id}`)}>
+                  <tr key={t.id} className="cursor-pointer" onClick={() => router.push(`/review/${t.id}${query}`)}>
                     <td className="max-w-72">
-                      <Link href={`/review/${t.id}`} className="font-medium underline-offset-2 hover:underline">
+                      <Link href={`/review/${t.id}${query}`} className="font-medium underline-offset-2 hover:underline">
                         {t.title ?? "(untitled)"}
                       </Link>
                       <p className="text-xs text-muted-foreground">{t.source}</p>
@@ -307,7 +357,7 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
                     <td>
                       <Badge value={KIND_LABELS[t.kind]} />
                     </td>
-                    <td>{t.category ?? <span className="text-muted-foreground">-</span>}</td>
+                    <td>{t.category ? humanize(t.category) : <span className="text-muted-foreground">-</span>}</td>
                     <td>
                       <ScoreBar score={t.score} />
                     </td>
@@ -317,9 +367,7 @@ export function InboxView({ canReview, isAdmin = false }: { canReview: boolean; 
                       ) : (
                         <span className="flex flex-wrap gap-1">
                           {t.reasons.map((r) => (
-                            <Pill key={r} className="font-mono">
-                              {r}
-                            </Pill>
+                            <ReasonPill key={r} reason={r} />
                           ))}
                         </span>
                       )}

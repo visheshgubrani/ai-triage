@@ -79,9 +79,16 @@ export const reviewRoutes = (deps: AppDeps) => {
       return c.json(inboxTask(row), 200);
     })
     .post("/claim-next", reviewer, validate("json", ClaimNextRequest), async (c) => {
-      const filter = c.req.valid("json");
+      const q = c.req.valid("json");
+      const now = deps.now();
+      const filter = {
+        kind: q.kind,
+        category: q.category,
+        reasonCode: q.reason,
+        olderThan: q.olderThan ? new Date(now.getTime() - AGE_MS[q.olderThan]) : undefined,
+      };
       const claim = await withTenantTx(deps.pool, c.var.tenant.tenantId, (tx) =>
-        claimNext(tx, { userId: c.var.tenant.user.id, now: deps.now(), filter }),
+        claimNext(tx, { userId: c.var.tenant.user.id, now, filter }),
       );
       const body: ClaimNextResponse = { claim: claim && claimBody(claim) };
       return c.json(body, 200);

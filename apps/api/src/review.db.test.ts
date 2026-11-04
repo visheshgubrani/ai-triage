@@ -189,6 +189,28 @@ describe("edit & approve", () => {
     expect(d?.task).toMatchObject({ status: "claimed" });
   });
 
+  it("refuses to approve an extraction missing a required field, until a reviewer fills it in", async () => {
+    const s = await setup();
+    const { invoice_number: _, ...withoutNumber } = SAMPLE_INVOICE_FIELDS;
+    const task = await s.seed({ fields: withoutNumber, reasons: ["required_missing:invoice_number"] });
+    const { claimToken } = await claim(s.reviewer, task.taskId);
+    const approve = { action: "approve" as const, claimToken, extractionId: task.extractionId };
+    const body = await refused(await decide(s.reviewer, task.taskId, approve), 422, "invalid_fields");
+    expect(body.issues).toEqual([{ field: "invoice_number", path: "/invoice_number", message: "is required" }]);
+    const d = await s.detail(task.documentId);
+    expect(d?.decisions).toEqual([]);
+    expect(d?.actions).toEqual([]);
+    expect(d?.task).toMatchObject({ status: "claimed" });
+
+    const filled = await decide(s.reviewer, task.taskId, {
+      action: "edit_approve",
+      claimToken,
+      extractionId: task.extractionId,
+      fields: { ...withoutNumber, invoice_number: "INV-0042" },
+    });
+    expect(await filled.json()).toMatchObject({ outcome: "edit_approve", actionId: expect.any(String) });
+  });
+
   it("approves the shown revision when the edit changed nothing", async () => {
     const s = await setup();
     const task = await s.seed();
@@ -357,6 +379,18 @@ describe("inbox and access", () => {
     expect(await next.json()).toMatchObject({ claim: { taskId: first.taskId } });
     const none = await post("/review/claim-next", s.reviewer, { kind: "review" });
     expect(await none.json()).toEqual({ claim: null });
+  });
+
+  it("keeps claim-next within the queue's reason and age filters", async () => {
+    const s = await setup();
+    await s.seed();
+    const missing = await s.seed({ reasons: ["required_missing:total"] });
+    const next = await post("/review/claim-next", s.reviewer, { reason: "required_missing" });
+    expect(await next.json()).toMatchObject({ claim: { taskId: missing.taskId } });
+    expect(await (await post("/review/claim-next", s.reviewer, { reason: "required_missing" })).json()).toEqual({
+      claim: null,
+    });
+    expect(await (await post("/review/claim-next", s.reviewer, { olderThan: "1h" })).json()).toEqual({ claim: null });
   });
 });
 

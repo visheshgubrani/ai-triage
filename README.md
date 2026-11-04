@@ -19,7 +19,7 @@ It runs anywhere Docker does, with one command, and works with Claude, OpenAI, D
 curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/install.sh | sh -s -- --demo
 ```
 
-Open http://localhost:3000 and sign in as `admin@demo.test` / `demo-password`. From a clone, `docker compose up` runs the same demo.
+Open http://localhost:3000 and sign in as `admin@demo.test` / `demo-password`. It runs beside anything else on your machine: `--port 4000` moves the app, and its other ports move by themselves when taken (it prints where). From a clone, `docker compose up` runs the same demo.
 
 **Run it for your team**, on your computer or a server with HTTPS:
 
@@ -88,7 +88,7 @@ Real teams sign in with Google, join by invitation link or by their Workspace do
 pnpm tenant:create --name "Acme" --slug acme --admin you@acme.com   # prints the first admin's invite link
 ```
 
-The Docker quickstart includes a fake Google, so you can connect a demo mailbox with no Google project: open Settings → Mailboxes, click Connect, then deliver mail into it with `curl --data-binary @fixtures/docs/sup-12.eml http://localhost:9040/fake/deliver`.
+The demo includes a fake Google, so you can connect a demo mailbox with no Google project: open Settings → Mailboxes, click Connect, then deliver mail into it. The installer prints the exact command; from a clone it's `curl --data-binary @fixtures/docs/sup-12.eml http://localhost:9040/fake/deliver`.
 
 ## Reviewing
 

@@ -63,7 +63,7 @@ test("connect a Gmail mailbox, sync a message into review, disconnect", async ({
   await page.goto(`/documents/${documentId}`);
   await expect(page.getByText("Gmail · ap@demo-workspace.test")).toBeVisible();
   // The fixture has no Google trace, so synced mail can't count as authenticated: it waits for a human.
-  await expect(page.getByText("sender_unauthenticated").first()).toBeVisible();
+  await expect(page.getByText("Sender not verified").first()).toBeVisible();
 
   const revokedBefore = (await (await page.request.get(`${FAKE}/fake/state`)).json()).revoked as number;
   await page.goto("/settings/mailboxes");

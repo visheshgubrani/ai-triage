@@ -155,11 +155,18 @@ export async function inboxCounts(tx: TenantTx) {
  */
 export async function claimNext(
   tx: TenantTx,
-  input: { userId: string; now: Date; filter?: Pick<InboxFilter, "kind" | "category">; leaseSeconds?: number },
+  input: {
+    userId: string;
+    now: Date;
+    filter?: Pick<InboxFilter, "kind" | "category" | "reasonCode" | "olderThan">;
+    leaseSeconds?: number;
+  },
 ): Promise<Claim | null> {
   const conditions = [claimable(input.now)];
   if (input.filter?.kind) conditions.push(sql`${reviewTasks.kind} = ${input.filter.kind}`);
   if (input.filter?.category) conditions.push(sql`${taskCategory} = ${input.filter.category}`);
+  if (input.filter?.reasonCode) conditions.push(hasReasonCode(input.filter.reasonCode));
+  if (input.filter?.olderThan) conditions.push(lt(reviewTasks.createdAt, input.filter.olderThan));
   const lease = leaseUntil(input.now, input.leaseSeconds ?? LEASE_SECONDS);
   const { rows } = await tx.db.execute<{ id: string; document_id: string; claim_token: string }>(sql`
     update ${reviewTasks} set status = 'claimed', claimed_by = ${input.userId},

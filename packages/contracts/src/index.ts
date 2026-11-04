@@ -429,9 +429,12 @@ export const RetryFailedResponse = z.object({
 });
 export type RetryFailedResponse = z.infer<typeof RetryFailedResponse>;
 
+/** The oldest free task, within the queue's filters (the same meaning as in InboxQuery). */
 export const ClaimNextRequest = z.object({
   kind: z.enum(REVIEW_TASK_KINDS).optional(),
   category: z.string().min(1).max(100).optional(),
+  reason: z.string().min(1).max(100).optional(),
+  olderThan: z.enum(INBOX_AGES).optional(),
 });
 export type ClaimNextRequest = z.infer<typeof ClaimNextRequest>;
 

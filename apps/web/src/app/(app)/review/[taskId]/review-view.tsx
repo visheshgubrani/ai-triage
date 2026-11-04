@@ -9,7 +9,7 @@ import {
   OTHER_CATEGORY,
   type ReviewAction,
 } from "@ai-triage/core";
-import { fieldDiff, gateFieldMarks } from "@ai-triage/core/review";
+import { describeReason, fieldDiff, gateFieldMarks, humanize } from "@ai-triage/core/review";
 import { Keyboard, SearchX } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,6 +20,7 @@ import { EmptyState } from "@/components/empty-state";
 import { LoadingBlock } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
+import { ReasonPill } from "@/components/reason-pill";
 import { Section } from "@/components/section";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -29,6 +30,7 @@ import { NativeSelect } from "@/components/ui/native-select";
 import { browserApi } from "@/lib/api";
 import { readError } from "@/lib/api-error";
 import { isTyping } from "@/lib/format";
+import { claimFilter, type QueueContext, type QueueEnd, queueQuery } from "../queue-query";
 import { FieldForm } from "./field-form";
 import { type EvidenceCheck, type FieldSchema, gatesOf } from "./gates";
 import { History } from "./history";
@@ -66,7 +68,16 @@ function releaseOnLeave(taskId: string, claimToken: string) {
   }).catch(() => {});
 }
 
-export function ReviewView({ taskId, canReview }: { taskId: string; canReview: boolean }) {
+export function ReviewView({
+  taskId,
+  canReview,
+  queue = { view: "open", filters: {} },
+}: {
+  taskId: string;
+  canReview: boolean;
+  /** The queue view and filters this task was opened from: the next task comes from the same ones. */
+  queue?: QueueContext;
+}) {
   const router = useRouter();
   const [task, setTask] = useState<InboxTask | null>(null);
   const [detail, setDetail] = useState<DocumentDetail | null>(null);
@@ -182,12 +193,20 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
   const currentCategory = detail?.extraction?.category ?? detail?.classification?.category ?? null;
   const targets = (detail?.categories ?? []).filter((c) => c !== currentCategory && c !== OTHER_CATEGORY);
 
-  /** After a decision (or a skip), claim the next task, or go back to the queue when there's none. */
+  /** The next task within the queue's filters, or back to the queue (saying it's cleared) when there's none. */
+  const goNext = useCallback(
+    (res: Response, body: { claim: { taskId: string } | null } | null, end: QueueEnd) => {
+      if (body?.claim) router.push(`/review/${body.claim.taskId}${queueQuery(queue)}`);
+      else router.push(`/review${queueQuery(queue, res.ok ? { end } : {})}`);
+    },
+    [router, queue],
+  );
+
+  /** After a decision, claim the next task. */
   const next = useCallback(async () => {
-    const res = await browserApi.review["claim-next"].$post({ json: {} });
-    const body = res.ok ? await res.json() : null;
-    router.push(body?.claim ? `/review/${body.claim.taskId}` : "/review");
-  }, [router]);
+    const res = await browserApi.review["claim-next"].$post({ json: claimFilter(queue) });
+    goNext(res, res.ok ? await res.json() : null, "cleared");
+  }, [queue, goNext]);
 
   const decide = useCallback(
     async (body: DecisionRequest) => {
@@ -205,7 +224,7 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
         const status: number = res.status;
         if (err.code === "invalid_fields") {
           setIssues(err.issues ?? []);
-          setBanner({ tone: "error", text: "Some fields don't match the schema; they're marked below." });
+          setBanner({ tone: "error", text: err.error });
         } else if (status === 409) {
           setClaim(null);
           setBanner({ tone: "error", text: `${err.error} Nothing was changed.`, reload: true });
@@ -231,14 +250,14 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
 
   const skip = useCallback(async () => {
     // Claim the next task before releasing this one, so the queue can't hand this one straight back.
-    const res = await browserApi.review["claim-next"].$post({ json: {} });
+    const res = await browserApi.review["claim-next"].$post({ json: claimFilter(queue) });
     const body = res.ok ? await res.json() : null;
     if (claim) {
       await browserApi.review.tasks[":id"].release.$post({ param: { id: taskId }, json: { claimToken: claim.token } });
       held.current = null;
     }
-    router.push(body?.claim ? `/review/${body.claim.taskId}` : "/review");
-  }, [claim, taskId, router]);
+    goNext(res, body, "skipped");
+  }, [claim, taskId, queue, goNext]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -277,7 +296,7 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
         description="It may belong to another workspace."
         action={
           <Button asChild>
-            <Link href="/review">Back to the queue</Link>
+            <Link href={`/review${queueQuery(queue)}`}>Back to the queue</Link>
           </Button>
         }
       />
@@ -293,7 +312,7 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
   return (
     <>
       <PageHeader
-        back={{ href: "/review", label: "Review queue" }}
+        back={{ href: `/review${queueQuery(queue)}`, label: "Review queue" }}
         title={detail.document.title ?? "(untitled)"}
         description={KIND_HELP[task.kind]}
         actions={
@@ -304,15 +323,13 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
       />
       <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
         <Badge value={task.kind === "audit" ? "audit sample" : task.kind} />
-        {currentCategory && <Pill tone="accent">{currentCategory}</Pill>}
+        {currentCategory && <Pill tone="accent">{humanize(currentCategory)}</Pill>}
         {detail.classification && (
           <span className="font-mono text-xs">score {detail.classification.selfConfidence.toFixed(2)}</span>
         )}
         {claim && <span className="text-xs">claimed until {new Date(claim.leaseExpiresAt).toLocaleTimeString()}</span>}
         {task.reasons.map((r) => (
-          <Pill key={r} tone="warning" className="font-mono">
-            {r}
-          </Pill>
+          <ReasonPill key={r} reason={r} tone="warning" />
         ))}
       </div>
 
@@ -475,7 +492,8 @@ export function ReviewView({ taskId, canReview }: { taskId: string; canReview: b
 
           {detail.run?.error && task.kind === "processing_failed" && (
             <Section title="Run failed" className="mt-2">
-              <p className="font-mono text-xs break-words text-danger">{detail.run.error}</p>
+              <p className="text-sm">{describeReason(detail.run.error.split(":")[0] ?? "").help}</p>
+              <p className="mt-1 font-mono text-xs break-words text-danger">{detail.run.error}</p>
             </Section>
           )}
           {(marks.document.length > 0 || (gates.rules ?? []).some((r) => !r.passed)) && (

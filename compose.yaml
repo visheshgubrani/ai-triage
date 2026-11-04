@@ -35,7 +35,7 @@ x-app-env: &app-env
   # A real Google client belongs in a real deployment (docs/google.md).
   GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-demo-fake-google}
   GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-demo-fake-google-secret}
-  GOOGLE_OAUTH_URL: ${GOOGLE_OAUTH_URL:-http://localhost:9040}
+  GOOGLE_OAUTH_URL: ${GOOGLE_OAUTH_URL:-http://localhost:${FAKE_GOOGLE_PORT:-9040}}
   GOOGLE_TOKEN_URL: ${GOOGLE_TOKEN_URL:-http://fake-google:9040}
   GOOGLE_API_URL: ${GOOGLE_API_URL:-http://fake-google:9040}
   LLM_SIMULATOR_URL: ${LLM_SIMULATOR_URL:-http://llm-sim:9050/v1}
@@ -114,9 +114,10 @@ services:
       retries: 30
 
   # A fake Google (OAuth consent, tokens, Gmail) for the demo's mailbox sync: the consent screen
-  # agrees at once; deliver mail with `curl --data-binary @mail.eml http://localhost:9040/fake/deliver`.
+  # agrees at once; deliver mail with `curl --data-binary @mail.eml http://localhost:9040/fake/deliver`
+  # (FAKE_GOOGLE_PORT moves it).
   fake-google:
-    image: &app-image ghcr.io/visheshgubrani/ai-triage:${TRIAGE_VERSION:-latest}
+    image: &app-image ${TRIAGE_IMAGE:-ghcr.io/visheshgubrani/ai-triage}:${TRIAGE_VERSION:-latest}
     pull_policy: never
     init: true
     command: ["cli", "fake-google"]
@@ -124,7 +125,7 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-demo-fake-google}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-demo-fake-google-secret}
     ports:
-      - "127.0.0.1:9040:9040"
+      - "127.0.0.1:${FAKE_GOOGLE_PORT:-9040}:9040"
     depends_on:
       init:
         condition: service_completed_successfully

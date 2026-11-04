@@ -84,7 +84,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | `GOOGLE_OAUTH_URL` | api, worker, cli | – | Points Google's consent screen at the local fake (`pnpm fake-google`, e.g. http://localhost:9040) for the demo and e2e. Production refuses it unless TRIAGE_DEMO=true. |
 | `GOOGLE_TOKEN_URL` | api, worker, cli | `GOOGLE_OAUTH_URL` | The fake's token endpoint as the server reaches it, when that differs from the browser's address. |
 | `GOOGLE_API_URL` | api, worker, cli | – | Points the Gmail API at the local fake. Production refuses it unless TRIAGE_DEMO=true. |
-| `FAKE_GOOGLE_PORT` | cli | `9040` | Port of `pnpm fake-google`. |
+| `FAKE_GOOGLE_PORT` | cli, compose | `9040` | Port of `pnpm fake-google`, and the host port of the Docker demo's fake Google. |
 | `FAKE_GOOGLE_MAILBOX` | cli | `ap@demo-workspace.test` | The address the fake Google's demo mailbox answers as. |
 
 ## Models
@@ -149,7 +149,7 @@ Processes: **api**, **worker**, **web**, **cli** (migrations, seeds and the admi
 | Variable | Read by | Default | Description |
 |---|---|---|---|
 | `TRIAGE_VERSION` | compose | `latest` | Image tag to run (`ghcr.io/visheshgubrani/ai-triage:<version>`). `./triage upgrade --version` changes it. |
-| `TRIAGE_IMAGE` | compose | `ghcr.io/visheshgubrani/ai-triage` | Image repository, for running your own build. |
+| `TRIAGE_IMAGE` | compose | `ghcr.io/visheshgubrani/ai-triage` | Image repository, for running your own build (installs and the demo). |
 | `INSTALL_MODE` | compose | `local` | local (this machine), server (its own HTTPS on 80/443/8443) or upstream (behind your proxy). |
 | `APP_HOST` | compose | – | The installation's hostname: `localhost`, or the server's DNS name. |
 | `FILES_HOST` | compose | – | Behind your own reverse proxy (upstream): the hostname that serves stored files. |

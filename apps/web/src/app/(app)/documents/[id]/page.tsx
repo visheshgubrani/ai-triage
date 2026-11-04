@@ -3,11 +3,12 @@ import { ChevronRight, FileWarning } from "lucide-react";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Badge, Pill, stateOf } from "@/components/badge";
+import { Badge, stateOf } from "@/components/badge";
 import { Button } from "@/components/button";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { Page, PageHeader } from "@/components/page-header";
+import { ReasonPill } from "@/components/reason-pill";
 import { Section } from "@/components/section";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { api } from "@/lib/api";
@@ -123,9 +124,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             <div className="flex flex-wrap gap-1">
               {d.task.reasons.length === 0 && <span className="text-muted-foreground">No routing reasons.</span>}
               {d.task.reasons.map((r) => (
-                <Pill key={r} tone="warning" className="font-mono">
-                  {r}
-                </Pill>
+                <ReasonPill key={r} reason={r} tone="warning" />
               ))}
             </div>
           </Section>
@@ -149,9 +148,7 @@ export default async function DocumentPage({ params }: { params: Promise<{ id: s
             {d.extraction.decisionReasons.length > 0 && (
               <div className="mb-3 flex flex-wrap gap-1">
                 {d.extraction.decisionReasons.map((r) => (
-                  <Pill key={r} tone="warning" className="font-mono">
-                    {r}
-                  </Pill>
+                  <ReasonPill key={r} reason={r} tone="warning" />
                 ))}
               </div>
             )}

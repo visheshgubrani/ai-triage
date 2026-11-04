@@ -2,7 +2,7 @@
 # The install path end to end (CI's install-smoke job; runnable locally): install.sh from this
 # checkout with a given image, then the first-run setup through the API, an API key, a document on
 # the simulator, and a lookup until a person is asked to review it. Then backup, and restore into
-# a second installation.
+# a second installation. Then the demo (install.sh --demo) beside a stack that holds its ports.
 #
 #   scripts/install-smoke.sh <image repo> <version> [--host app.localhost]
 set -eu
@@ -10,7 +10,9 @@ repo=$1 version=$2
 shift 2
 root=$(cd "$(dirname "$0")/.." && pwd)
 work=$(mktemp -d)
+squatter=
 cleanup() {
+  [ -z "$squatter" ] || kill "$squatter" 2>/dev/null || true
   for d in "$work"/*/; do (cd "$d" && docker compose down -v --remove-orphans >/dev/null 2>&1) || true; done
   rm -rf "$work"
 }
@@ -77,4 +79,29 @@ cd "$b"
 ./triage restore "$backup" --yes
 url=$(./triage open)
 curl_ "$url/api/v1/documents?external_ref=SMOKE-1" -H "authorization: Bearer $key" | grep -q "$id"
+
+# Once, not again for the server install.
+if [ $# -eq 0 ]; then
+  echo "== the demo, while another stack holds its storage port"
+  if ! curl -s -o /dev/null http://127.0.0.1:9020/; then
+    python3 -m http.server 9020 --bind 127.0.0.1 >/dev/null 2>&1 &
+    squatter=$!
+    sleep 1
+  fi
+  d="$work/demo"
+  # A project of its own, which the installer keeps (never the repository's ai-triage).
+  mkdir -p "$d" && printf 'COMPOSE_PROJECT_NAME=ai-triage-demo-smoke\n' >"$d/.env"
+  TRIAGE_SOURCE=$root TRIAGE_IMAGE=$repo "$root/install.sh" --demo --version "$version" --dir "$d" --port 4500 |
+    tee "$d.log"
+  cd "$d"
+  grep -q '^COMPOSE_PROJECT_NAME=ai-triage-demo-smoke$' .env
+  grep -q 'running: http://localhost:4500$' "$d.log"
+  s3=$(sed -n 's/^S3_PORT=//p' .env)
+  [ "$s3" != 9020 ]
+  [ "$(docker compose exec -T api printenv S3_PUBLIC_ENDPOINT)" = "http://localhost:$s3" ]
+  running=$(docker compose ps --services --status running)
+  for s in webhook-catcher fake-google llm-sim; do printf '%s\n' "$running" | grep -qx "$s"; done
+  curl_ -o /dev/null http://localhost:4500/sign-in
+  curl_ --data-binary @samples/sup-12.eml "http://localhost:$(sed -n 's/^FAKE_GOOGLE_PORT=//p' .env)/fake/deliver" >/dev/null
+fi
 echo "== ok"

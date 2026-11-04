@@ -106,6 +106,7 @@ export async function decide(
         if (!base) throw new Error(`extraction ${body.extractionId} not found`);
         const edit = body.action === "edit_approve" ? await editRevision(tx, actor, base, body.fields) : null;
         const approved = edit?.revision ?? base;
+        await assertApprovable(tx, approved);
         const payload = approvedPayload(
           proposeAction({
             documentId: document.id,
@@ -314,6 +315,35 @@ async function addToEvalSet(
     tags: [input.edited ? "review:edited" : "review:approved"],
     createdBy: actor.user.id,
   });
+}
+
+/**
+ * What is delivered must be complete: every required field filled and every value valid against the
+ * category's schema, whether the model wrote it or a reviewer edited it. Category rules don't block
+ * (a person may knowingly approve an invoice with a discount line the model left out).
+ */
+async function assertApprovable(tx: TenantTx, revision: ExtractionRow) {
+  const schemaVersion = await loadSchemaVersion(tx, revision.schemaVersionId);
+  const check = checkUserRevision({
+    category: revision.category,
+    schemaVersion: {
+      id: schemaVersion.id,
+      version: schemaVersion.version,
+      jsonSchema: schemaVersion.jsonSchema as JsonSchema,
+    },
+    values: asFields(revision.fields),
+  });
+  const missing = check.gateResults.failures
+    .filter((f) => f.code === "required_missing" && f.field)
+    .map((f) => ({ field: f.field as string, path: `/${f.field}`, message: "is required" }));
+  const issues = [...missing, ...check.validationIssues.map(({ field, path, message }) => ({ field, path, message }))];
+  if (issues.length > 0) {
+    throw new ReviewError(
+      "invalid_fields",
+      "Some fields are missing or invalid; they're marked below. Fill them in, or reject the document.",
+      { issues },
+    );
+  }
 }
 
 /**
