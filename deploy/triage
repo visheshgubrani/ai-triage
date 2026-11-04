@@ -15,11 +15,12 @@ usage: ./triage <command>
   logs [service…]          follow the logs (api, worker, web, caddy, postgres, …)
   restart                  apply .env changes and restart what changed
   stop | start             stop everything, or start it again
-  config set KEY[=VALUE]   set a value in .env (no value: asked for without echo), then restart
+  config set KEY[=VALUE]   set a value in .env, then restart. Without =VALUE it takes $KEY from the
+                           environment (export ANTHROPIC_API_KEY=… first), else asks without echo
   upgrade [--version X]    back up, pull the new version, migrate and restart
   backup                   database, stored files and .env into backups/<time>/
   restore <dir> [--yes]    replace this installation's data with a backup
-  uninstall [--purge]      stop and remove the containers (--purge also deletes all data)
+  uninstall [--purge [--yes]]  stop and remove the containers (--purge also deletes all data)
   cli <command> [args]     run one of the image's commands in the api container, such as
                            tenant-create --name Acme --slug acme --admin you@acme.com,
                            or api-key-create --tenant acme --scopes ingest
@@ -62,12 +63,17 @@ guard_project() {
 # migrate and storage-init as failures).
 up() {
   guard_project
-  out=$(dc up -d 2>&1) || { echo "$out" >&2; return 1; }
+  out=$(dc up -d 2>&1) || {
+    echo "$out" >&2
+    echo "  fix: the lines above say what failed; ./triage logs <service> has more" >&2
+    return 1
+  }
   tries=0
   until [ "$(dc ps --status running --format '{{.Health}}' api worker web 2>/dev/null | grep -c '^healthy$')" = 3 ]; do
     tries=$((tries + 1))
     if [ "$tries" -gt 120 ]; then
-      echo "Not healthy after 4 minutes. ./triage logs api worker migrate shows why." >&2
+      echo "Not healthy after 4 minutes." >&2
+      echo "  fix: ./triage logs api worker migrate shows why" >&2
       return 1
     fi
     if dc ps -a --format '{{.Service}} {{.State}} {{.ExitCode}}' migrate 2>/dev/null | grep -q 'exited [1-9]'; then
@@ -90,8 +96,10 @@ case "$cmd" in
   status)
     if [ "${1:-}" = "--json" ]; then
       checks=$(preflight_json)
-      [ -n "$checks" ] || checks='{"ready":false,"checks":[{"status":"fail","title":"Worker","detail":"not running","fix":"./triage start"}]}'
+      [ -n "$checks" ] || checks='{"ready":false,"checks":[{"status":"fail","title":"Worker","detail":"not running, or preflight could not run in it","fix":"./triage start, then ./triage logs worker"}]}'
       printf '{"url":"%s","version":"%s",%s\n' "$(value PUBLIC_URL)" "$(value TRIAGE_VERSION)" "${checks#\{}"
+      # Exit status for scripts: 0 only when ready.
+      case "$checks" in *'"ready":true'*) ;; *) exit 1 ;; esac
     else
       dc ps
       echo
@@ -110,7 +118,14 @@ case "$cmd" in
     [ "${1:-}" = set ] && [ -n "${2:-}" ] || { echo "usage: ./triage config set KEY[=VALUE]" >&2; exit 2; }
     key=${2%%=*}
     case "$key" in *[!A-Z0-9_]* | "") echo "KEY must be A-Z, 0-9 and _" >&2; exit 2 ;; esac
-    if [ "$key" = "$2" ]; then
+    if [ "$key" = "$2" ] && eval "[ -n \"\${$key:-}\" ]"; then
+      # From the environment: the value never appears on a command line.
+      eval "val=\${$key}"
+    elif [ "$key" = "$2" ]; then
+      [ -t 0 ] || [ -r /dev/tty ] || {
+        echo "No terminal to ask for $key: export $key=… and run this again." >&2
+        exit 2
+      }
       printf '%s: ' "$key" >/dev/tty
       stty -echo </dev/tty 2>/dev/null || true
       IFS= read -r val </dev/tty
@@ -184,9 +199,11 @@ case "$cmd" in
     ;;
   uninstall)
     if [ "${1:-}" = --purge ]; then
-      printf 'Delete every document, user and setting for good? Type "delete" to go on: ' >/dev/tty
-      read -r answer </dev/tty
-      [ "$answer" = delete ] || { echo "Nothing changed."; exit 1; }
+      if [ "${2:-}" != --yes ]; then
+        printf 'Delete every document, user and setting for good? Type "delete" to go on: ' >/dev/tty
+        read -r answer </dev/tty
+        [ "$answer" = delete ] || { echo "Nothing changed."; exit 1; }
+      fi
       dc down -v --remove-orphans
       echo "Removed the containers and all data. .env and backups/ are still here."
     else

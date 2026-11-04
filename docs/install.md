@@ -49,10 +49,18 @@ It ends by printing a **setup link**. Re-running it is safe: it keeps `.env` and
 | `--dir PATH` | Where to put it (default `./ai-triage`) |
 | `--yes` | Never prompt |
 
+**Which model:** the first workspace uses a model of the first provider whose key you gave:
+- Anthropic: Claude Opus 5.5;
+- OpenAI: GPT-6.1 Terra;
+- DeepSeek: DeepSeek Flash;
+- OpenRouter: GPT-6.1 Terra through OpenRouter.
+
+Change it in Settings → Pipeline.
+
 **Where the key goes:** the key is read from your environment and written only to `.env`. It never appears in a command line, so it stays out of shell history and `ps`. No key yet? Add one at any time:
 
 ```bash
-cd ai-triage && ./triage config set ANTHROPIC_API_KEY    # asks for the value without echoing it
+cd ai-triage && ./triage config set ANTHROPIC_API_KEY    # takes $ANTHROPIC_API_KEY if exported, else asks without echo
 ```
 
 ## 2. Create your workspace
@@ -144,13 +152,18 @@ Health checks, metrics, alerts and runbooks are in [operations.md](operations.md
 
 An agent can do the whole install without prompts. Give it these instructions:
 
-1. **Never put an API key in the chat or on a command line.** Ask the person to export it in the shell the agent uses, for example `export ANTHROPIC_API_KEY=…`. The installer reads it from there.
+1. **Never put an API key in the chat or on a command line.** Ask the person to export it in a shell the agent can use, for example `export ANTHROPIC_API_KEY=…`. Both the installer and `./triage config set ANTHROPIC_API_KEY` (no `=value`) read it from there.
+
+   If the agent's shell doesn't keep environment between commands, the person can run the `config set` command once themselves.
 2. **Run the install non-interactively:**
    - local: `curl -fsSL https://raw.githubusercontent.com/visheshgubrani/ai-triage/main/install.sh | sh -s -- --yes`
    - server: add `--host <name> --email <address>`
    - if port 3000 is taken, add `--port <n>`.
-3. **Check readiness:** run `cd ai-triage && ./triage status --json` until it prints `"ready": true`. Each failing check has a `fix`.
-4. **Hand the setup link to the person:** the installer's last line, or `./triage setup-link`. It creates the first admin, so the person should open it, not the agent.
+3. **Check readiness:** run `cd ai-triage && ./triage status --json`. It exits 0 and prints `"ready": true` when the installation can work.
+   - Each failing check has a `fix`.
+   - Check every few seconds for up to 5 minutes, then report the failing checks instead of waiting longer.
+   - A `warn` (no workspace yet) doesn't block `ready`.
+4. **Hand the setup link to the person:** the installer's last line, or `./triage setup-link`. It creates the first admin, so the person should open it, not the agent. It's single-use: `./triage setup-link` replaces it if it leaks.
 5. **Use exit codes:** each step fails with a non-zero exit code and a one-line `fix:`, so the agent can stop and report instead of guessing.
 
 ## Troubleshooting

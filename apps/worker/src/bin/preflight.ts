@@ -36,6 +36,13 @@ results.push(...(await checkDatabase(env, mode, workerConfig(env).cassetteDir, h
 results.push(...(await checkStorage(env, hints)));
 results.push(...(await checkApi(env, hints)));
 
+// Installed, a missing provider key is set with ./triage (which reads it from the environment).
+if (hints.installed) {
+  for (const r of results) {
+    const key = r.fix?.match(/^set ([A-Z0-9_]+) for the worker$/)?.[1];
+    if (key) r.fix = `export ${key}=…, then ./triage config set ${key}`;
+  }
+}
 const ready = !results.some((r) => r.status === "fail");
 console.log(process.argv.includes("--json") ? JSON.stringify({ ready, checks: results }) : formatResults(results));
 process.exit(ready ? 0 : 1);

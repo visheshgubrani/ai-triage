@@ -41,7 +41,7 @@ usage: install.sh [options]
   --demo              the demo instead: sample data and recorded model answers, no key needed
   --version X.Y.Z     the release to install (default: latest)
   --dir PATH          where to put it (default: ./ai-triage)
-  --yes               never prompt (for scripts and AI agents)
+  --yes               never prompt (the installer itself never prompts; this keeps scripts explicit)
 
 Model keys come from the environment: export ANTHROPIC_API_KEY (or OPENAI_API_KEY,
 DEEPSEEK_API_KEY, OPENROUTER_API_KEY) before running, or set one later with
@@ -79,7 +79,10 @@ command -v curl >/dev/null 2>&1 || [ -n "$SOURCE" ] || die "curl is needed to do
 port_busy() {
   if command -v ss >/dev/null 2>&1; then ss -ltn 2>/dev/null | awk '{print $4}' | grep -q "[:.]$1\$"
   elif command -v lsof >/dev/null 2>&1; then lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
-  else return 1; fi
+  else
+    say "warning: neither ss nor lsof is here, so ports weren't checked"
+    return 1
+  fi
 }
 already_ours() { [ -f "$DIR/.env" ] && (cd "$DIR" && docker compose ps -q caddy 2>/dev/null | grep -q .); }
 
@@ -89,7 +92,7 @@ if [ -n "$DEMO" ]; then
     port_busy "$p" && ! already_ours && die "port $p is in use" "stop what uses it, then run this again"
   done
 elif [ -n "$HOST" ]; then
-  [ -n "$EMAIL" ] || die "--host needs --email (Let's Encrypt sends certificate notices there)"
+  [ -n "$EMAIL" ] || die "--host needs --email (Let's Encrypt sends certificate notices there)" "add --email you@example.com"
   for p in 80 443 8443; do
     port_busy "$p" && ! already_ours && die "port $p is in use" "a server install needs 80, 443 and 8443 free (stop the web server that uses them)"
   done
@@ -109,6 +112,13 @@ fi
 say "Docker $(docker version --format '{{.Server.Version}}' 2>/dev/null), $(docker compose version --short), $(uname -m): ok"
 
 # ── Files ──
+# The deploy files and the image come from the same release: `latest` means the latest release
+# (main only before the first one exists, or with TRIAGE_SOURCE).
+if [ "$VERSION" = latest ] && [ -z "$SOURCE" ]; then
+  tag=$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null |
+    sed -n 's/.*"tag_name": *"v\{0,1\}\([^"]*\)".*/\1/p' | head -n 1 || true)
+  [ -n "$tag" ] && VERSION=$tag
+fi
 ref=main
 [ "$VERSION" = latest ] || ref="v$VERSION"
 fetch() { # fetch <repo path> <destination>
@@ -166,7 +176,23 @@ step "Starting (migrations run first)"
 ./triage start >/dev/null
 
 url=$(./triage open)
-link=$(./triage setup-link 2>/dev/null | grep -Eo 'https?://[^ ]+/setup#[^ ]+' | tail -n 1 || true)
+if [ -n "$HOST" ]; then
+  # Caddy gets the certificate on the first request; give it a minute.
+  ok=
+  for _ in $(seq 1 30); do
+    if curl -fsS -o /dev/null --max-time 5 "$url/api/health" 2>/dev/null; then ok=1; break; fi
+    sleep 2
+  done
+  if [ -z "$ok" ]; then
+    say ""
+    say "warning: $url doesn't answer over HTTPS yet. The app is running, but the certificate"
+    say "  isn't issued: $HOST must resolve to this server, and ports 80 and 443 must be open to"
+    say "  the internet (cloud firewalls too)."
+    say "  fix: fix DNS or the firewall, then ./triage logs caddy shows Let's Encrypt's answer"
+  fi
+fi
+setup_out=$(./triage setup-link 2>&1 || true)
+link=$(printf '%s\n' "$setup_out" | grep -Eo 'https?://[^ ]+/setup#[^ ]+' | tail -n 1 || true)
 say ""
 say "ai-triage is running at $url"
 if ! grep -Eq '^(ANTHROPIC|OPENAI|DEEPSEEK|OPENROUTER)_API_KEY=.+' .env; then
@@ -181,7 +207,11 @@ if [ -n "$link" ]; then
   say ""
   say "Create your workspace (this link works once):"
   say "$link"
-else
+elif printf '%s' "$setup_out" | grep -q "Setup is closed"; then
   say ""
   say "This installation already has a workspace: sign in at $url"
+else
+  say ""
+  say "Couldn't get a setup link: $setup_out"
+  say "  fix: ./triage setup-link (and ./triage logs api if it fails again)"
 fi
