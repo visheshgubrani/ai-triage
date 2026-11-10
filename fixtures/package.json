@@ -17,7 +17,7 @@
   },
   "devDependencies": {
     "@ai-triage/schemas": "workspace:*",
-    "docx": "^9.15.1",
+    "docx": "^9.15.3",
     "pdf-lib": "^1.17.1"
   }
 }
