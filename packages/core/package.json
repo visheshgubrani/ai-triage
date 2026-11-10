@@ -23,7 +23,7 @@
   "devDependencies": {
     "@types/html-to-text": "^9.0.4",
     "@types/mailparser": "^3.9.0",
-    "docx": "^9.15.1",
+    "docx": "^9.15.3",
     "pdf-lib": "^1.17.1"
   }
 }
