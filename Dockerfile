@@ -4,7 +4,7 @@
 # holds node and those files, not the workspace or its node_modules.
 
 # Base images are pinned by digest (Dependabot proposes updates), so a rebuild gets the same bytes.
-FROM node:24-slim@sha256:c86ecead9e55a5210ac1727de38a4ca840bf03dcaf34dc9749addbf383b1920c AS build
+FROM node:26-slim@sha256:5adad64f9a1fca2d51972caa65983634c8a774eb300d72b20f7f2a0f60368072 AS build
 ENV CI=true
 RUN npm install -g pnpm@12.11.2
 WORKDIR /app
@@ -37,7 +37,7 @@ RUN pnpm build
 RUN rm -rf apps/web/.next/standalone/node_modules/.pnpm/sharp@* apps/web/.next/standalone/node_modules/.pnpm/@img+*
 
 # The runtime holds plain JavaScript (no native modules), so it runs on the smaller Alpine image.
-FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
+FROM node:26-alpine@sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 MIGRATIONS_DIR=/app/packages/db/migrations
 WORKDIR /app
 # pnpm-workspace.yaml marks the root that relative paths (fixtures, cassettes) resolve from.
