@@ -13,18 +13,18 @@
     "@ai-triage/contracts": "workspace:*",
     "@ai-triage/core": "workspace:*",
     "@ai-triage/evals": "workspace:*",
-    "better-auth": "1.7.15",
+    "better-auth": "1.7.18",
     "class-variance-authority": "^0.7.1",
     "cmdk": "^1.1.1",
     "cn": "^0.5.2",
-    "geist": "^1.9.0",
-    "lucide-react": "^1.67.0",
-    "next": "^16.4.3",
+    "geist": "^1.9.2",
+    "lucide-react": "^1.70.0",
+    "next": "^16.4.5",
     "qrcode": "^1.5.4",
     "radix-ui": "^1.8.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "recharts": "3.8.0"
+    "recharts": "3.10.1"
   },
   "devDependencies": {
     "@ai-triage/api": "workspace:*",
