@@ -28,7 +28,7 @@
     "@ai-triage/storage": "workspace:*",
     "@ai-triage/telemetry": "workspace:*",
     "@ai-triage/webhooks": "workspace:*",
-    "pg-boss": "^12.38.0",
+    "pg-boss": "^12.38.1",
     "undici": "^7.30.1"
   },
   "devDependencies": {

@@ -24,7 +24,7 @@
     "@ai-triage/storage": "workspace:*",
     "@ai-triage/telemetry": "workspace:*",
     "@ai-triage/webhooks": "workspace:*",
-    "@hono/node-server": "^2.1.5",
+    "@hono/node-server": "^2.1.6",
     "@hono/zod-validator": "^0.9.1",
     "hono": "^4.13.16",
     "ipaddr.js": "^2.5.0",
