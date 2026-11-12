@@ -98,7 +98,7 @@ services:
   # Local webhook receiver: verifies X-Triage-Signature and lists deliveries at http://localhost:9030.
   # The demo tenant's webhook points here (DEMO_WEBHOOK_URL / DEMO_WEBHOOK_SECRET in .env).
   webhook-catcher:
-    image: node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85
+    image: node:26-alpine@sha256:c6ad9e9c1d80f6eb607c26b4b0a132ff7a2344fad1c78ea3baa2a7d4c8de6d94
     command: ["node", "/app/catcher.mjs"]
     environment:
       PORT: "9030"
